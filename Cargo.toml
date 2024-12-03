@@ -1,0 +1,27 @@
+[workspace]
+members = [
+  "contracts/main",
+  "crates/core",
+]
+resolver = "2"
+
+[workspace.dependencies]
+# external
+cosmwasm-schema = "2.1.4"
+cosmwasm-std = "2.1.4"
+cw-storage-plus = "2.0.0"
+cw-utils = "2.0.0"
+neutron-sdk = "0.11.0"
+# internal
+zephyrus-core   = { path = "crates/core" }
+
+[profile.release]
+codegen-units     = 1
+debug             = false
+debug-assertions  = false
+incremental       = false
+lto               = true
+overflow-checks   = true
+opt-level         = 's'
+panic             = "abort"
+rpath             = false

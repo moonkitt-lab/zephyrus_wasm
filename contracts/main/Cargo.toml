@@ -1,0 +1,22 @@
+[package]
+name = "zephyrus-main"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "zephyrus-main-schema"
+path = "schema.rs"
+doctest = false
+test = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest    = false
+
+[dependencies]
+cosmwasm-schema.workspace = true
+cosmwasm-std.workspace = true
+cw-storage-plus.workspace = true
+cw-utils.workspace = true
+neutron-sdk.workspace = true
+zephyrus-core.workspace = true

@@ -30,7 +30,6 @@
           just # better Make
           nushell # easier than bash
           binaryen # wasm optimization tools
-          bun # better node for bindings generation & testing
           docker-compose # for local test setup
           coreutils # sha256sum for checksum generation
         ];

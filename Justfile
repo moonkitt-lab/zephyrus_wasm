@@ -5,14 +5,6 @@ dist: lint check-fmt clean-artifacts build-contracts generate-schemas generate-t
 menu:
     @just --list
 
-setup-node:
-    @if [ ! -d "node_modules" ]; then \
-        echo "node_modules directory not found. Running npm install..."; \
-        NODE_NO_WARNINGS=1 npm install; \
-    else \
-        echo "node_modules directory exists. Skipping npm install."; \
-    fi
-
 # Remove all build artifacts
 clean-artifacts:
     @echo "Cleaning previous artifacts..."
@@ -27,6 +19,20 @@ lint:
 check-fmt:
     @echo "Checking formatting..."
     cargo fmt --check
+
+# Run on-chain tests locally
+on-chain-test test="all": setup-test-suite setup-node
+    @if [ "{{ test }}" = "all" ]; then \
+        echo "Running all tests except those with prefix 'test-suite-sanity'..."; \
+        for file in scripts/*.test.ts; do \
+            if ! echo $file | grep -q '^scripts/test-suite-sanity'; then \
+                echo "Running test $$file..."; \
+                bun test $file; \
+            fi; \
+        done; \
+    else \
+        bun test "scripts/{{ test }}.test.ts"; \
+    fi
 
 # Build all contracts and optimize WASM artifacts
 build-contracts:
@@ -108,3 +114,87 @@ generate-ts: setup-node
     # Show result
     ls ts | select name | rename bindings | table --theme light -i false | print $"\n($in)\n"
 
+# Setup typescript 
+setup-node:
+    @echo "Checking node dependencies are up to date..."
+    @bun install
+
+# Clean NodeJS
+clean-node:
+    rm -rf node_modules
+
+export ICQ_RELAYER_VERSION := env("ICQ_RELAYER_VERSION", "v0.3.0")
+export ICQ_RELAYER_IMAGE   := "neutron-org/neutron-query-relayer:" + ICQ_RELAYER_VERSION
+export HERMES_VERSION      := env("HERMES_VERSION", "v1.10.4")
+export HERMES_IMAGE        := "informalsystems/hermes:" + HERMES_VERSION
+export GAIA_VERSION        := env("GAIA_VERSION", "v21.0.0")
+export GAIA_IMAGE          := "cosmos/gaia:" + GAIA_VERSION
+export NEUTRON_VERSION     := env("NEUTRON_VERSION", "v5.0.2")
+export NEUTRON_IMAGE       := "neutron-org/neutron:" + NEUTRON_VERSION
+
+# Setup on-chain test suite
+setup-test-suite:
+    @if ! docker image inspect $ICQ_RELAYER_IMAGE > /dev/null 2>&1; then \
+        echo "Build {{ ICQ_RELAYER_IMAGE }}"; \
+        mkdir -p target/test-suite; \
+        cd target/test-suite; \
+        rm -rf neutron-query-relayer; \
+        git clone --depth 1 --branch $ICQ_RELAYER_VERSION https://github.com/neutron-org/neutron-query-relayer; \
+        cd neutron-query-relayer; \
+        docker build . -t $ICQ_RELAYER_IMAGE; \
+    fi
+    @if ! docker image inspect $HERMES_IMAGE > /dev/null 2>&1; then \
+        echo "Build {{ HERMES_IMAGE }}"; \
+        mkdir -p target/test-suite; \
+        cd target/test-suite; \
+        rm -rf hermes; \
+        git clone --depth 1 --branch $HERMES_VERSION https://github.com/informalsystems/hermes; \
+        cd hermes; \
+        sed -i '/^ARG UID=/d' ci/release/hermes.Dockerfile; \
+        sed -i '/^ARG GID=/d' ci/release/hermes.Dockerfile; \
+        sed -i '/^RUN groupadd -g \${GID} hermes && useradd -l -m hermes -s \/bin\/bash -u \${UID} -g \${GID}/d' ci/release/hermes.Dockerfile; \
+        sed -i '/^USER hermes:hermes/d' ci/release/hermes.Dockerfile; \
+        sed -i 's/--chown=hermes:hermes[[:space:]]*//' ci/release/hermes.Dockerfile; \
+        docker build -t $HERMES_IMAGE -f ci/release/hermes.Dockerfile .; \
+    fi
+    @if ! docker image inspect $GAIA_IMAGE > /dev/null 2>&1; then \
+        echo "Build {{ GAIA_IMAGE }}"; \
+        mkdir -p target/test-suite; \
+        cd target/test-suite; \
+        rm -rf gaia; \
+        git clone --depth 1 --branch $GAIA_VERSION https://github.com/cosmos/gaia; \
+        cd gaia; \
+        sed -i '/RUN addgroup -g 1025 nonroot/d' Dockerfile; \
+        sed -i '/RUN adduser -D nonroot -u 1025 -G nonroot/d' Dockerfile; \
+        sed -i '/^USER nonroot/d' Dockerfile; \
+        docker build -t $GAIA_IMAGE -f Dockerfile .; \
+    fi
+    @if ! docker image inspect $NEUTRON_IMAGE > /dev/null 2>&1; then \
+        echo "Build {{ NEUTRON_IMAGE }}"; \
+        mkdir -p target/test-suite; \
+        cd target/test-suite; \
+        rm -rf neutron; \
+        git clone --depth 1 --branch $NEUTRON_VERSION https://github.com/neutron-org/neutron; \
+        cd neutron; \
+        sed -i '/^CMD bash \/opt\/neutron\/network\/init.sh && \\/d' Dockerfile; \
+        sed -i '/^    bash \/opt\/neutron\/network\/init-neutrond.sh && \\/d' Dockerfile; \
+        sed -i '/^    bash \/opt\/neutron\/network\/start.sh$/d' Dockerfile; \
+        echo 'ENTRYPOINT ["neutrond"]' >> Dockerfile; \
+        docker buildx build --load --build-context app=. -t $NEUTRON_IMAGE --build-arg BINARY=neutrond .; \
+    fi
+
+
+# Clean on-chain test suite
+clean-test-suite:
+    @if docker image inspect $ICQ_RELAYER_IMAGE > /dev/null 2>&1; then \
+        docker rmi -f $ICQ_RELAYER_IMAGE; \
+    fi
+    @if docker image inspect $HERMES_IMAGE > /dev/null 2>&1; then \
+        docker rmi -f $HERMES_IMAGE; \
+    fi
+    @if docker image inspect $GAIA_IMAGE > /dev/null 2>&1; then \
+        docker rmi -f $GAIA_IMAGE; \
+    fi
+    @if docker image inspect $NEUTRON_IMAGE > /dev/null 2>&1; then \
+        docker rmi -f $NEUTRON_IMAGE; \
+    fi

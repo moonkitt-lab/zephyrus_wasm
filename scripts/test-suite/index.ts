@@ -1,0 +1,477 @@
+import { promises as fs } from "fs";
+import Cosmopark, { CosmoparkConfig } from "@neutron-org/cosmopark";
+import {
+  CosmoparkNetworkConfig,
+  CosmoparkRelayer,
+  CosmoparkWallet,
+} from "@neutron-org/cosmopark/lib/types";
+import { runCommand, sleep, waitFor } from "./utils";
+import { DirectSecp256k1HdWallet } from "@cosmjs/proto-signing";
+import { Client as NeutronClient } from "@neutron-org/client-ts";
+import {
+  QueryClient,
+  setupSlashingExtension,
+  setupStakingExtension,
+  StakingExtension,
+} from "@cosmjs/stargate";
+import { connectComet } from "@cosmjs/tendermint-rpc";
+import networkConfigs from "./networks";
+import relayerConfigs from "./relayers";
+import {
+  GAS_PRICES,
+  GENESIS_ALLOCATION,
+  WALLET_KEYS,
+  WALLET_MNEMONIC_WORD_COUNT,
+} from "./constants";
+import * as path from "node:path";
+import {
+  QueryParamsResponse,
+  QuerySigningInfoResponse,
+  QuerySigningInfosResponse,
+} from "cosmjs-types/cosmos/slashing/v1beta1/query";
+
+async function walletReducer(
+  acc: Promise<Record<string, string>>,
+  key: string,
+): Promise<Record<string, string>> {
+  try {
+    const accObj = await acc;
+    const wallet = await DirectSecp256k1HdWallet.generate(
+      WALLET_MNEMONIC_WORD_COUNT,
+    );
+    accObj[key] = wallet.mnemonic;
+    return accObj;
+  } catch (err) {
+    throw err;
+  }
+}
+
+export async function generateWallets(): Promise<Record<string, string>> {
+  return WALLET_KEYS.reduce(
+    walletReducer,
+    Promise.resolve({} as Record<string, string>),
+  );
+}
+
+export function isCosmoparkNetworkConfigKey(
+  key: any,
+): key is keyof CosmoparkNetworkConfig {
+  return [
+    "binary",
+    "chain_id",
+    "denom",
+    "image",
+    "prefix",
+    "trace",
+    "validators",
+    "validators_balance",
+    "loglevel",
+    "type",
+    "commands",
+    "genesis_opts",
+    "config_opts",
+    "app_opts",
+    "upload",
+    "post_start",
+  ].includes(key);
+}
+
+export function isCosmoparkRelayerKey(key: any): key is keyof CosmoparkRelayer {
+  return [
+    "type",
+    "networks",
+    "connections",
+    "environment",
+    "image",
+    "log_level",
+    "binary",
+    "config",
+    "mnemonic",
+    "balance",
+  ].includes(key);
+}
+
+type NetworkKeys = keyof typeof networkConfigs;
+type NetworkOptsType = Partial<Record<keyof typeof networkConfigs, any>>;
+
+export function getNetworkConfig(
+  id: NetworkKeys,
+  opts: NetworkOptsType = {},
+): CosmoparkNetworkConfig {
+  let config = { ...networkConfigs[id] };
+
+  const extOpts = { ...opts[id] };
+
+  for (const [key, value] of Object.entries(extOpts)) {
+    if (isCosmoparkNetworkConfigKey(key)) {
+      // Handle object merges
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value)
+      ) {
+        config = {
+          ...config,
+          [key]: { ...(config[key] as object), ...value },
+        };
+      } else {
+        // Directly assign for arrays and other types
+        config = { ...config, [key]: value };
+      }
+    } else {
+      console.warn(`Key ${key} is not a valid config property.`);
+    }
+  }
+
+  return config;
+}
+
+type RelayerKeys = keyof typeof relayerConfigs;
+type RelayerOptsType = Partial<Record<keyof typeof relayerConfigs, any>>;
+
+export function getRelayerConfig(
+  id: RelayerKeys,
+  opts: RelayerOptsType = {},
+): CosmoparkRelayer {
+  let config = { ...relayerConfigs[id] };
+
+  const extOpts = { ...opts[id] };
+
+  for (const [key, value] of Object.entries(extOpts)) {
+    if (isCosmoparkRelayerKey(key)) {
+      // Handle object merges, excluding arrays
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value)
+      ) {
+        config = {
+          ...config,
+          [key]: { ...(config[key] as object), ...value },
+        };
+      } else {
+        // Directly assign for arrays and other types
+        config = { ...config, [key]: value };
+      }
+    } else {
+      console.warn(`Key ${key} is not a valid config property.`);
+    }
+  }
+
+  return config;
+}
+
+export function awaitNeutronChannels(rest: string, rpc: string): Promise<void> {
+  return waitFor(async () => {
+    try {
+      const client = new NeutronClient({
+        apiURL: `http://${rest}`,
+        rpcURL: `http://${rpc}`,
+        prefix: "neutron",
+      });
+      const res = await client.IbcCoreChannelV1.query.queryChannels(undefined, {
+        timeout: 1000,
+      });
+      if (
+        res.data.channels &&
+        res.data.channels.length > 0 &&
+        res.data.channels[0].counterparty &&
+        res.data.channels[0].counterparty.channel_id !== ""
+      ) {
+        return true;
+      }
+      await sleep(10000);
+      return false;
+    } catch (e) {
+      await sleep(10000);
+      return false;
+    }
+  }, 100_000);
+}
+
+type WalletKeys = (typeof WALLET_KEYS)[number];
+
+export function getRelayerWallet(
+  wallets: Record<WalletKeys, string>,
+  relayer: RelayerKeys,
+) {
+  if (relayer === "neutron") {
+    return wallets.neutronqueryrelayer;
+  } else if (relayer === "hermes") {
+    return wallets.hermes;
+  }
+
+  throw new Error("Invalid relayer type. Could not get wallet.");
+}
+
+export async function initCosmopark(
+  ctx: string = "default",
+  networks: NetworkKeys[] = ["gaia", "neutron"],
+  relayerOverrides: RelayerOptsType = {},
+  networkOverrides: NetworkOptsType = {},
+): Promise<Cosmopark> {
+  try {
+    // Create test environment wallets
+    const mnemonics = await generateWallets();
+
+    const wallets = Object.entries(mnemonics)
+      .slice(3) // skip master, hermes, neutronqueryrelayer
+      .reduce(
+        (acc, [key, mnemonic]) => {
+          acc.push([key, { mnemonic, balance: String(GENESIS_ALLOCATION) }]);
+          return acc;
+        },
+        [] as [string, CosmoparkWallet][],
+      );
+
+    // Create the cosmopark config
+    const baseConfig: CosmoparkConfig = {
+      context: ctx,
+      networks: {},
+      master_mnemonic: mnemonics.master,
+      loglevel: "error",
+      wallets: Object.fromEntries(wallets),
+      relayers: Object.values(relayerConfigs),
+    };
+
+    // Configure networks
+    for (const network of networks) {
+      baseConfig.networks[network] = getNetworkConfig(
+        network,
+        networkOverrides,
+      );
+    }
+
+    // Configure relayers
+    baseConfig.relayers = Object.keys(relayerConfigs).map((relayer) => {
+      const relayerKey = relayer as RelayerKeys;
+
+      return {
+        ...getRelayerConfig(relayerKey, relayerOverrides),
+        networks,
+        mnemonic: getRelayerWallet(mnemonics, relayerKey),
+      };
+    });
+
+    // 6. Create the cosmopark instance
+    const cosmoparkInstance = await Cosmopark.create(baseConfig);
+
+    // 7. Wait for the first block
+    await cosmoparkInstance.awaitFirstBlock();
+
+    // 8. Wait for neutron channels to be ready
+    if (networks.includes("neutron")) {
+      await awaitNeutronChannels(
+        `127.0.0.1:${cosmoparkInstance.ports["neutron"].rest}`,
+        `127.0.0.1:${cosmoparkInstance.ports["neutron"].rpc}`,
+      ).catch((err: unknown) => {
+        if (err instanceof Error) {
+          console.log(`Failed to await neutron channels: ${err.message}`);
+        } else {
+          console.log(`Unknown error awaiting neutron channels:`, err);
+        }
+        throw err;
+      });
+    }
+
+    return cosmoparkInstance;
+  } catch (err) {
+    throw err;
+  }
+}
+
+interface TestSuiteParams {
+  ctx?: string;
+  networks?: NetworkKeys[];
+  relayerOverrides?: RelayerOptsType;
+  networkOverrides?: NetworkOptsType;
+}
+
+interface SlashingExtension {
+  readonly slashing: {
+    signingInfo: (consAddress: string) => Promise<QuerySigningInfoResponse>;
+    signingInfos: (
+      paginationKey?: Uint8Array,
+    ) => Promise<QuerySigningInfosResponse>;
+    params: () => Promise<QueryParamsResponse>;
+  };
+}
+
+export class TestSuite {
+  private cosmopark!: Cosmopark;
+  private gaiaQueryClient!: QueryClient & SlashingExtension & StakingExtension;
+
+  private constructor() {}
+
+  public static async create({
+    ctx = "default",
+    networks = ["gaia", "neutron"],
+    relayerOverrides = {},
+    networkOverrides = {},
+  }: TestSuiteParams = {}): Promise<TestSuite> {
+    try {
+      const ts = new TestSuite();
+      await ts.init(ctx, networks, relayerOverrides, networkOverrides);
+      return ts;
+    } catch (err) {
+      console.error("TestSuite.create:", err);
+      return Promise.reject(err);
+    }
+  }
+
+  private async init(
+    ctx?: string,
+    networks?: NetworkKeys[],
+    relayerOverrides?: RelayerOptsType,
+    networkOverrides?: NetworkOptsType,
+  ): Promise<void> {
+    try {
+      this.cosmopark = await initCosmopark(
+        ctx,
+        networks,
+        relayerOverrides,
+        networkOverrides,
+      );
+      const rpc = `http://127.0.0.1:${this.cosmopark.ports["gaia"].rpc}`;
+      const client = await connectComet(rpc);
+      this.gaiaQueryClient = QueryClient.withExtensions(
+        client,
+        setupSlashingExtension,
+        setupStakingExtension,
+      );
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+
+  getNetworkPrefix(network: NetworkKeys): string {
+    return this.cosmopark.networks[network].config.prefix;
+  }
+
+  getNetworkRpc(network: NetworkKeys): string {
+    return `127.0.0.1:${this.cosmopark.ports[network].rpc}`;
+  }
+
+  getNetworkGasPrices(network: NetworkKeys): string {
+    const prices = GAS_PRICES[network];
+    if (!prices)
+      throw new Error(`Was unable to find gas prices for ${network}`);
+    return `${prices.amount}${prices.denom}`;
+  }
+
+  getWalletMnemonics(): Record<string, string> {
+    if (!this.cosmopark.config.wallets) {
+      return {};
+    }
+
+    return Object.entries(this.cosmopark.config.wallets).reduce(
+      (acc, [key, value]) => {
+        acc[key] = value.mnemonic;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
+  }
+
+  async slashValidator(): Promise<string> {
+    try {
+      let slashedAddress = "";
+      const ctx = this.cosmopark.config.context ?? "default";
+      const validatorCount = this.cosmopark.networks["gaia"].config.validators;
+      if (!validatorCount) throw new Error("No validator count was found.");
+
+      // Always pauses the last validator defined by cosmopark
+      const validatorContainer = `${ctx}-gaia_val${validatorCount}-1`;
+      await runCommand(`docker pause ${validatorContainer}`);
+
+      await waitFor(async () => {
+        let found = false;
+
+        const signingInfos = await this.gaiaQueryClient.slashing.signingInfos();
+
+        for (const info of signingInfos.info) {
+          if (!found) {
+            found = info.jailedUntil.seconds > 0;
+            if (found) {
+              slashedAddress = info.address;
+            }
+          }
+        }
+
+        return found;
+      }, 60000);
+
+      await runCommand(`docker unpause ${validatorContainer}`);
+
+      return slashedAddress;
+    } catch (err: unknown) {
+      console.error("TestSuite.slashValidator:", err);
+      return Promise.reject(err);
+    }
+  }
+
+  async pauseIcqRelaying(): Promise<void> {
+    try {
+      const relayers = this.cosmopark.config.relayers;
+      if (relayers) {
+        const idx = relayers.findIndex((relayer) => {
+          return relayer.type === "neutron";
+        });
+
+        return this.cosmopark.pauseRelayer("neutron", idx);
+      } else {
+        return Promise.reject("No relayers found in Cosmopark config to pause");
+      }
+    } catch (err) {
+      console.error("TestSuite.pauseIcqRelaying:", err);
+      return Promise.reject(err);
+    }
+  }
+
+  async resumeIcqRelaying(): Promise<void> {
+    try {
+      const relayers = this.cosmopark.config.relayers;
+      if (relayers) {
+        const idx = relayers.findIndex((relayer) => {
+          return relayer.type === "neutron";
+        });
+
+        return this.cosmopark.resumeRelayer("neutron", idx);
+      } else {
+        return Promise.reject(
+          "No relayers found in Cosmopark config to resume",
+        );
+      }
+    } catch (err) {
+      console.error("TestSuite.resumeIcqRelaying:", err);
+      return Promise.reject(err);
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    try {
+      const ctx = this.cosmopark.config.context ?? "default";
+      const composeFilePath = path.resolve(
+        __dirname,
+        `../../docker-compose-${ctx}.yml`,
+      );
+
+      try {
+        await fs.access(composeFilePath);
+      } catch {
+        throw new Error(
+          `Docker compose file ${composeFilePath} does not exist`,
+        );
+      }
+      await runCommand(
+        `docker-compose -f ${composeFilePath} down --volumes --remove-orphans`,
+        true,
+      );
+
+      return Promise.resolve();
+    } catch (err) {
+      console.error("TestSuite.cleanup:", err);
+      return Promise.reject(err);
+    }
+  }
+}

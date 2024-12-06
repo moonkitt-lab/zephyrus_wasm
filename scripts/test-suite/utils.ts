@@ -1,6 +1,4 @@
-import * as path from "node:path";
 import { exec } from "child_process";
-import { promises as fs } from "fs";
 
 export function requiredEnvVar(name: string): string {
   const value = process.env[name];
@@ -9,31 +7,6 @@ export function requiredEnvVar(name: string): string {
   }
   return value;
 }
-
-export function artifact(name: string): string {
-  return `${__dirname}/../../artifacts/${name}.wasm`;
-}
-
-export async function readContractFileBytes(
-  filePath: string,
-): Promise<Uint8Array> {
-  try {
-    await fs.access(filePath);
-    const contents = await fs.readFile(filePath);
-    return new Uint8Array(contents);
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      throw new Error(`Contract file ${filePath} does not exist`);
-    }
-
-    throw error;
-  }
-}
-
-export const getFileNameWithoutExtension = (filePath: string) =>
-  path.basename(filePath, path.extname(filePath));
-
-export const snakeCaseToKebabCase = (str: string) => str.replace(/_/g, "-");
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

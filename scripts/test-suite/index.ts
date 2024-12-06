@@ -91,7 +91,7 @@ export function isCosmoparkRelayerKey(key: any): key is keyof CosmoparkRelayer {
   ].includes(key);
 }
 
-type NetworkKeys = keyof typeof networkConfigs;
+export type NetworkKeys = keyof typeof networkConfigs;
 type NetworkOptsType = Partial<Record<keyof typeof networkConfigs, any>>;
 
 export function getNetworkConfig(
@@ -189,7 +189,7 @@ export function awaitNeutronChannels(rest: string, rpc: string): Promise<void> {
   }, 100_000);
 }
 
-type WalletKeys = (typeof WALLET_KEYS)[number];
+export type WalletKeys = (typeof WALLET_KEYS)[number];
 
 export function getRelayerWallet(
   wallets: Record<WalletKeys, string>,

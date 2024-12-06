@@ -29,12 +29,12 @@ on-chain-test test="all": setup-test-suite setup-node
         echo "Running all tests except those with prefix 'test-suite-sanity'..."
         for file in scripts/*.test.ts; do
             if ! echo $file | grep -q '^scripts/test-suite-sanity'; then
-                echo "Running test $$file..."
-                bun test $file
+                echo "Running test $file..."
+                bun test $file --timeout 1600000 --bail 1
             fi
         done
     else
-        bun test "scripts/{{ test }}.test.ts"
+        bun test "scripts/{{ test }}.test.ts" --timeout 1600000 --bail 1
     fi
 
 [script]
@@ -113,9 +113,12 @@ export GAIA_IMAGE          := "cosmos/gaia:" + GAIA_VERSION
 export NEUTRON_VERSION     := env("NEUTRON_VERSION", "v5.0.2")
 export NEUTRON_IMAGE       := "neutron-org/neutron:" + NEUTRON_VERSION
 
+export HYDRO_VERSION       := env("HYDRO_VERSION", "v2.0.2")
+
 # Setup on-chain test suite
 [script]
 setup-test-suite:
+    root_dir=`pwd`
     if ! docker image inspect $ICQ_RELAYER_IMAGE > /dev/null 2>&1; then
         echo "Build {{ ICQ_RELAYER_IMAGE }}"
         mkdir -p target/test-suite
@@ -124,6 +127,7 @@ setup-test-suite:
         git clone --depth 1 --branch $ICQ_RELAYER_VERSION https://github.com/neutron-org/neutron-query-relayer
         cd neutron-query-relayer
         docker build . -t $ICQ_RELAYER_IMAGE
+        cd $root_dir
     fi
     if ! docker image inspect $HERMES_IMAGE > /dev/null 2>&1; then
         echo "Build {{ HERMES_IMAGE }}"
@@ -138,6 +142,7 @@ setup-test-suite:
         sed -i '/^USER hermes:hermes/d' ci/release/hermes.Dockerfile
         sed -i 's/--chown=hermes:hermes[[:space:]]*//' ci/release/hermes.Dockerfile
         docker build -t $HERMES_IMAGE -f ci/release/hermes.Dockerfile .
+        cd $root_dir
     fi
     if ! docker image inspect $GAIA_IMAGE > /dev/null 2>&1; then
         echo "Build {{ GAIA_IMAGE }}"
@@ -150,6 +155,7 @@ setup-test-suite:
         sed -i '/RUN adduser -D nonroot -u 1025 -G nonroot/d' Dockerfile
         sed -i '/^USER nonroot/d' Dockerfile
         docker build -t $GAIA_IMAGE -f Dockerfile .
+        cd $root_dir
     fi
     if ! docker image inspect $NEUTRON_IMAGE > /dev/null 2>&1; then
         echo "Build {{ NEUTRON_IMAGE }}"
@@ -163,7 +169,15 @@ setup-test-suite:
         sed -i '/^    bash \/opt\/neutron\/network\/start.sh$/d' Dockerfile
         echo 'ENTRYPOINT ["neutrond"]' >> Dockerfile
         docker buildx build --load --build-context app=. -t $NEUTRON_IMAGE --build-arg BINARY=neutrond .
+        cd $root_dir
     fi
+    hydro_dir="target/test-suite/hydro/$HYDRO_VERSION"
+    if [ ! -d $hydro_dir ]; then
+        mkdir -p target/test-suite/hydro
+        cd target/test-suite/hydro
+        git clone --depth 1 --branch $HYDRO_VERSION https://github.com/informalsystems/hydro $HYDRO_VERSION
+        cd $root_dir
+    fi 
 
 
 # Clean on-chain test suite
@@ -181,3 +195,4 @@ clean-test-suite:
     if docker image inspect $NEUTRON_IMAGE > /dev/null 2>&1; then
         docker rmi -f $NEUTRON_IMAGE
     fi
+    rm -rf target/test-suite

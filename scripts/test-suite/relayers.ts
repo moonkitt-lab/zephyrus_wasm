@@ -22,7 +22,7 @@ const hermesRelayer: CosmoparkRelayer = {
       denom: NEUTRON_GAS_PRICE.denom,
     },
     "chains.0.gas_price": {
-      price: Number(GAIA_GAS_PRICE.amount),
+      price: Number(GAIA_GAS_PRICE.amount) * 100,
       denom: GAIA_GAS_PRICE.denom,
     },
     "chains.0.clock_drift": "1m",

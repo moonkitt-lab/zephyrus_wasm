@@ -653,6 +653,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hydro-interface"
+version = "0.1.0"
+dependencies = [
+ "cosmwasm-schema",
+ "cosmwasm-std",
+]
+
+[[package]]
 name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1278,7 +1286,10 @@ dependencies = [
  "cosmwasm-std",
  "cw-storage-plus",
  "cw-utils",
+ "hydro-interface",
  "neutron-sdk",
+ "serde",
+ "thiserror",
  "zephyrus-core",
 ]
 

@@ -19,6 +19,11 @@ pub enum ExecuteMsg {
         auto_maintenance: bool,
         hydromancer_id: u64,
     },
+    UpdateVesselsClass {
+        hydro_lock_ids: Vec<u64>,
+        hydro_lock_duration: u64,
+    },
+    AutoMaintain {},
 }
 
 #[cw_serde]

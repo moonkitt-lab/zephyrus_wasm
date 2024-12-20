@@ -2,7 +2,7 @@ use cosmwasm_std::{
     entry_point, to_json_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Reply,
     Response as CwResponse, StdError, SubMsg, WasmMsg,
 };
-use hydro_interface::msgs::ExecuteMsg::LockTokens;
+use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::msgs::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, VotingPowerResponse};
 
@@ -73,6 +73,43 @@ fn execute_build_vessel(
     Ok(Response::new().add_submessage(execute_lock_tokens_submsg))
 }
 
+// This function loops through all the vessels, and filters those who have auto_maintenance true
+// Then, it combines them by hydro_lock_duration, and calls execute_update_vessels_class
+fn execute_auto_maintain(_deps: DepsMut, _info: MessageInfo) -> Result<Response, StdError> {
+    todo!()
+}
+
+// This function takes a list of vessels (hydro_lock_ids) and a duration
+// And calls the Hydro function:
+// ExecuteMsg::RefreshLockDuration {
+//     lock_ids,
+//     lock_duration,
+// }
+// TODO: Need to be careful that all the vessels are currently less than hydro_lock_duration
+// Otherwise, the RefreshLockDuration will fail
+fn execute_update_vessels_class(
+    deps: DepsMut,
+    info: MessageInfo,
+    hydro_lock_ids: Vec<u64>,
+    hydro_lock_duration: u64,
+) -> Result<Response, StdError> {
+    let hydro_config = state::get_hydro_config(deps.storage)?;
+
+    let refresh_duration_msg = RefreshLockDuration {
+        lock_ids: hydro_lock_ids,
+        lock_duration: hydro_lock_duration,
+    };
+
+    // There should not be any funds?
+    let execute_refresh_duration_msg = WasmMsg::Execute {
+        contract_addr: hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&refresh_duration_msg)?,
+        funds: info.funds.clone(),
+    };
+
+    Ok(Response::new().add_message(execute_refresh_duration_msg))
+}
+
 #[entry_point]
 pub fn execute(
     deps: DepsMut,
@@ -86,6 +123,11 @@ pub fn execute(
             auto_maintenance,
             hydromancer_id,
         } => execute_build_vessel(deps, info, lock_duration, auto_maintenance, hydromancer_id),
+        ExecuteMsg::AutoMaintain {} => execute_auto_maintain(deps, info),
+        ExecuteMsg::UpdateVesselsClass {
+            hydro_lock_ids,
+            hydro_lock_duration,
+        } => execute_update_vessels_class(deps, info, hydro_lock_ids, hydro_lock_duration),
     }
 }
 
@@ -105,12 +147,10 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
 }
 
 #[entry_point]
-pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
+pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {
         // Cas : retour du premier message
-        HYDRO_LOCK_TOKENS_REPLY_ID => {
-            todo!()
-        }
+        HYDRO_LOCK_TOKENS_REPLY_ID => handle_lock_tokens_reply(deps, msg),
         _ => Err(ContractError::CustomError {
             msg: "Unknown reply id".to_string(),
         }),
@@ -120,4 +160,18 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
 #[entry_point]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, StdError> {
     Ok(Response::default())
+}
+
+fn handle_lock_tokens_reply(deps: DepsMut, reply: Reply) -> Result<Response, ContractError> {
+    let BuildVesselParameters {
+        lock_duration,
+        auto_maintenance,
+        hydromancer_id,
+    } = from_json(reply.payload).expect("build vessel parameters should always be attached");
+
+    state::add_vessel(deps.storage, &vessel, &info.sender)?;
+
+    // do something else
+
+    Ok(res)
 }

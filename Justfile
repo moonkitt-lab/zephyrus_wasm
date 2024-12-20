@@ -108,9 +108,9 @@ export ICQ_RELAYER_VERSION := env("ICQ_RELAYER_VERSION", "v0.3.0")
 export ICQ_RELAYER_IMAGE   := "neutron-org/neutron-query-relayer:" + ICQ_RELAYER_VERSION
 export HERMES_VERSION      := env("HERMES_VERSION", "v1.10.4")
 export HERMES_IMAGE        := "informalsystems/hermes:" + HERMES_VERSION
-export GAIA_VERSION        := env("GAIA_VERSION", "v21.0.0")
+export GAIA_VERSION        := env("GAIA_VERSION", "v21.0.1")
 export GAIA_IMAGE          := "cosmos/gaia:" + GAIA_VERSION
-export NEUTRON_VERSION     := env("NEUTRON_VERSION", "v5.0.2")
+export NEUTRON_VERSION     := env("NEUTRON_VERSION", "v5.0.4")
 export NEUTRON_IMAGE       := "neutron-org/neutron:" + NEUTRON_VERSION
 
 export HYDRO_VERSION       := env("HYDRO_VERSION", "v2.0.2")

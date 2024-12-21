@@ -1,16 +1,28 @@
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Reply,
+    entry_point, from_json, to_json_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Reply,
     Response as CwResponse, StdError, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
 use neutron_sdk::bindings::msg::NeutronMsg;
+use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, VotingPowerResponse};
 
-use crate::{errors::ContractError, state};
+use crate::{
+    domain,
+    errors::ContractError,
+    state::{self, Vessel},
+};
 
 type Response = CwResponse<NeutronMsg>;
 
 const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
+#[derive(Serialize, Deserialize)]
+struct BuildVesselParameters {
+    lock_duration: u64,
+    auto_maintenance: bool,
+    hydromancer_id: u64,
+    owner: Addr,
+}
 
 #[entry_point]
 pub fn instantiate(
@@ -57,8 +69,6 @@ fn execute_build_vessel(
     auto_maintenance: bool,
     hydromancer_id: u64,
 ) -> Result<Response, StdError> {
-    //verify that the hydromancer exists, may be if not found we can affect default hydromancer !?
-    state::get_hydromancer(deps.storage, hydromancer_id)?;
     let hydro_config = state::get_hydro_config(deps.storage)?;
 
     let lock_tokens_msg = LockTokens { lock_duration };
@@ -67,8 +77,15 @@ fn execute_build_vessel(
         msg: to_json_binary(&lock_tokens_msg)?,
         funds: info.funds.clone(),
     };
+    let build_vessel_params = BuildVesselParameters {
+        lock_duration,
+        auto_maintenance,
+        hydromancer_id,
+        owner: info.sender.clone(),
+    };
     let execute_lock_tokens_submsg: SubMsg<NeutronMsg> =
-        SubMsg::reply_on_success(execute_lock_tokens_msg, HYDRO_LOCK_TOKENS_REPLY_ID);
+        SubMsg::reply_on_success(execute_lock_tokens_msg, HYDRO_LOCK_TOKENS_REPLY_ID)
+            .with_payload(to_json_binary(&build_vessel_params)?);
 
     Ok(Response::new().add_submessage(execute_lock_tokens_submsg))
 }
@@ -163,15 +180,34 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, 
 }
 
 fn handle_lock_tokens_reply(deps: DepsMut, reply: Reply) -> Result<Response, ContractError> {
-    let BuildVesselParameters {
-        lock_duration,
-        auto_maintenance,
-        hydromancer_id,
-    } = from_json(reply.payload).expect("build vessel parameters should always be attached");
+    let response = reply
+        .result
+        .into_result()
+        .expect("always issued on_success");
 
-    state::add_vessel(deps.storage, &vessel, &info.sender)?;
+    let build_vessel_params: BuildVesselParameters =
+        from_json(reply.payload).expect("build vessel parameters always attached");
+
+    let lock_id = response
+        .events
+        .into_iter()
+        .flat_map(|e| e.attributes)
+        .find_map(|attr| (attr.key == "lock_id").then(|| attr.value.parse().ok()))
+        .flatten()
+        .expect("lock tokens reply always contains valid lock_id attribute");
+    domain::vessel::create_new_vessel(
+        deps,
+        lock_id,
+        build_vessel_params.auto_maintenance,
+        build_vessel_params.lock_duration,
+        build_vessel_params.hydromancer_id,
+        &build_vessel_params.owner,
+    )?;
 
     // do something else
 
-    Ok(res)
+    Ok(Response::new()
+        .add_attribute("action", "build_vessel")
+        .add_attribute("hydro_lock_id", lock_id.to_string())
+        .add_attribute("owner", build_vessel_params.owner.to_string()))
 }

@@ -3,6 +3,8 @@ use cosmwasm_std::{Addr, Decimal, DepsMut, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 
+use crate::errors::ContractError;
+
 #[cw_serde]
 pub struct HydroConfig {
     pub hydro_contract_address: Addr,
@@ -20,14 +22,13 @@ pub struct Hydromancer {
 pub struct Vessel {
     pub hydro_lock_id: HydroLockId,
     pub class_period: u64,
-    pub next_enabled_round: u64,
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,
 }
 
-type UserId = u64;
-type HydromancerId = u64;
-type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
+pub type UserId = u64;
+pub type HydromancerId = u64;
+pub type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
 
 // Sequences
 const USER_NEXT_ID: Item<UserId> = Item::new("user_next_id");
@@ -99,8 +100,18 @@ pub fn save_default_hydroamancer_id(
 pub fn get_hydromancer(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
-) -> Result<Hydromancer, StdError> {
-    HYDROMANCERS.load(storage, hydromancer_id)
+) -> Result<Hydromancer, ContractError> {
+    match HYDROMANCERS.load(storage, hydromancer_id) {
+        Ok(hydromancer) => Ok(hydromancer),
+        Err(_) => Err(ContractError::HydromancerNotFound { hydromancer_id }),
+    }
+}
+
+pub fn add_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer: &Hydromancer,
+) -> Result<(), StdError> {
+    HYDROMANCERS.save(storage, hydromancer.hydromancer_id, hydromancer)
 }
 
 pub fn get_hydro_config(storage: &dyn Storage) -> Result<HydroConfig, StdError> {

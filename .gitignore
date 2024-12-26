@@ -4,3 +4,4 @@ artifacts
 schema
 ts
 docker-compose-default.yml
+nix-installer

@@ -1,11 +1,13 @@
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Reply,
-    Response as CwResponse, StdError, SubMsg, WasmMsg,
+    entry_point, from_json, to_json_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo,
+    Reply, Response as CwResponse, StdError, SubMsg, Uint128, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
-use zephyrus_core::msgs::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, VotingPowerResponse};
+use zephyrus_core::msgs::{
+    ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, VesselCreationMsg, VotingPowerResponse,
+};
 
 use crate::{
     domain,
@@ -65,34 +67,65 @@ pub fn instantiate(
 fn execute_build_vessel(
     deps: DepsMut,
     info: MessageInfo,
-    lock_duration: u64,
-    auto_maintenance: bool,
-    hydromancer_id: u64,
-) -> Result<Response, StdError> {
+    vessels: Vec<VesselCreationMsg>,
+) -> Result<Response, ContractError> {
     let hydro_config = state::get_hydro_config(deps.storage)?;
+    let mut sub_messages = vec![];
+    if info.funds.len() != 1 {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Must provide exactly one coin to lock",
+        )));
+    }
 
-    let lock_tokens_msg = LockTokens { lock_duration };
-    let execute_lock_tokens_msg = WasmMsg::Execute {
-        contract_addr: hydro_config.hydro_contract_address.to_string(),
-        msg: to_json_binary(&lock_tokens_msg)?,
-        funds: info.funds.clone(),
-    };
-    let build_vessel_params = BuildVesselParameters {
-        lock_duration,
-        auto_maintenance,
-        hydromancer_id,
-        owner: info.sender.clone(),
-    };
-    let execute_lock_tokens_submsg: SubMsg<NeutronMsg> =
-        SubMsg::reply_on_success(execute_lock_tokens_msg, HYDRO_LOCK_TOKENS_REPLY_ID)
-            .with_payload(to_json_binary(&build_vessel_params)?);
+    let funds = info.funds[0].clone();
+    let mut rest = funds.amount.clone();
+    let mut total_shares = 0u8;
+    for (i, vessel) in vessels.iter().enumerate() {
+        let hydromancer_id = vessel.hydromancer_id;
+        let lock_duration = vessel.lock_duration;
+        let auto_maintenance = vessel.auto_maintenance;
+        total_shares += vessel.share;
+        let lock_tokens_msg = LockTokens { lock_duration };
+        let lsm_amount;
+        if i == vessels.len() - 1 {
+            lsm_amount = rest;
+        } else {
+            lsm_amount = Decimal::from_ratio(vessel.share, 100u128)
+                .saturating_mul(Decimal::new(funds.amount))
+                .to_uint_ceil();
+            rest = rest.checked_sub(lsm_amount).unwrap();
+        }
+        let vessel_fund = cosmwasm_std::Coin {
+            amount: lsm_amount,
+            denom: funds.denom.clone(),
+        };
+        let execute_lock_tokens_msg = WasmMsg::Execute {
+            contract_addr: hydro_config.hydro_contract_address.to_string(),
+            msg: to_json_binary(&lock_tokens_msg)?,
+            funds: vec![vessel_fund.clone()],
+        };
 
-    Ok(Response::new().add_submessage(execute_lock_tokens_submsg))
+        let build_vessel_params = BuildVesselParameters {
+            lock_duration,
+            auto_maintenance,
+            hydromancer_id,
+            owner: info.sender.clone(),
+        };
+        let execute_lock_tokens_submsg: SubMsg<NeutronMsg> =
+            SubMsg::reply_on_success(execute_lock_tokens_msg, HYDRO_LOCK_TOKENS_REPLY_ID)
+                .with_payload(to_json_binary(&build_vessel_params)?);
+        sub_messages.push(execute_lock_tokens_submsg);
+    }
+    if total_shares != 100 {
+        return Err(ContractError::TotalSharesError { total_shares });
+    }
+
+    Ok(Response::new().add_submessages(sub_messages))
 }
 
 // This function loops through all the vessels, and filters those who have auto_maintenance true
 // Then, it combines them by hydro_lock_duration, and calls execute_update_vessels_class
-fn execute_auto_maintain(_deps: DepsMut, _info: MessageInfo) -> Result<Response, StdError> {
+fn execute_auto_maintain(_deps: DepsMut, _info: MessageInfo) -> Result<Response, ContractError> {
     todo!()
 }
 
@@ -109,7 +142,7 @@ fn execute_update_vessels_class(
     info: MessageInfo,
     hydro_lock_ids: Vec<u64>,
     hydro_lock_duration: u64,
-) -> Result<Response, StdError> {
+) -> Result<Response, ContractError> {
     let hydro_config = state::get_hydro_config(deps.storage)?;
 
     let refresh_duration_msg = RefreshLockDuration {
@@ -133,13 +166,9 @@ pub fn execute(
     _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response, StdError> {
+) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::BuildVessel {
-            lock_duration,
-            auto_maintenance,
-            hydromancer_id,
-        } => execute_build_vessel(deps, info, lock_duration, auto_maintenance, hydromancer_id),
+        ExecuteMsg::BuildVessel { vessels } => execute_build_vessel(deps, info, vessels),
         ExecuteMsg::AutoMaintain {} => execute_auto_maintain(deps, info),
         ExecuteMsg::UpdateVesselsClass {
             hydro_lock_ids,

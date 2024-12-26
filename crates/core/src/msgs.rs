@@ -12,12 +12,18 @@ pub struct InstantiateMsg {
 }
 
 #[cw_serde]
+pub struct VesselCreationMsg {
+    pub lock_duration: u64,
+    pub auto_maintenance: bool,
+    pub hydromancer_id: u64,
+    pub share: u8,
+}
+
+#[cw_serde]
 pub enum ExecuteMsg {
     // TODO: Determine message variants
     BuildVessel {
-        lock_duration: u64,
-        auto_maintenance: bool,
-        hydromancer_id: u64,
+        vessels: Vec<VesselCreationMsg>,
     },
     UpdateVesselsClass {
         hydro_lock_ids: Vec<u64>,

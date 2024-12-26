@@ -15,4 +15,7 @@ pub enum ContractError {
 
     #[error("Hydromancer {hydromancer_id} not found")]
     HydromancerNotFound { hydromancer_id: u64 },
+
+    #[error("Total shares error: {total_shares}")]
+    TotalSharesError { total_shares: u8 },
 }

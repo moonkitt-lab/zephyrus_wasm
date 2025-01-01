@@ -5,12 +5,14 @@ use cosmwasm_std::{
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
-use zephyrus_core::msgs::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, VotingPowerResponse};
+use zephyrus_core::msgs::{
+    ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, Vessel, VesselsResponse, VotingPowerResponse,
+};
 
 use crate::{
     domain,
     errors::ContractError,
-    state::{self, Vessel},
+    state::{self},
 };
 
 type Response = CwResponse<NeutronMsg>;
@@ -152,12 +154,29 @@ fn query_voting_power(_deps: Deps, _env: Env) -> Result<VotingPowerResponse, Std
     todo!()
 }
 
+fn query_vessels_by_owner(
+    deps: Deps,
+    owner: String,
+    start_index: usize,
+    limit: usize,
+) -> Result<Binary, StdError> {
+    let owner = deps.api.addr_validate(owner.as_str())?;
+    let vessels = state::get_vessels_by_owner(deps.storage, owner, start_index, limit)?;
+    to_json_binary(&VesselsResponse { vessels })
+}
+
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
     let binary = match msg {
         QueryMsg::VotingPower {} => {
             query_voting_power(deps, env).and_then(|res| to_json_binary(&res))
         }
+        QueryMsg::VesselsByOwner {
+            owner,
+            start_index,
+            limit,
+        } => query_vessels_by_owner(deps, owner, start_index, limit)
+            .and_then(|res| to_json_binary(&res)),
     }?;
 
     Ok(binary)

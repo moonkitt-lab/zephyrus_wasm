@@ -1,6 +1,10 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Decimal;
 
+pub type UserId = u64;
+pub type HydromancerId = u64;
+pub type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
+
 #[cw_serde]
 pub struct InstantiateMsg {
     pub hydro_contract_address: String,
@@ -27,8 +31,21 @@ pub enum ExecuteMsg {
 }
 
 #[cw_serde]
+pub struct Vessel {
+    pub hydro_lock_id: HydroLockId,
+    pub class_period: u64,
+    pub auto_maintenance: bool,
+    pub hydromancer_id: u64,
+}
+
+#[cw_serde]
 pub struct VotingPowerResponse {
     pub voting_power: u64,
+}
+
+#[cw_serde]
+pub struct VesselsResponse {
+    pub vessels: Vec<Vessel>,
 }
 
 #[cw_serde]
@@ -37,6 +54,12 @@ pub enum QueryMsg {
     // TODO: Determine message variants and response types
     #[returns(VotingPowerResponse)]
     VotingPower {},
+    #[returns(VesselsResponse)]
+    VesselsByOwner {
+        owner: String,
+        start_index: usize,
+        limit: usize,
+    },
 }
 
 #[cw_serde]

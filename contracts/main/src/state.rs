@@ -2,6 +2,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, DepsMut, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
+use zephyrus_core::msgs::{HydroLockId, HydromancerId, UserId, Vessel};
 
 use crate::errors::ContractError;
 
@@ -17,18 +18,6 @@ pub struct Hydromancer {
     pub name: String,
     pub commission_rate: Decimal,
 }
-
-#[cw_serde]
-pub struct Vessel {
-    pub hydro_lock_id: HydroLockId,
-    pub class_period: u64,
-    pub auto_maintenance: bool,
-    pub hydromancer_id: u64,
-}
-
-pub type UserId = u64;
-pub type HydromancerId = u64;
-pub type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
 
 // Sequences
 const USER_NEXT_ID: Item<UserId> = Item::new("user_next_id");
@@ -140,4 +129,20 @@ pub fn add_vessel(
 
 pub fn get_vessel(storage: &dyn Storage, hydro_lock_id: HydroLockId) -> Result<Vessel, StdError> {
     VESSELS.load(storage, hydro_lock_id)
+}
+
+pub fn get_vessels_by_owner(
+    storage: &dyn Storage,
+    owner: Addr,
+    start_index: usize,
+    limit: usize,
+) -> Result<Vec<Vessel>, StdError> {
+    let vessel_ids = OWNER_VESSELS.load(storage, owner.as_str())?;
+    vessel_ids
+        .iter()
+        .enumerate()
+        .skip(start_index)
+        .take(limit)
+        .map(|id| VESSELS.load(storage, *id.1))
+        .collect()
 }

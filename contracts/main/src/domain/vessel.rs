@@ -1,8 +1,9 @@
 use cosmwasm_std::{Addr, DepsMut};
+use zephyrus_core::msgs::{HydroLockId, HydromancerId, Vessel};
 
 use crate::{
     errors::ContractError,
-    state::{self, get_hydromancer, HydroLockId, HydromancerId, Vessel},
+    state::{self, get_hydromancer},
 };
 
 type VesselClass = u64;

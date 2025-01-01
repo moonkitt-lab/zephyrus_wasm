@@ -18,6 +18,9 @@ use crate::{
 type Response = CwResponse<NeutronMsg>;
 
 const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
+const MAX_PAGINATION_LIMIT: usize = 1000;
+const DEFAULT_PAGINATION_LIMIT: usize = 100;
+
 #[derive(Serialize, Deserialize)]
 struct BuildVesselParameters {
     lock_duration: u64,
@@ -157,12 +160,22 @@ fn query_voting_power(_deps: Deps, _env: Env) -> Result<VotingPowerResponse, Std
 fn query_vessels_by_owner(
     deps: Deps,
     owner: String,
-    start_index: usize,
-    limit: usize,
+    start_index: Option<usize>,
+    limit: Option<usize>,
 ) -> Result<Binary, StdError> {
     let owner = deps.api.addr_validate(owner.as_str())?;
+    let limit = limit
+        .unwrap_or(DEFAULT_PAGINATION_LIMIT)
+        .min(MAX_PAGINATION_LIMIT);
+    let start_index = start_index.unwrap_or(0);
     let vessels = state::get_vessels_by_owner(deps.storage, owner, start_index, limit)?;
-    to_json_binary(&VesselsResponse { vessels })
+    let total = vessels.len();
+    to_json_binary(&VesselsResponse {
+        vessels,
+        start_index,
+        limit,
+        total,
+    })
 }
 
 #[entry_point]

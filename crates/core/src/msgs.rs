@@ -46,6 +46,9 @@ pub struct VotingPowerResponse {
 #[cw_serde]
 pub struct VesselsResponse {
     pub vessels: Vec<Vessel>,
+    pub start_index: usize,
+    pub limit: usize,
+    pub total: usize,
 }
 
 #[cw_serde]
@@ -57,8 +60,8 @@ pub enum QueryMsg {
     #[returns(VesselsResponse)]
     VesselsByOwner {
         owner: String,
-        start_index: usize,
-        limit: usize,
+        start_index: Option<usize>,
+        limit: Option<usize>,
     },
 }
 

@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Decimal, DepsMut, StdError, Storage};
+use cosmwasm_std::{Addr, Decimal, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::msgs::{HydroLockId, HydromancerId, UserId, Vessel};

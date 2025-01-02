@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo,
-    Reply, Response as CwResponse, StdError, SubMsg, Uint128, WasmMsg,
+    Reply, Response as CwResponse, StdError, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
 use neutron_sdk::bindings::msg::NeutronMsg;

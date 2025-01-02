@@ -1,5 +1,5 @@
 use cosmwasm_std::{Addr, DepsMut};
-use zephyrus_core::msgs::{HydroLockId, HydromancerId, Vessel, VesselCreationMsg};
+use zephyrus_core::msgs::{HydroLockId, HydromancerId, Vessel};
 
 use crate::{
     errors::ContractError,

@@ -6,7 +6,7 @@ use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, Vessel, VesselsResponse, VotingPowerResponse,
+    ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg, VesselsResponse, VotingPowerResponse,
 };
 
 use crate::{

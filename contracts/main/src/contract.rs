@@ -178,6 +178,28 @@ fn query_vessels_by_owner(
     })
 }
 
+fn query_vessels_by_hydromancer(
+    deps: Deps,
+    hydromancer_addr: String,
+    start_index: Option<usize>,
+    limit: Option<usize>,
+) -> Result<Binary, StdError> {
+    let hydromancer_addr = deps.api.addr_validate(hydromancer_addr.as_str())?;
+    let limit = limit
+        .unwrap_or(DEFAULT_PAGINATION_LIMIT)
+        .min(MAX_PAGINATION_LIMIT);
+    let start_index = start_index.unwrap_or(0);
+    let vessels =
+        state::get_vessels_by_hydromancer(deps.storage, hydromancer_addr, start_index, limit)?;
+    let total = vessels.len();
+    to_json_binary(&VesselsResponse {
+        vessels,
+        start_index,
+        limit,
+        total,
+    })
+}
+
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
     let binary = match msg {
@@ -189,6 +211,12 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             start_index,
             limit,
         } => query_vessels_by_owner(deps, owner, start_index, limit)
+            .and_then(|res| to_json_binary(&res)),
+        QueryMsg::VesselsByHydromancer {
+            hydromancer_addr,
+            start_index,
+            limit,
+        } => query_vessels_by_hydromancer(deps, hydromancer_addr, start_index, limit)
             .and_then(|res| to_json_binary(&res)),
     }?;
 

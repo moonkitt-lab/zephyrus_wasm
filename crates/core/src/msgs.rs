@@ -63,6 +63,12 @@ pub enum QueryMsg {
         start_index: Option<usize>,
         limit: Option<usize>,
     },
+    #[returns(VesselsResponse)]
+    VesselsByHydromancer {
+        hydromancer_addr: String,
+        start_index: Option<usize>,
+        limit: Option<usize>,
+    },
 }
 
 #[cw_serde]

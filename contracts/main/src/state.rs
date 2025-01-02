@@ -35,6 +35,9 @@ const VESSELS: Map<HydroLockId, Vessel> = Map::new("vessels");
 // Addr as &str when used as a key allows for less cloning
 const OWNER_VESSELS: Map<&str, BTreeSet<HydroLockId>> = Map::new("owner_vessels");
 
+const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
+    Map::new("hydromancer_vessels_ids");
+
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
     HYDROMANCER_NEXT_ID.save(storage, &0)?;
@@ -123,6 +126,11 @@ pub fn add_vessel(
     owner_vessels.insert(vessel_id);
 
     OWNER_VESSELS.save(storage, owner.as_str(), &owner_vessels)?;
+    let mut vessels_hydromancer = HYDROMANCER_VESSELS
+        .may_load(storage, vessel.hydromancer_id)?
+        .unwrap_or_default();
+    vessels_hydromancer.insert(vessel_id);
+    HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
 
     Ok(())
 }
@@ -138,6 +146,22 @@ pub fn get_vessels_by_owner(
     limit: usize,
 ) -> Result<Vec<Vessel>, StdError> {
     let vessel_ids = OWNER_VESSELS.load(storage, owner.as_str())?;
+    vessel_ids
+        .iter()
+        .enumerate()
+        .skip(start_index)
+        .take(limit)
+        .map(|id| VESSELS.load(storage, *id.1))
+        .collect()
+}
+
+pub fn get_vessels_by_hydromancer(
+    storage: &dyn Storage,
+    hydromancer_addr: Addr,
+    start_index: usize,
+    limit: usize,
+) -> Result<Vec<Vessel>, StdError> {
+    let vessel_ids = OWNER_VESSELS.load(storage, hydromancer_addr.as_str())?;
     vessel_ids
         .iter()
         .enumerate()

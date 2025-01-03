@@ -32,6 +32,7 @@
           binaryen # wasm optimization tools
           docker-compose # for local test setup
           coreutils # sha256sum for checksum generation
+          bun # JavaScript runtime
         ];
 
         RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";    

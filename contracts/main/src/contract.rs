@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo,
-    Reply, Response as CwResponse, StdError, SubMsg, WasmMsg,
+    Reply, Response as CwResponse, StdError, StdResult, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -198,15 +198,21 @@ fn query_vessels_by_owner(
     owner: String,
     start_index: Option<usize>,
     limit: Option<usize>,
-) -> Result<Binary, StdError> {
+) -> StdResult<VesselsResponse> {
     let owner = deps.api.addr_validate(owner.as_str())?;
     let limit = limit
         .unwrap_or(DEFAULT_PAGINATION_LIMIT)
         .min(MAX_PAGINATION_LIMIT);
     let start_index = start_index.unwrap_or(0);
-    let vessels = state::get_vessels_by_owner(deps.storage, owner, start_index, limit)?;
+
+    let vessels = state::get_vessels_by_owner(deps.storage, owner.clone(), start_index, limit)
+        .map_err(|e| {
+            StdError::generic_err(format!("Failed to get vessels for {}: {}", owner, e))
+        })?;
+
     let total = vessels.len();
-    to_json_binary(&VesselsResponse {
+
+    Ok(VesselsResponse {
         vessels,
         start_index,
         limit,
@@ -219,16 +225,18 @@ fn query_vessels_by_hydromancer(
     hydromancer_addr: String,
     start_index: Option<usize>,
     limit: Option<usize>,
-) -> Result<Binary, StdError> {
+) -> StdResult<VesselsResponse> {
     let hydromancer_addr = deps.api.addr_validate(hydromancer_addr.as_str())?;
     let limit = limit
         .unwrap_or(DEFAULT_PAGINATION_LIMIT)
         .min(MAX_PAGINATION_LIMIT);
     let start_index = start_index.unwrap_or(0);
+
     let vessels =
         state::get_vessels_by_hydromancer(deps.storage, hydromancer_addr, start_index, limit)?;
     let total = vessels.len();
-    to_json_binary(&VesselsResponse {
+
+    Ok(VesselsResponse {
         vessels,
         start_index,
         limit,
@@ -238,25 +246,24 @@ fn query_vessels_by_hydromancer(
 
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
-    let binary = match msg {
-        QueryMsg::VotingPower {} => {
-            query_voting_power(deps, env).and_then(|res| to_json_binary(&res))
-        }
+    match msg {
+        QueryMsg::VotingPower {} => to_json_binary(&query_voting_power(deps, env)?),
         QueryMsg::VesselsByOwner {
             owner,
             start_index,
             limit,
-        } => query_vessels_by_owner(deps, owner, start_index, limit)
-            .and_then(|res| to_json_binary(&res)),
+        } => to_json_binary(&query_vessels_by_owner(deps, owner, start_index, limit)?),
         QueryMsg::VesselsByHydromancer {
             hydromancer_addr,
             start_index,
             limit,
-        } => query_vessels_by_hydromancer(deps, hydromancer_addr, start_index, limit)
-            .and_then(|res| to_json_binary(&res)),
-    }?;
-
-    Ok(binary)
+        } => to_json_binary(&query_vessels_by_hydromancer(
+            deps,
+            hydromancer_addr,
+            start_index,
+            limit,
+        )?),
+    }
 }
 
 #[entry_point]

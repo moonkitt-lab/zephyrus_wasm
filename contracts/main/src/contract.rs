@@ -95,8 +95,9 @@ fn execute_build_vessel(
             lsm_amount = rest;
         } else {
             lsm_amount = Decimal::from_ratio(vessel.share, 100u128)
-                .saturating_mul(Decimal::new(funds.amount))
-                .to_uint_ceil();
+                .checked_mul(Decimal::from_atomics(funds.amount, 0).unwrap())
+                .unwrap()
+                .to_uint_floor();
             rest = rest.checked_sub(lsm_amount).unwrap();
         }
         let vessel_fund = cosmwasm_std::Coin {

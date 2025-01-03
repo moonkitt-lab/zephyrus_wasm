@@ -29,6 +29,7 @@ const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");
 const HYDRO_CONFIG: Item<HydroConfig> = Item::new("hydro_config");
 
 const HYDROMANCERS: Map<HydromancerId, Hydromancer> = Map::new("hydromancers");
+const HYDROMANCERID_BY_ADDR: Map<&str, HydromancerId> = Map::new("hydromancerid_address");
 const DEFAULT_HYDROMANCER_ID: Item<HydromancerId> = Item::new("default_hydromancer_id");
 
 const VESSELS: Map<HydroLockId, Vessel> = Map::new("vessels");
@@ -70,11 +71,13 @@ pub fn insert_new_hydromancer(
 
     let hydromancer = Hydromancer {
         hydromancer_id,
-        address: hydromancer_address,
+        address: hydromancer_address.clone(),
         name: hydromancer_name,
         commission_rate: hydromancer_commission_rate,
     };
     HYDROMANCERS.save(storage, hydromancer_id, &hydromancer)?;
+
+    HYDROMANCERID_BY_ADDR.save(storage, hydromancer_address.as_str(), &hydromancer_id)?;
 
     HYDROMANCER_NEXT_ID.save(storage, &(hydromancer_id + 1))?;
 
@@ -96,6 +99,19 @@ pub fn get_hydromancer(
     match HYDROMANCERS.load(storage, hydromancer_id) {
         Ok(hydromancer) => Ok(hydromancer),
         Err(_) => Err(ContractError::HydromancerNotFound { hydromancer_id }),
+    }
+}
+
+pub fn get_hydromancer_id_by_address(
+    storage: &dyn Storage,
+    hydromancer_addr: Addr,
+) -> Result<HydromancerId, StdError> {
+    match HYDROMANCERID_BY_ADDR.load(storage, hydromancer_addr.as_str()) {
+        Ok(hydromancer_id) => Ok(hydromancer_id),
+        Err(_) => Err(StdError::generic_err(format!(
+            "Hydromancer {} not found",
+            hydromancer_addr
+        ))),
     }
 }
 
@@ -145,13 +161,21 @@ pub fn get_vessels_by_owner(
     start_index: usize,
     limit: usize,
 ) -> Result<Vec<Vessel>, StdError> {
-    let vessel_ids = OWNER_VESSELS.load(storage, owner.as_str())?;
+    // First try to load and handle the case where the owner has no vessels
+    let vessel_ids: BTreeSet<u64> = OWNER_VESSELS
+        .may_load(storage, owner.as_str())?
+        .unwrap_or_default(); // Returns empty BTreeSet if not found
+
     vessel_ids
         .iter()
         .enumerate()
         .skip(start_index)
         .take(limit)
-        .map(|id| VESSELS.load(storage, *id.1))
+        .map(|id| {
+            VESSELS.load(storage, *id.1).map_err(|e| {
+                StdError::generic_err(format!("Failed to load vessel {}: {}", id.1, e))
+            })
+        })
         .collect()
 }
 
@@ -161,12 +185,21 @@ pub fn get_vessels_by_hydromancer(
     start_index: usize,
     limit: usize,
 ) -> Result<Vec<Vessel>, StdError> {
-    let vessel_ids = OWNER_VESSELS.load(storage, hydromancer_addr.as_str())?;
+    let hydromancer_id = get_hydromancer_id_by_address(storage, hydromancer_addr.clone())?;
+
+    let vessel_ids = HYDROMANCER_VESSELS
+        .may_load(storage, hydromancer_id)?
+        .unwrap_or_default(); // Returns empty BTreeSet if not found
+
     vessel_ids
         .iter()
         .enumerate()
         .skip(start_index)
         .take(limit)
-        .map(|id| VESSELS.load(storage, *id.1))
+        .map(|id| {
+            VESSELS.load(storage, *id.1).map_err(|e| {
+                StdError::generic_err(format!("Failed to load vessel {}: {}", id.1, e))
+            })
+        })
         .collect()
 }

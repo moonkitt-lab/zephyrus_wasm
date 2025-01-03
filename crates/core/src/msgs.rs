@@ -28,6 +28,7 @@ pub enum ExecuteMsg {
     // TODO: Determine message variants
     BuildVessel {
         vessels: Vec<VesselCreationMsg>,
+        receiver: Option<String>,
     },
     UpdateVesselsClass {
         hydro_lock_ids: Vec<u64>,

@@ -72,6 +72,7 @@ fn execute_build_vessel(
     deps: DepsMut,
     info: MessageInfo,
     vessels: Vec<VesselCreationMsg>,
+    receiver: Option<String>,
 ) -> Result<Response, ContractError> {
     let hydro_config = state::get_hydro_config(deps.storage)?;
     let mut sub_messages = vec![];
@@ -81,8 +82,12 @@ fn execute_build_vessel(
         )));
     }
 
+    let receiver = receiver.map_or(Ok::<Addr, ContractError>(info.sender.clone()), |a| {
+        Ok(deps.api.addr_validate(&a)?)
+    })?;
+
     let funds = info.funds[0].clone();
-    let mut rest = funds.amount.clone();
+    let mut rest = funds.amount;
     let mut total_shares = 0u8;
     for (i, vessel) in vessels.iter().enumerate() {
         let hydromancer_id = vessel.hydromancer_id;
@@ -114,7 +119,7 @@ fn execute_build_vessel(
             lock_duration,
             auto_maintenance,
             hydromancer_id,
-            owner: info.sender.clone(),
+            owner: receiver.clone(),
         };
         let execute_lock_tokens_submsg: SubMsg<NeutronMsg> =
             SubMsg::reply_on_success(execute_lock_tokens_msg, HYDRO_LOCK_TOKENS_REPLY_ID)
@@ -173,7 +178,9 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::BuildVessel { vessels } => execute_build_vessel(deps, info, vessels),
+        ExecuteMsg::BuildVessel { vessels, receiver } => {
+            execute_build_vessel(deps, info, vessels, receiver)
+        }
         ExecuteMsg::AutoMaintain {} => execute_auto_maintain(deps, info),
         ExecuteMsg::UpdateVesselsClass {
             hydro_lock_ids,

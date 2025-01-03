@@ -38,14 +38,12 @@ async function generateBindings() {
       const packageName = extractPackageName(cargoTomlPath);
       if (packageName) {
         const contractName = toPascalCase(packageName);
-        const schemaDir = path.resolve(
-          process.cwd(),
-          "schema",
-          packageName,
-        );
+        const schemaDir = path.resolve(process.cwd(), "schema", packageName);
         const outPath = path.resolve(process.cwd(), "ts");
 
-        console.log(`Generating TypeScript bindings for ${packageName} from ${schemaDir}...`);
+        console.log(
+          `Generating TypeScript bindings for ${packageName} from ${schemaDir}...`
+        );
 
         await codegen({
           contracts: [
@@ -73,7 +71,7 @@ async function generateBindings() {
               enabled: false,
             },
             messageComposer: {
-              enabled: false,
+              enabled: true,
             },
             messageBuilder: {
               enabled: false,

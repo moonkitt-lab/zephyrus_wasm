@@ -39,6 +39,9 @@ const OWNER_VESSELS: Map<&str, BTreeSet<HydroLockId>> = Map::new("owner_vessels"
 const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
     Map::new("hydromancer_vessels_ids");
 
+const AUTO_MAINTAINED_VESSELS_BY_CLASS: Map<u64, BTreeSet<HydroLockId>> =
+    Map::new("auto_maintained_vessels_by_class");
+
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
     HYDROMANCER_NEXT_ID.save(storage, &0)?;
@@ -147,6 +150,13 @@ pub fn add_vessel(
         .unwrap_or_default();
     vessels_hydromancer.insert(vessel_id);
     HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
+    if vessel.auto_maintenance {
+        let mut vessels_class = AUTO_MAINTAINED_VESSELS_BY_CLASS
+            .may_load(storage, vessel.class_period)?
+            .unwrap_or_default();
+        vessels_class.insert(vessel_id);
+        AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
+    }
 
     Ok(())
 }
@@ -202,4 +212,8 @@ pub fn get_vessels_by_hydromancer(
             })
         })
         .collect()
+}
+
+pub fn get_vessels_id_by_class() -> Result<Map<u64, BTreeSet<HydroLockId>>, StdError> {
+    Ok(AUTO_MAINTAINED_VESSELS_BY_CLASS)
 }

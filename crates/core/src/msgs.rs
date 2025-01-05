@@ -35,6 +35,10 @@ pub enum ExecuteMsg {
         hydro_lock_duration: u64,
     },
     AutoMaintain {},
+    ModifyAutoMaintenance {
+        hydro_lock_id: u64,
+        auto_maintenance: bool,
+    },
 }
 
 #[cw_serde]

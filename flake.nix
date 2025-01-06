@@ -28,7 +28,6 @@
         packages = with pkgs; [
           rustToolchain
           just # better Make
-          nushell # easier than bash
           binaryen # wasm optimization tools
           docker-compose # for local test setup
           coreutils # sha256sum for checksum generation

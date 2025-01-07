@@ -36,7 +36,7 @@ pub enum ExecuteMsg {
     },
     AutoMaintain {},
     ModifyAutoMaintenance {
-        hydro_lock_id: u64,
+        hydro_lock_ids: Vec<u64>,
         auto_maintenance: bool,
     },
 }

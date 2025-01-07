@@ -210,17 +210,27 @@ fn execute_update_vessels_class(
 fn execute_modify_auto_maintenance(
     deps: DepsMut,
     info: MessageInfo,
-    hydro_lock_id: u64,
+    hydro_lock_ids: Vec<u64>,
     auto_maintenance: bool,
 ) -> Result<Response, ContractError> {
-    if !state::is_vessel_owner(deps.storage, &info.sender, hydro_lock_id)? {
-        return Err(ContractError::Unauthorized {});
+    for hydro_lock_id in hydro_lock_ids.iter() {
+        if !state::is_vessel_owner(deps.storage, &info.sender, *hydro_lock_id)? {
+            return Err(ContractError::Unauthorized {});
+        }
+        state::modify_auto_maintenance(deps.storage, *hydro_lock_id, auto_maintenance)?;
     }
-    state::modify_auto_maintenance(deps.storage, hydro_lock_id, auto_maintenance)?;
+
     Ok(Response::new()
         .add_attribute("action", "modify_auto_maintenance")
         .add_attribute("new_auto_maintenance", auto_maintenance.to_string())
-        .add_attribute("hydro_lock_id", hydro_lock_id.to_string()))
+        .add_attribute(
+            "hydro_lock_id",
+            hydro_lock_ids
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ))
 }
 
 #[entry_point]
@@ -240,9 +250,9 @@ pub fn execute(
             hydro_lock_duration,
         } => execute_update_vessels_class(deps, info, hydro_lock_ids, hydro_lock_duration),
         ExecuteMsg::ModifyAutoMaintenance {
-            hydro_lock_id,
+            hydro_lock_ids,
             auto_maintenance,
-        } => execute_modify_auto_maintenance(deps, info, hydro_lock_id, auto_maintenance),
+        } => execute_modify_auto_maintenance(deps, info, hydro_lock_ids, auto_maintenance),
     }
 }
 

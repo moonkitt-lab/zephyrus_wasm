@@ -1,5 +1,6 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Decimal;
+use cosmwasm_std::{Binary, Decimal};
+use neutron_sdk::bindings::types::Height;
 
 pub type UserId = u64;
 pub type HydromancerId = u64;
@@ -15,19 +16,19 @@ pub struct InstantiateMsg {
     pub default_hydromancer_address: String,
 }
 
+#[derive(Copy)]
 #[cw_serde]
-pub struct VesselCreationMsg {
+pub struct BuildVesselParams {
     pub lock_duration: u64,
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,
-    pub share: u8,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
     // TODO: Determine message variants
     BuildVessel {
-        vessels: Vec<VesselCreationMsg>,
+        vessels: Vec<BuildVesselParams>,
         receiver: Option<String>,
     },
     UpdateVesselsClass {
@@ -35,11 +36,21 @@ pub enum ExecuteMsg {
         hydro_lock_duration: u64,
     },
     AutoMaintain {},
+    RegisterIca {},
+    SellVessel {
+        hydro_lock_id: u64,
+        query_result: Binary,
+        height: Height,
+    },
+    BuyVessel {
+        hydro_lock_id: u64,
+    },
 }
 
 #[cw_serde]
 pub struct Vessel {
     pub hydro_lock_id: HydroLockId,
+    pub tokenized_share_record_id: u64,
     pub class_period: u64,
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,

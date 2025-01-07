@@ -11,15 +11,18 @@ type VesselClass = u64;
 pub fn create_new_vessel(
     deps: DepsMut,
     vessel_id: HydroLockId,
+    tokenized_share_record_id: u64,
     auto_maintenance: bool,
     vessel_class: VesselClass,
     hydromancer_id: HydromancerId,
     owner: &Addr,
 ) -> Result<Vessel, ContractError> {
     get_hydromancer(deps.storage, hydromancer_id)?;
+
     let vessel = Vessel {
         hydro_lock_id: vessel_id,
         class_period: vessel_class,
+        tokenized_share_record_id,
         hydromancer_id,
         auto_maintenance,
     };
@@ -45,9 +48,11 @@ mod test {
         let hydromancer_id = 1;
         let vessel_id = 1;
         let vessel_class = 1;
+        let record_id = 1;
         let result = create_new_vessel(
             deps.as_mut(),
             vessel_id,
+            record_id,
             true,
             vessel_class,
             hydromancer_id,
@@ -72,9 +77,11 @@ mod test {
         let hydromancer_id = 1;
         let vessel_id = 1;
         let vessel_class = 1;
+        let record_id = 1;
         let vessel = create_new_vessel(
             deps.as_mut(),
             vessel_id,
+            record_id,
             true,
             vessel_class,
             hydromancer_id,

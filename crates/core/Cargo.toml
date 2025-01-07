@@ -4,5 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+cosmos-sdk-proto.workspace = true
 cosmwasm-schema.workspace = true
 cosmwasm-std.workspace = true
+neutron-sdk.workspace = true
+neutron-std.workspace = true
+prost.workspace = true

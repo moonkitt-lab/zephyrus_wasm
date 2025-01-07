@@ -146,11 +146,15 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
     );
     let mut response = Response::new();
     let hydro_config = state::get_hydro_config(deps.storage)?;
-
+    let mut messages_counter = 0;
     // Collect all keys into a Vec<u64>
     for item in iterator {
         let (hydro_period, hydro_lock_ids) = item?;
 
+        if hydro_lock_ids.len() == 0 {
+            continue;
+        }
+        messages_counter += 1;
         let refresh_duration_msg = RefreshLockDuration {
             lock_ids: hydro_lock_ids.iter().cloned().collect(),
             lock_duration: hydro_period,
@@ -160,6 +164,7 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
             msg: to_json_binary(&refresh_duration_msg)?,
             funds: vec![],
         };
+
         response = response
             .add_attribute("Action", "Refresh lock duration")
             .add_attribute(
@@ -171,6 +176,9 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
                     .join(","),
             );
         response = response.add_message(execute_refresh_msg);
+    }
+    if messages_counter == 0 {
+        return Err(ContractError::NoVesselsToAutoMaintain {});
     }
 
     Ok(response)

@@ -1,27 +1,43 @@
+use core::panic;
+
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
-    Coin, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse, StdError,
-    StdResult, SubMsg, WasmMsg,
+    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, AnyMsg, BankMsg, BankQuery,
+    Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply,
+    Response as CwResponse, StdError, StdResult, SubMsg, WasmMsg,
 };
-use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens};
-use hydro_interface::state::query_lock_entries;
-use neutron_sdk::bindings::msg::NeutronMsg;
+use hydro_interface::{msgs::ExecuteMsg as HydroMsg, state::query_lock_entries, QuerierExt as _};
+use neutron_sdk::{
+    bindings::{
+        msg::NeutronMsg,
+        types::{Height, KVKey},
+    },
+    interchain_queries::{types::QueryPayload, v047::types::STAKING_STORE_KEY},
+    sudo::msg::SudoMsg,
+};
+use neutron_std::types::neutron::interchainqueries::{
+    MsgSubmitQueryResult, QueryResult, StorageValue,
+};
+use prost::Message;
 use serde::{Deserialize, Serialize};
-use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
-    VesselsResponse, VotingPowerResponse,
+use zephyrus_core::{
+    msgs::{
+        BuildVesselParams, ConstantsResponse, EscrowIcaAddressResponse, ExecuteMsg, InstantiateMsg,
+        MigrateMsg, ProofOps, QueryMsg, VesselsResponse, VotingPowerResponse,
+    },
+    neutron::QuerierExt as _,
+    state::{Constants, HydroConfig, HydroLockId, Vessel},
 };
-use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
 use crate::{
-    errors::ContractError,
+    errors::{ContractError, TokenOwnershipProofError},
     helpers::ibc::{DenomTrace, QuerierExt as IbcQuerierExt},
     helpers::vectors::{compare_coin_vectors, compare_u64_vectors},
-    state,
+    state::{self, VesselOwnershipState},
 };
 
 type Response = CwResponse<NeutronMsg>;
 
+const ESCROW_ICA_NAME: &str = "escrow";
 const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
 const DECOMMISSION_REPLY_ID: u64 = 2;
 
@@ -97,8 +113,12 @@ fn execute_build_vessel(
     receiver: Option<String>,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
+
     validate_contract_is_not_paused(&constants)?;
 
+    // Note: Check again when IBC v2 is out, because the order of tokens may not be deterministic
+    // Today with IBC v1, IBC transfers can only send one token at once, so we don't have any issue
+    // And for tokens directly sent to the contract, the order is deterministic
     if info.funds.is_empty() {
         return Err(ContractError::NoTokensReceived);
     }
@@ -117,9 +137,6 @@ fn execute_build_vessel(
 
     let mut hydro_lock_msgs = vec![];
 
-    // Note: Check again when IBC v2 is out, because the order of tokens may not be deterministic
-    // Today with IBC v1, IBC transfers can only send one token at once, so we don't have any issue
-    // And for tokens directly sent to the contract, the order is deterministic
     for (params, token) in vessels.into_iter().zip(info.funds) {
         if !state::hydromancer_exists(deps.storage, params.hydromancer_id) {
             return Err(ContractError::HydromancerNotFound {
@@ -132,8 +149,8 @@ fn execute_build_vessel(
         let tokenized_share_record_id = extract_tokenized_share_record_id(&denom_trace)
             .ok_or_else(|| ContractError::InvalidLsmTokenReceived(token.denom.clone()))?;
 
-        if state::is_tokenized_share_record_used(deps.storage, tokenized_share_record_id) {
-            return Err(ContractError::TokenizedShareRecordAlreadyInUse(
+        if state::is_tokenized_share_record_active(deps.storage, tokenized_share_record_id) {
+            return Err(ContractError::TokenizedShareRecordAlreadyInActiveUse(
                 tokenized_share_record_id,
             ));
         }
@@ -150,7 +167,7 @@ fn execute_build_vessel(
             .clone()
             .into_string();
 
-        let msg = to_json_binary(&LockTokens {
+        let msg = to_json_binary(&HydroMsg::LockTokens {
             lock_duration: params.lock_duration,
         })?;
 
@@ -196,7 +213,7 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
             continue;
         }
 
-        let refresh_duration_msg = RefreshLockDuration {
+        let refresh_duration_msg = HydroMsg::RefreshLockDuration {
             lock_ids: hydro_lock_ids.iter().cloned().collect(),
             lock_duration: hydro_period,
         };
@@ -246,7 +263,7 @@ fn execute_update_vessels_class(
 
     let hydro_config = constants.hydro_config;
 
-    let refresh_duration_msg = RefreshLockDuration {
+    let refresh_duration_msg = HydroMsg::RefreshLockDuration {
         lock_ids: hydro_lock_ids,
         lock_duration: hydro_lock_duration,
     };
@@ -356,7 +373,7 @@ fn execute_decommission_vessels(
     }
 
     // Create the execute message for unlocking
-    let hydro_unlock_msg = UnlockTokens {
+    let hydro_unlock_msg = HydroMsg::UnlockTokens {
         lock_ids: Some(hydro_lock_ids.clone()),
     };
 
@@ -377,6 +394,169 @@ fn execute_decommission_vessels(
             .with_payload(to_json_binary(&decommission_vessels_params)?);
 
     Ok(Response::new().add_submessage(execute_hydro_unlock_msg))
+}
+
+/// Registers the ICA used to hold the tokenized share ownership.
+/// If the ICA connection is closed due to IBC error, this can be executed again to re-instate it.
+fn execute_register_ica(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
+    let received_funds = cw_utils::one_coin(&info)?;
+
+    let required_funds = deps.querier.interchain_account_register_fee()?;
+
+    if received_funds != required_funds {
+        return Err(ContractError::InsufficientIcaRegistrationFunds {
+            received: received_funds,
+            required: required_funds,
+        });
+    }
+
+    let constants = state::get_constants(deps.storage)?;
+
+    let hub_connection_id = deps
+        .querier
+        .hydro_hub_connection_id(&constants.hydro_config.hydro_contract_address)?;
+
+    let register_ica_msg = NeutronMsg::register_interchain_account(
+        hub_connection_id,
+        ESCROW_ICA_NAME.to_owned(),
+        Some(info.funds),
+    );
+
+    Ok(Response::default().add_message(register_ica_msg))
+}
+
+#[derive(Message)]
+struct TokenizedShareRecord {
+    #[prost(uint64, tag = "1")]
+    id: u64,
+    #[prost(string, tag = "2")]
+    owner: String,
+    #[prost(string, tag = "3")]
+    module_account: String,
+    #[prost(string, tag = "4")]
+    validator: String,
+}
+
+fn execute_sell_vessel(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    hydro_lock_id: u64,
+    kv_value: Binary,
+    kv_proof_ops: ProofOps,
+    query_height: Height,
+) -> Result<Response, ContractError> {
+    // check vessel is elligible for sale by the message sender
+    let VesselOwnershipState::OwnedByUser { owner } =
+        state::get_vessel_ownership_state(deps.storage, hydro_lock_id)?
+    else {
+        return Err(ContractError::VesselCannotBeSold);
+    };
+
+    if info.sender.as_str() != owner {
+        return Err(ContractError::SenderIsNotVesselOwner);
+    }
+
+    // check the submitted query result and proof is from a height higher than any previously set minimum height to prevent re-use attack
+    if let Some(minimum_proof_height) =
+        state::get_vessel_token_ownership_proof_minimum_height(deps.storage, hydro_lock_id)?
+    {
+        if query_height.revision_number < minimum_proof_height.revision_number
+            || query_height.revision_height < minimum_proof_height.revision_height
+        {
+            return Err(TokenOwnershipProofError::BelowMinimumHeight {
+                received: query_height,
+                minimum: minimum_proof_height,
+            }
+            .into());
+        }
+    }
+
+    // check that the query shows the ownership has been transferred to the escrow ICA
+    let Some(escrow_ica_address) = state::get_escrow_ica_address(deps.storage)? else {
+        return Err(ContractError::EscrowIcaDoesNotExist);
+    };
+
+    let query_result_owner = TokenizedShareRecord::decode(kv_value.as_slice())?.owner;
+
+    if query_result_owner != escrow_ica_address {
+        return Err(TokenOwnershipProofError::OwnerDoesNotMatchIcaAddress {
+            query_result_owner,
+            escrow_ica_address,
+        }
+        .into());
+    }
+
+    // transfer ownership to the escrow ICA and update vessel ownership state
+    // this will be reverted if Neutron detects the proof as invalid
+    state::transfer_vessel_ownership_to_protocol(deps.storage, hydro_lock_id, &escrow_ica_address)?;
+
+    let constants = state::get_constants(deps.storage)?;
+
+    // construct message sequence
+    let connection_id = deps
+        .querier
+        .hydro_hub_connection_id(&constants.hydro_config.hydro_contract_address)?;
+
+    let vessel = state::get_vessel(deps.storage, hydro_lock_id)?;
+
+    let key = [
+        [0x81].as_slice(),
+        vessel.tokenized_share_record_id.to_be_bytes().as_slice(),
+    ]
+    .concat();
+
+    let register_icq_msg = NeutronMsg::register_interchain_query(
+        QueryPayload::KV(vec![KVKey {
+            path: STAKING_STORE_KEY.to_owned(),
+            key: key.clone().into(),
+        }]),
+        connection_id,
+        u64::MAX,
+    )?;
+
+    let query_id = deps
+        .querier
+        .last_registered_interchain_query_id()?
+        .map_or(1, |last_id| last_id + 1);
+
+    let query_result = QueryResult {
+        kv_results: vec![StorageValue {
+            storage_prefix: "staking".to_owned(),
+            key,
+            value: kv_value.into(),
+            proof: Some(kv_proof_ops),
+        }],
+        block: None,
+        height: query_height.revision_height,
+        revision: query_height.revision_number,
+        allow_kv_callbacks: false,
+    };
+
+    #[allow(deprecated)]
+    let update_icq_msg = CosmosMsg::Any(AnyMsg {
+        type_url: "/neutron.interchainqueries.MsgSubmitQueryResult".to_owned(),
+        value: MsgSubmitQueryResult {
+            query_id,
+            sender: env.contract.address.into_string(),
+            result: Some(query_result),
+            client_id: String::new(), // deprecated field but still required?? Hmm.
+        }
+        .encode_to_vec()
+        .into(),
+    });
+
+    let remove_icq_msg = NeutronMsg::remove_interchain_query(query_id);
+
+    Ok(Response::default()
+        // TODO: Add message to pay sender for vessel
+        .add_message(register_icq_msg)
+        .add_message(update_icq_msg)
+        .add_message(remove_icq_msg))
+}
+
+fn execute_buy_vessel(_deps: DepsMut, _hydro_lock_id: u64) -> Result<Response, ContractError> {
+    todo!()
 }
 
 #[entry_point]
@@ -404,6 +584,22 @@ pub fn execute(
         ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
             execute_decommission_vessels(deps, env, info, hydro_lock_ids)
         }
+        ExecuteMsg::RegisterIca {} => execute_register_ica(deps, info),
+        ExecuteMsg::SellVessel {
+            hydro_lock_id,
+            kv_value,
+            kv_proof_ops,
+            height,
+        } => execute_sell_vessel(
+            deps,
+            env,
+            info,
+            hydro_lock_id,
+            kv_value,
+            kv_proof_ops,
+            height,
+        ),
+        ExecuteMsg::BuyVessel { hydro_lock_id } => execute_buy_vessel(deps, hydro_lock_id),
     }
 }
 
@@ -487,6 +683,9 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             limit,
         )?),
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
+        QueryMsg::EscrowIcaAddress {} => to_json_binary(&EscrowIcaAddressResponse {
+            address: state::get_escrow_ica_address(deps.storage)?,
+        }),
     }
 }
 
@@ -504,6 +703,7 @@ fn validate_admin_address(deps: &DepsMut, sender: &Addr) -> Result<(), ContractE
         false => Err(ContractError::Unauthorized {}),
     }
 }
+
 #[entry_point]
 pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, ContractError> {
     match reply.id {
@@ -513,9 +713,48 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
 
         DECOMMISSION_REPLY_ID => handle_unlock_tokens_reply(deps, env, reply),
 
-        _ => Err(ContractError::CustomError {
-            msg: "Unknown reply id".to_string(),
-        }),
+        _ => panic!("unexpected reply id: {}", reply.id),
+    }
+}
+
+pub fn sudo_handle_open_ack(
+    deps: DepsMut,
+    counterparty_version: String,
+) -> Result<Response, ContractError> {
+    #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
+    struct OpenAckVersion {
+        version: String,
+        controller_connection_id: String,
+        host_connection_id: String,
+        address: String,
+        encoding: String,
+        tx_type: String,
+    }
+
+    let parsed_version: OpenAckVersion =
+        from_json(counterparty_version).expect("valid counterparty_version");
+
+    state::save_escrow_ica_address(deps.storage, &parsed_version.address)?;
+
+    Ok(Response::default())
+}
+
+#[entry_point]
+pub fn sudo(deps: DepsMut, _env: Env, msg: SudoMsg) -> Result<Response, ContractError> {
+    match msg {
+        SudoMsg::OpenAck {
+            counterparty_version,
+            ..
+        } => sudo_handle_open_ack(deps, counterparty_version),
+
+        SudoMsg::Response { .. } => todo!("transfer ownership, record ibc client update height for remote"),
+
+        SudoMsg::Error { .. } => todo!("allow transfer ownership retry"),
+
+        SudoMsg::Timeout { .. } => todo!("allow transfer ownership or is it possible that the IBC callback timed out but ownership still transferred? accept proof?"),
+
+        _ => Ok(Response::default())
     }
 }
 
@@ -638,9 +877,9 @@ fn handle_unlock_tokens_reply(
     // Compare hydro_unlocked_tokens with received_coins
     // It might not be in the same order
     if !compare_coin_vectors(hydro_unlocked_tokens.clone(), received_coins) {
-        return Err(ContractError::CustomError {
-            msg: "Unlocked tokens do not match the received ones".to_string(),
-        });
+        Err(StdError::generic_err(
+            "Unlocked tokens do not match the received ones",
+        ))?
     }
 
     // Forward all received tokens to the original sender
@@ -674,9 +913,9 @@ fn handle_unlock_tokens_reply(
         unlocked_hydro_lock_ids.clone(),
         decommission_vessels_params.expected_unlocked_ids,
     ) {
-        return Err(ContractError::CustomError {
-            msg: "Unlocked lock IDs do not match the expected ones".to_string(),
-        });
+        Err(StdError::generic_err(
+            "Unlocked lock IDs do not match the expected ones",
+        ))?
     }
 
     for hydro_lock_id in unlocked_hydro_lock_ids.iter() {

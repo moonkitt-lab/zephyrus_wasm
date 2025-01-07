@@ -8,7 +8,7 @@ import { Coin } from "@cosmjs/amino";
 import { MsgExecuteContractEncodeObject } from "@cosmjs/cosmwasm-stargate";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, Height, ProofOps, ProofOp, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, EscrowIcaAddressResponse, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
@@ -41,6 +41,23 @@ export interface ZephyrusMainMsg {
   }: {
     hydroLockIds: number[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  registerIca: (_funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  sellVessel: ({
+    height,
+    hydroLockId,
+    kvProofOps,
+    kvValue
+  }: {
+    height: Height;
+    hydroLockId: number;
+    kvProofOps: ProofOps;
+    kvValue: Binary;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  buyVessel: ({
+    hydroLockId
+  }: {
+    hydroLockId: number;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   sender: string;
@@ -55,6 +72,9 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.pauseContract = this.pauseContract.bind(this);
     this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
+    this.registerIca = this.registerIca.bind(this);
+    this.sellVessel = this.sellVessel.bind(this);
+    this.buyVessel = this.buyVessel.bind(this);
   }
   buildVessel = ({
     receiver,
@@ -174,6 +194,66 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
         msg: toUtf8(JSON.stringify({
           decommission_vessels: {
             hydro_lock_ids: hydroLockIds
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  registerIca = (_funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          register_ica: {}
+        })),
+        funds: _funds
+      })
+    };
+  };
+  sellVessel = ({
+    height,
+    hydroLockId,
+    kvProofOps,
+    kvValue
+  }: {
+    height: Height;
+    hydroLockId: number;
+    kvProofOps: ProofOps;
+    kvValue: Binary;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          sell_vessel: {
+            height,
+            hydro_lock_id: hydroLockId,
+            kv_proof_ops: kvProofOps,
+            kv_value: kvValue
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  buyVessel = ({
+    hydroLockId
+  }: {
+    hydroLockId: number;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          buy_vessel: {
+            hydro_lock_id: hydroLockId
           }
         })),
         funds: _funds

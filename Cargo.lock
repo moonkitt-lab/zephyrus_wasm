@@ -1333,6 +1333,9 @@ version = "0.1.0"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
+ "neutron-sdk",
+ "neutron-std",
+ "prost",
 ]
 
 [[package]]

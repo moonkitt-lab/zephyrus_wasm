@@ -1,6 +1,7 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, StdError, Storage};
 use cw_storage_plus::{Item, Map};
+use neutron_sdk::bindings::types::Height;
 use std::collections::BTreeSet;
 use zephyrus_core::state::{Constants, HydroLockId, HydromancerId, UserId, Vessel};
 
@@ -12,6 +13,13 @@ pub struct Hydromancer {
     pub address: Addr,
     pub name: String,
     pub commission_rate: Decimal,
+}
+
+#[cw_serde]
+pub enum VesselOwnershipState {
+    OwnedByUser { owner: String },
+    OwnedByProtocol,
+    TransferPending { next_owner: String },
 }
 
 pub type TokenizedShareRecordId = u64;
@@ -29,11 +37,18 @@ const HYDROMANCERS: Map<HydromancerId, Hydromancer> = Map::new("hydromancers");
 const HYDROMANCERID_BY_ADDR: Map<&str, HydromancerId> = Map::new("hydromancerid_address");
 
 const VESSELS: Map<HydroLockId, Vessel> = Map::new("vessels");
-// Addr as &str when used as a key allows for less cloning
-const OWNER_VESSELS: Map<&str, BTreeSet<HydroLockId>> = Map::new("owner_vessels");
+const VESSEL_OWNERSHIP_STATE: Map<HydroLockId, VesselOwnershipState> =
+    Map::new("vessel_ownership_state");
+const VESSEL_TOKEN_OWNERSHIP_PROOF_MINIMUM_HEIGHT: Map<HydroLockId, Height> =
+    Map::new("vessel_token_ownership_proof_minimum_height");
 
 const TOKENIZED_SHARE_RECORDS: Map<TokenizedShareRecordId, HydroLockId> =
     Map::new("tokenized_share_records");
+
+// Addr as &str when used as a key allows for less cloning
+const OWNER_VESSELS: Map<&str, BTreeSet<HydroLockId>> = Map::new("owner_vessels");
+
+const ESCROW_ICA_ADDRESS: Item<String> = Item::new("escrow_ica_address");
 
 const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
     Map::new("hydromancer_vessels_ids");
@@ -87,6 +102,10 @@ pub fn insert_new_hydromancer(
     Ok(hydromancer_id)
 }
 
+pub fn hydromancer_exists(storage: &dyn Storage, hydromancer_id: HydromancerId) -> bool {
+    HYDROMANCERS.has(storage, hydromancer_id)
+}
+
 pub fn get_hydromancer(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
@@ -115,10 +134,6 @@ pub fn add_hydromancer(
     hydromancer: &Hydromancer,
 ) -> Result<(), StdError> {
     HYDROMANCERS.save(storage, hydromancer.hydromancer_id, hydromancer)
-}
-
-pub fn hydromancer_exists(storage: &dyn Storage, hydromancer_id: HydromancerId) -> bool {
-    HYDROMANCERS.has(storage, hydromancer_id)
 }
 
 pub fn add_vessel(
@@ -155,6 +170,14 @@ pub fn add_vessel(
     }
 
     TOKENIZED_SHARE_RECORDS.save(storage, vessel.tokenized_share_record_id, &vessel_id)?;
+
+    save_vessel_ownership_state(
+        storage,
+        vessel_id,
+        VesselOwnershipState::OwnedByUser {
+            owner: owner.as_str().to_owned(),
+        },
+    )?;
 
     Ok(())
 }
@@ -323,4 +346,94 @@ pub fn are_vessels_owned_by(
     Ok(hydro_lock_ids
         .iter()
         .all(|&id_to_check| owner_vessels.contains(&id_to_check)))
+}
+
+pub fn save_escrow_ica_address(
+    storage: &mut dyn Storage,
+    address: &String,
+) -> Result<(), StdError> {
+    ESCROW_ICA_ADDRESS.save(storage, address)
+}
+
+pub fn get_escrow_ica_address(storage: &dyn Storage) -> Result<Option<String>, StdError> {
+    ESCROW_ICA_ADDRESS.may_load(storage)
+}
+
+pub fn save_vessel_token_ownership_proof_minimum_height(
+    storage: &mut dyn Storage,
+    hydro_lock_id: HydroLockId,
+    height: Height,
+) -> Result<(), StdError> {
+    VESSEL_TOKEN_OWNERSHIP_PROOF_MINIMUM_HEIGHT.save(storage, hydro_lock_id, &height)
+}
+
+pub fn get_vessel_token_ownership_proof_minimum_height(
+    storage: &dyn Storage,
+    hydro_lock_id: HydroLockId,
+) -> Result<Option<Height>, StdError> {
+    VESSEL_TOKEN_OWNERSHIP_PROOF_MINIMUM_HEIGHT.may_load(storage, hydro_lock_id)
+}
+
+pub fn save_vessel_ownership_state(
+    storage: &mut dyn Storage,
+    hydro_lock_id: HydroLockId,
+    state: VesselOwnershipState,
+) -> Result<(), StdError> {
+    VESSEL_OWNERSHIP_STATE.save(storage, hydro_lock_id, &state)
+}
+
+pub fn get_vessel_ownership_state(
+    storage: &dyn Storage,
+    hydro_lock_id: HydroLockId,
+) -> Result<VesselOwnershipState, StdError> {
+    VESSEL_OWNERSHIP_STATE
+        .may_load(storage, hydro_lock_id)
+        .map(|res| res.expect("vessel ownership status always set"))
+}
+
+pub fn is_tokenized_share_record_active(
+    storage: &dyn Storage,
+    tokenized_share_record_id: TokenizedShareRecordId,
+) -> bool {
+    TOKENIZED_SHARE_RECORDS.has(storage, tokenized_share_record_id)
+}
+
+/// invariants:
+/// - the vessel must have an owner
+/// - the owner it must be a user, not the protocol
+pub fn transfer_vessel_ownership_to_protocol(
+    storage: &mut dyn Storage,
+    hydro_lock_id: u64,
+    escrow_ica_address: &str,
+) -> Result<(), StdError> {
+    let VesselOwnershipState::OwnedByUser { owner } = VESSEL_OWNERSHIP_STATE
+        .may_load(storage, hydro_lock_id)?
+        .expect("the vessel must have an owner")
+    else {
+        panic!("the owner of the vessel {hydro_lock_id} is not a user");
+    };
+
+    let mut owner_vessels = OWNER_VESSELS
+        .may_load(storage, &owner)?
+        .expect("the user must own at least this vessel");
+
+    owner_vessels.remove(&hydro_lock_id);
+
+    OWNER_VESSELS.save(storage, &owner, &owner_vessels)?;
+
+    let mut protocol_owned_vessels = OWNER_VESSELS
+        .may_load(storage, escrow_ica_address)?
+        .unwrap_or_default();
+
+    protocol_owned_vessels.insert(hydro_lock_id);
+
+    OWNER_VESSELS.save(storage, escrow_ica_address, &protocol_owned_vessels)?;
+
+    save_vessel_ownership_state(
+        storage,
+        hydro_lock_id,
+        VesselOwnershipState::OwnedByProtocol,
+    )?;
+
+    Ok(())
 }

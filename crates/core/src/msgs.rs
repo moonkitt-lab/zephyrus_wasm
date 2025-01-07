@@ -1,6 +1,9 @@
 use crate::state::{Constants, Vessel};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Decimal;
+use cosmwasm_std::{Binary, Decimal};
+
+pub use neutron_sdk::bindings::types::Height;
+pub use neutron_std::types::tendermint::crypto::ProofOps;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -41,6 +44,16 @@ pub enum ExecuteMsg {
     DecommissionVessels {
         hydro_lock_ids: Vec<u64>,
     },
+    RegisterIca {},
+    SellVessel {
+        hydro_lock_id: u64,
+        kv_value: Binary,
+        kv_proof_ops: ProofOps,
+        height: Height,
+    },
+    BuyVessel {
+        hydro_lock_id: u64,
+    },
 }
 
 #[cw_serde]
@@ -59,6 +72,11 @@ pub struct VesselsResponse {
 #[cw_serde]
 pub struct ConstantsResponse {
     pub constants: Constants,
+}
+
+#[cw_serde]
+pub struct EscrowIcaAddressResponse {
+    pub address: Option<String>,
 }
 
 #[cw_serde]
@@ -81,6 +99,8 @@ pub enum QueryMsg {
     },
     #[returns(ConstantsResponse)]
     Constants {},
+    #[returns(EscrowIcaAddressResponse)]
+    EscrowIcaAddress {},
 }
 
 #[cw_serde]

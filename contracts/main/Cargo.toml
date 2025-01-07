@@ -21,6 +21,7 @@ cw-utils.workspace = true
 serde = { workspace = true }
 neutron-sdk.workspace = true
 neutron-std.workspace = true
+prost.workspace = true
 zephyrus-core.workspace = true
 hydro-interface.workspace = true
 thiserror.workspace = true

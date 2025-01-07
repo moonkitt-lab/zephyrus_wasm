@@ -38,16 +38,14 @@ mod tests {
         >,
         user_address: String,
     ) -> InstantiateMsg {
-        let msg = InstantiateMsg {
+        InstantiateMsg {
             whitelist_admins: vec![user_address.clone()],
-
             hydro_contract_address: get_address_as_str(&deps.api, "hydro_addr"),
             tribute_contract_address: get_address_as_str(&deps.api, "tribute_addr"),
             default_hydromancer_address: get_address_as_str(&deps.api, "hydromancer_addr"),
             default_hydromancer_name: get_address_as_str(&deps.api, "default_hydromancer_name"),
             default_hydromancer_commission_rate: Decimal::from_ratio(1u128, 100u128),
-        };
-        msg
+        }
     }
 
     #[test]

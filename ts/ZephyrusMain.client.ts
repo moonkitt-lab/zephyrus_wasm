@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, Height, ProofOps, ProofOp, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, EscrowIcaAddressResponse, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -29,6 +29,7 @@ export interface ZephyrusMainReadOnlyInterface {
     startIndex?: number;
   }) => Promise<VesselsResponse>;
   constants: () => Promise<ConstantsResponse>;
+  escrowIcaAddress: () => Promise<EscrowIcaAddressResponse>;
 }
 export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   client: CosmWasmClient;
@@ -40,6 +41,7 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
     this.vesselsByOwner = this.vesselsByOwner.bind(this);
     this.vesselsByHydromancer = this.vesselsByHydromancer.bind(this);
     this.constants = this.constants.bind(this);
+    this.escrowIcaAddress = this.escrowIcaAddress.bind(this);
   }
   votingPower = async (): Promise<VotingPowerResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -85,6 +87,11 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
       constants: {}
     });
   };
+  escrowIcaAddress = async (): Promise<EscrowIcaAddressResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      escrow_ica_address: {}
+    });
+  };
 }
 export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   contractAddress: string;
@@ -118,6 +125,23 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   }: {
     hydroLockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  registerIca: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  sellVessel: ({
+    height,
+    hydroLockId,
+    kvProofOps,
+    kvValue
+  }: {
+    height: Height;
+    hydroLockId: number;
+    kvProofOps: ProofOps;
+    kvValue: Binary;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  buyVessel: ({
+    hydroLockId
+  }: {
+    hydroLockId: number;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
   client: SigningCosmWasmClient;
@@ -135,6 +159,9 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.pauseContract = this.pauseContract.bind(this);
     this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
+    this.registerIca = this.registerIca.bind(this);
+    this.sellVessel = this.sellVessel.bind(this);
+    this.buyVessel = this.buyVessel.bind(this);
   }
   buildVessel = async ({
     receiver,
@@ -201,6 +228,42 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     return await this.client.execute(this.sender, this.contractAddress, {
       decommission_vessels: {
         hydro_lock_ids: hydroLockIds
+      }
+    }, fee, memo, _funds);
+  };
+  registerIca = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      register_ica: {}
+    }, fee, memo, _funds);
+  };
+  sellVessel = async ({
+    height,
+    hydroLockId,
+    kvProofOps,
+    kvValue
+  }: {
+    height: Height;
+    hydroLockId: number;
+    kvProofOps: ProofOps;
+    kvValue: Binary;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      sell_vessel: {
+        height,
+        hydro_lock_id: hydroLockId,
+        kv_proof_ops: kvProofOps,
+        kv_value: kvValue
+      }
+    }, fee, memo, _funds);
+  };
+  buyVessel = async ({
+    hydroLockId
+  }: {
+    hydroLockId: number;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      buy_vessel: {
+        hydro_lock_id: hydroLockId
       }
     }, fee, memo, _funds);
   };

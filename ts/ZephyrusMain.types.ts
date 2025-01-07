@@ -38,11 +38,37 @@ export type ExecuteMsg = {
   decommission_vessels: {
     hydro_lock_ids: number[];
   };
+} | {
+  register_ica: {};
+} | {
+  sell_vessel: {
+    height: Height;
+    hydro_lock_id: number;
+    kv_proof_ops: ProofOps;
+    kv_value: Binary;
+  };
+} | {
+  buy_vessel: {
+    hydro_lock_id: number;
+  };
 };
+export type Binary = string;
 export interface BuildVesselParams {
   auto_maintenance: boolean;
   hydromancer_id: number;
   lock_duration: number;
+}
+export interface Height {
+  revision_height?: number;
+  revision_number?: number;
+}
+export interface ProofOps {
+  ops: ProofOp[];
+}
+export interface ProofOp {
+  data: number[];
+  key: number[];
+  type: string;
 }
 export type QueryMsg = {
   voting_power: {};
@@ -60,6 +86,8 @@ export type QueryMsg = {
   };
 } | {
   constants: {};
+} | {
+  escrow_ica_address: {};
 };
 export type Addr = string;
 export interface ConstantsResponse {
@@ -73,6 +101,9 @@ export interface Constants {
 export interface HydroConfig {
   hydro_contract_address: Addr;
   hydro_tribute_contract_address: Addr;
+}
+export interface EscrowIcaAddressResponse {
+  address?: string | null;
 }
 export interface VesselsResponse {
   limit: number;

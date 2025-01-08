@@ -151,7 +151,7 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
     for item in iterator {
         let (hydro_period, hydro_lock_ids) = item?;
 
-        if hydro_lock_ids.len() == 0 {
+        if hydro_lock_ids.is_empty() {
             continue;
         }
         messages_counter += 1;

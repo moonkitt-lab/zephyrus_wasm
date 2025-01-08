@@ -221,10 +221,11 @@ fn execute_modify_auto_maintenance(
     hydro_lock_ids: Vec<u64>,
     auto_maintenance: bool,
 ) -> Result<Response, ContractError> {
+    if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
+        return Err(ContractError::Unauthorized {});
+    }
+
     for hydro_lock_id in hydro_lock_ids.iter() {
-        if !state::is_vessel_owner(deps.storage, &info.sender, *hydro_lock_id)? {
-            return Err(ContractError::Unauthorized {});
-        }
         state::modify_auto_maintenance(deps.storage, *hydro_lock_id, auto_maintenance)?;
     }
 

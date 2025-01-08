@@ -250,7 +250,7 @@ pub fn modify_auto_maintenance(
     Ok(())
 }
 
-pub fn is_vessel_owner(
+pub fn is_vessel_owned_by(
     storage: &dyn Storage,
     owner: &Addr,
     hydro_lock_id: HydroLockId,
@@ -259,4 +259,18 @@ pub fn is_vessel_owner(
         .may_load(storage, owner.as_str())?
         .unwrap_or_default();
     Ok(owner_vessels.contains(&hydro_lock_id))
+}
+
+pub fn are_vessels_owned_by(
+    storage: &dyn Storage,
+    owner: &Addr,
+    hydro_lock_ids: &[HydroLockId],
+) -> Result<bool, StdError> {
+    let owner_vessels = OWNER_VESSELS
+        .may_load(storage, owner.as_str())?
+        .unwrap_or_default();
+
+    Ok(hydro_lock_ids
+        .iter()
+        .all(|&id_to_check| owner_vessels.contains(&id_to_check)))
 }

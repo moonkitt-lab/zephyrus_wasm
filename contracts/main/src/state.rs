@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Decimal, StdError, Storage};
+use cosmwasm_std::{Addr, Decimal, Order, StdError, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::msgs::{HydroLockId, HydromancerId, UserId, Vessel};
@@ -34,7 +34,7 @@ const DEFAULT_HYDROMANCER_ID: Item<HydromancerId> = Item::new("default_hydromanc
 
 const VESSELS: Map<HydroLockId, Vessel> = Map::new("vessels");
 // Addr as &str when used as a key allows for less cloning
-const OWNER_VESSELS: Map<&str, BTreeSet<HydroLockId>> = Map::new("owner_vessels");
+const OWNER_VESSELS: Map<(&str, HydroLockId), ()> = Map::new("owner_vessels");
 
 const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
     Map::new("hydromancer_vessels_ids");
@@ -135,19 +135,23 @@ pub fn add_vessel(
 
     VESSELS.save(storage, vessel_id, vessel)?;
 
-    let mut owner_vessels = OWNER_VESSELS
-        .may_load(storage, owner.as_str())?
-        .unwrap_or_default();
+    add_vessel_to_owner(storage, owner.as_str(), vessel_id)?;
 
-    owner_vessels.insert(vessel_id);
-
-    OWNER_VESSELS.save(storage, owner.as_str(), &owner_vessels)?;
     let mut vessels_hydromancer = HYDROMANCER_VESSELS
         .may_load(storage, vessel.hydromancer_id)?
         .unwrap_or_default();
     vessels_hydromancer.insert(vessel_id);
     HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
 
+    Ok(())
+}
+
+pub fn add_vessel_to_owner(
+    storage: &mut dyn Storage,
+    owner: &str,
+    vessel_id: u64,
+) -> Result<(), StdError> {
+    OWNER_VESSELS.save(storage, (owner, vessel_id), &())?;
     Ok(())
 }
 
@@ -161,19 +165,22 @@ pub fn get_vessels_by_owner(
     start_index: usize,
     limit: usize,
 ) -> Result<Vec<Vessel>, StdError> {
-    // First try to load and handle the case where the owner has no vessels
-    let vessel_ids: BTreeSet<u64> = OWNER_VESSELS
-        .may_load(storage, owner.as_str())?
-        .unwrap_or_default(); // Returns empty BTreeSet if not found
+    let keys = OWNER_VESSELS
+        .prefix(owner.as_str())
+        .keys(storage, None, None, Order::Ascending) // Get just the keys (vessel_ids)
+        .collect::<Result<Vec<_>, _>>()?;
 
-    vessel_ids
-        .iter()
+    // if keys.is_empty() {
+    //     return Ok(Vec::new());
+    // }
+
+    keys.into_iter()
         .enumerate()
         .skip(start_index)
         .take(limit)
-        .map(|id| {
-            VESSELS.load(storage, *id.1).map_err(|e| {
-                StdError::generic_err(format!("Failed to load vessel {}: {}", id.1, e))
+        .map(|(_, vessel_id)| {
+            VESSELS.load(storage, vessel_id).map_err(|e| {
+                StdError::generic_err(format!("Failed to load vessel {}: {}", vessel_id, e))
             })
         })
         .collect()
@@ -202,4 +209,14 @@ pub fn get_vessels_by_hydromancer(
             })
         })
         .collect()
+}
+
+pub fn is_vessel_owner(
+    storage: &dyn Storage,
+    owner: &Addr,
+    hydro_lock_id: HydroLockId,
+) -> StdResult<bool> {
+    Ok(OWNER_VESSELS
+        .may_load(storage, (owner.as_str(), hydro_lock_id))?
+        .is_some())
 }

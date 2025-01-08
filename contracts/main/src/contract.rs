@@ -144,9 +144,10 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
         None,
         cosmwasm_std::Order::Ascending,
     );
+
     let mut response = Response::new();
     let hydro_config = state::get_hydro_config(deps.storage)?;
-    let mut messages_counter = 0;
+
     // Collect all keys into a Vec<u64>
     for item in iterator {
         let (hydro_period, hydro_lock_ids) = item?;
@@ -154,11 +155,12 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
         if hydro_lock_ids.is_empty() {
             continue;
         }
-        messages_counter += 1;
+
         let refresh_duration_msg = RefreshLockDuration {
             lock_ids: hydro_lock_ids.iter().cloned().collect(),
             lock_duration: hydro_period,
         };
+
         let execute_refresh_msg = WasmMsg::Execute {
             contract_addr: hydro_config.hydro_contract_address.to_string(),
             msg: to_json_binary(&refresh_duration_msg)?,
@@ -177,7 +179,8 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
             );
         response = response.add_message(execute_refresh_msg);
     }
-    if messages_counter == 0 {
+
+    if response.messages.is_empty() {
         return Err(ContractError::NoVesselsToAutoMaintain {});
     }
 

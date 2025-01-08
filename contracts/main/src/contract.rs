@@ -135,8 +135,56 @@ fn execute_build_vessel(
 
 // This function loops through all the vessels, and filters those who have auto_maintenance true
 // Then, it combines them by hydro_lock_duration, and calls execute_update_vessels_class
-fn execute_auto_maintain(_deps: DepsMut, _info: MessageInfo) -> Result<Response, ContractError> {
-    todo!()
+fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, ContractError> {
+    let vessels_ids_by_hydro_lock_duration = state::get_vessels_id_by_class()?;
+
+    let iterator = vessels_ids_by_hydro_lock_duration.range(
+        deps.storage,
+        None,
+        None,
+        cosmwasm_std::Order::Ascending,
+    );
+
+    let mut response = Response::new();
+    let hydro_config = state::get_hydro_config(deps.storage)?;
+
+    // Collect all keys into a Vec<u64>
+    for item in iterator {
+        let (hydro_period, hydro_lock_ids) = item?;
+
+        if hydro_lock_ids.is_empty() {
+            continue;
+        }
+
+        let refresh_duration_msg = RefreshLockDuration {
+            lock_ids: hydro_lock_ids.iter().cloned().collect(),
+            lock_duration: hydro_period,
+        };
+
+        let execute_refresh_msg = WasmMsg::Execute {
+            contract_addr: hydro_config.hydro_contract_address.to_string(),
+            msg: to_json_binary(&refresh_duration_msg)?,
+            funds: vec![],
+        };
+
+        response = response
+            .add_attribute("Action", "Refresh lock duration")
+            .add_attribute(
+                ["ids ", &hydro_period.to_string()].concat(),
+                hydro_lock_ids
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        response = response.add_message(execute_refresh_msg);
+    }
+
+    if response.messages.is_empty() {
+        return Err(ContractError::NoVesselsToAutoMaintain {});
+    }
+
+    Ok(response)
 }
 
 // This function takes a list of vessels (hydro_lock_ids) and a duration
@@ -170,6 +218,33 @@ fn execute_update_vessels_class(
     Ok(Response::new().add_message(execute_refresh_duration_msg))
 }
 
+fn execute_modify_auto_maintenance(
+    deps: DepsMut,
+    info: MessageInfo,
+    hydro_lock_ids: Vec<u64>,
+    auto_maintenance: bool,
+) -> Result<Response, ContractError> {
+    if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    for hydro_lock_id in hydro_lock_ids.iter() {
+        state::modify_auto_maintenance(deps.storage, *hydro_lock_id, auto_maintenance)?;
+    }
+
+    Ok(Response::new()
+        .add_attribute("action", "modify_auto_maintenance")
+        .add_attribute("new_auto_maintenance", auto_maintenance.to_string())
+        .add_attribute(
+            "hydro_lock_id",
+            hydro_lock_ids
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ))
+}
+
 #[entry_point]
 pub fn execute(
     deps: DepsMut,
@@ -186,6 +261,10 @@ pub fn execute(
             hydro_lock_ids,
             hydro_lock_duration,
         } => execute_update_vessels_class(deps, info, hydro_lock_ids, hydro_lock_duration),
+        ExecuteMsg::ModifyAutoMaintenance {
+            hydro_lock_ids,
+            auto_maintenance,
+        } => execute_modify_auto_maintenance(deps, info, hydro_lock_ids, auto_maintenance),
     }
 }
 

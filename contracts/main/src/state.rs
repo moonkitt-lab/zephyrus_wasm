@@ -39,6 +39,9 @@ const OWNER_VESSELS: Map<&str, BTreeSet<HydroLockId>> = Map::new("owner_vessels"
 const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
     Map::new("hydromancer_vessels_ids");
 
+const AUTO_MAINTAINED_VESSELS_BY_CLASS: Map<u64, BTreeSet<HydroLockId>> =
+    Map::new("auto_maintained_vessels_by_class");
+
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
     HYDROMANCER_NEXT_ID.save(storage, &0)?;
@@ -147,6 +150,13 @@ pub fn add_vessel(
         .unwrap_or_default();
     vessels_hydromancer.insert(vessel_id);
     HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
+    if vessel.auto_maintenance {
+        let mut vessels_class = AUTO_MAINTAINED_VESSELS_BY_CLASS
+            .may_load(storage, vessel.class_period)?
+            .unwrap_or_default();
+        vessels_class.insert(vessel_id);
+        AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
+    }
 
     Ok(())
 }
@@ -202,4 +212,65 @@ pub fn get_vessels_by_hydromancer(
             })
         })
         .collect()
+}
+
+pub fn get_vessels_id_by_class() -> Result<Map<u64, BTreeSet<HydroLockId>>, StdError> {
+    Ok(AUTO_MAINTAINED_VESSELS_BY_CLASS)
+}
+
+pub fn modify_auto_maintenance(
+    storage: &mut dyn Storage,
+    hydro_lock_id: HydroLockId,
+    auto_maintenance: bool,
+) -> Result<(), ContractError> {
+    let mut vessel = get_vessel(storage, hydro_lock_id)?;
+
+    let old_auto_maintenance = vessel.auto_maintenance;
+
+    // No change in auto_maintenance, nothing to do, return early
+    if old_auto_maintenance == auto_maintenance {
+        return Ok(());
+    }
+
+    vessel.auto_maintenance = auto_maintenance;
+    VESSELS.save(storage, hydro_lock_id, &vessel)?;
+
+    let mut auto_maintained_ids = AUTO_MAINTAINED_VESSELS_BY_CLASS
+        .may_load(storage, vessel.class_period)?
+        .unwrap_or_default();
+
+    if old_auto_maintenance {
+        auto_maintained_ids.remove(&hydro_lock_id);
+    } else if auto_maintenance {
+        auto_maintained_ids.insert(hydro_lock_id);
+    }
+
+    AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &auto_maintained_ids)?;
+
+    Ok(())
+}
+
+pub fn is_vessel_owned_by(
+    storage: &dyn Storage,
+    owner: &Addr,
+    hydro_lock_id: HydroLockId,
+) -> Result<bool, StdError> {
+    let owner_vessels = OWNER_VESSELS
+        .may_load(storage, owner.as_str())?
+        .unwrap_or_default();
+    Ok(owner_vessels.contains(&hydro_lock_id))
+}
+
+pub fn are_vessels_owned_by(
+    storage: &dyn Storage,
+    owner: &Addr,
+    hydro_lock_ids: &[HydroLockId],
+) -> Result<bool, StdError> {
+    let owner_vessels = OWNER_VESSELS
+        .may_load(storage, owner.as_str())?
+        .unwrap_or_default();
+
+    Ok(hydro_lock_ids
+        .iter()
+        .all(|&id_to_check| owner_vessels.contains(&id_to_check)))
 }

@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo,
-    Reply, Response as CwResponse, StdError, StdResult, SubMsg, WasmMsg,
+    Reply, Response as CwResponse, StdError, StdResult, Storage, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -38,7 +38,7 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, StdError> {
     state::initialize_sequences(deps.storage)?;
-
+    state::unpause_contract(deps.storage)?;
     let mut whitelist_admins: Vec<Addr> = vec![];
     for admin in msg.whitelist_admins {
         let admin_addr = deps.api.addr_validate(&admin)?;
@@ -74,6 +74,7 @@ fn execute_build_vessel(
     vessels: Vec<VesselCreationMsg>,
     receiver: Option<String>,
 ) -> Result<Response, ContractError> {
+    validate_contract_is_not_paused(deps.storage)?;
     let hydro_config = state::get_hydro_config(deps.storage)?;
     let mut sub_messages = vec![];
     if info.funds.len() != 1 {
@@ -136,6 +137,7 @@ fn execute_build_vessel(
 // This function loops through all the vessels, and filters those who have auto_maintenance true
 // Then, it combines them by hydro_lock_duration, and calls execute_update_vessels_class
 fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, ContractError> {
+    validate_contract_is_not_paused(deps.storage)?;
     let vessels_ids_by_hydro_lock_duration = state::get_vessels_id_by_class()?;
 
     let iterator = vessels_ids_by_hydro_lock_duration.range(
@@ -198,6 +200,7 @@ fn execute_update_vessels_class(
     hydro_lock_ids: Vec<u64>,
     hydro_lock_duration: u64,
 ) -> Result<Response, ContractError> {
+    validate_contract_is_not_paused(deps.storage)?;
     let hydro_config = state::get_hydro_config(deps.storage)?;
 
     let refresh_duration_msg = RefreshLockDuration {
@@ -221,6 +224,7 @@ fn execute_modify_auto_maintenance(
     hydro_lock_ids: Vec<u64>,
     auto_maintenance: bool,
 ) -> Result<Response, ContractError> {
+    validate_contract_is_not_paused(deps.storage)?;
     for hydro_lock_id in hydro_lock_ids.iter() {
         if !state::is_vessel_owner(deps.storage, &info.sender, *hydro_lock_id)? {
             return Err(ContractError::Unauthorized {});
@@ -341,6 +345,13 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
     }
 }
 
+fn validate_contract_is_not_paused(storage: &dyn Storage) -> Result<(), ContractError> {
+    let paused = state::is_contract_paused(storage)?;
+    match paused {
+        true => Err(ContractError::Paused),
+        false => Ok(()),
+    }
+}
 #[entry_point]
 pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {

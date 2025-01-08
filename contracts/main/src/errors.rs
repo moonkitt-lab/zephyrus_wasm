@@ -20,4 +20,7 @@ pub enum ContractError {
     TotalSharesError { total_shares: u8 },
     #[error("There is no vessel to auto maintain")]
     NoVesselsToAutoMaintain {},
+
+    #[error("Paused")]
+    Paused,
 }

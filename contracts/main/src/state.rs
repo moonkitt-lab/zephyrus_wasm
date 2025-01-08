@@ -226,31 +226,27 @@ pub fn modify_auto_maintenance(
     let mut vessel = get_vessel(storage, hydro_lock_id)?;
 
     let old_auto_maintenance = vessel.auto_maintenance;
-    vessel.auto_maintenance = auto_maintenance;
 
+    // No change in auto_maintenance, nothing to do, return early
+    if old_auto_maintenance == auto_maintenance {
+        return Ok(());
+    }
+
+    vessel.auto_maintenance = auto_maintenance;
     VESSELS.save(storage, hydro_lock_id, &vessel)?;
 
-    if old_auto_maintenance != auto_maintenance && old_auto_maintenance {
-        let mut auto_maintained_ids = AUTO_MAINTAINED_VESSELS_BY_CLASS
-            .may_load(storage, vessel.class_period)?
-            .unwrap_or_default();
+    let mut auto_maintained_ids = AUTO_MAINTAINED_VESSELS_BY_CLASS
+        .may_load(storage, vessel.class_period)?
+        .unwrap_or_default();
+
+    if old_auto_maintenance {
         auto_maintained_ids.remove(&hydro_lock_id);
-        AUTO_MAINTAINED_VESSELS_BY_CLASS.save(
-            storage,
-            vessel.class_period,
-            &auto_maintained_ids,
-        )?;
-    } else if old_auto_maintenance != auto_maintenance && auto_maintenance {
-        let mut auto_maintained_ids = AUTO_MAINTAINED_VESSELS_BY_CLASS
-            .may_load(storage, vessel.class_period)?
-            .unwrap_or_default();
+    } else if auto_maintenance {
         auto_maintained_ids.insert(hydro_lock_id);
-        AUTO_MAINTAINED_VESSELS_BY_CLASS.save(
-            storage,
-            vessel.class_period,
-            &auto_maintained_ids,
-        )?;
     }
+
+    AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &auto_maintained_ids)?;
+
     Ok(())
 }
 

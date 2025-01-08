@@ -38,7 +38,7 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, StdError> {
     state::initialize_sequences(deps.storage)?;
-    state::unpause_contract(deps.storage)?;
+    state::init_pause_contract_value(deps.storage)?;
     let mut whitelist_admins: Vec<Addr> = vec![];
     for admin in msg.whitelist_admins {
         let admin_addr = deps.api.addr_validate(&admin)?;
@@ -245,6 +245,24 @@ fn execute_modify_auto_maintenance(
         ))
 }
 
+fn execute_pause_contract(
+    storage: &mut dyn Storage,
+    sender: &Addr,
+) -> Result<Response, ContractError> {
+    validate_admin_address(storage, sender)?;
+    state::pause_contract(storage)?;
+    Ok(Response::new().add_attribute("action", "pause_contract"))
+}
+
+fn execute_unpause_contract(
+    storage: &mut dyn Storage,
+    sender: &Addr,
+) -> Result<Response, ContractError> {
+    validate_admin_address(storage, sender)?;
+    state::unpause_contract(storage)?;
+    Ok(Response::new().add_attribute("action", "unpause_contract"))
+}
+
 #[entry_point]
 pub fn execute(
     deps: DepsMut,
@@ -265,6 +283,8 @@ pub fn execute(
             hydro_lock_ids,
             auto_maintenance,
         } => execute_modify_auto_maintenance(deps, info, hydro_lock_ids, auto_maintenance),
+        ExecuteMsg::PauseContract {} => execute_pause_contract(deps.storage, &info.sender),
+        ExecuteMsg::UnpauseContract {} => execute_unpause_contract(deps.storage, &info.sender),
     }
 }
 
@@ -350,6 +370,14 @@ fn validate_contract_is_not_paused(storage: &dyn Storage) -> Result<(), Contract
     match paused {
         true => Err(ContractError::Paused),
         false => Ok(()),
+    }
+}
+
+fn validate_admin_address(storage: &dyn Storage, sender: &Addr) -> Result<(), ContractError> {
+    let whitelisted = state::is_whitelisted_admin(storage, sender)?;
+    match whitelisted {
+        true => Ok(()),
+        false => Err(ContractError::Unauthorized {}),
     }
 }
 #[entry_point]

@@ -4,7 +4,7 @@ use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::msgs::{HydroLockId, HydromancerId, UserId, Vessel};
 
-use crate::errors::ContractError;
+use crate::{contract, errors::ContractError};
 
 #[cw_serde]
 pub struct HydroConfig {
@@ -50,16 +50,27 @@ pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     Ok(())
 }
 
+pub fn init_pause_contract_value(storage: &mut dyn Storage) -> Result<(), StdError> {
+    PAUSED_CONTRACT.save(storage, &false)?;
+    Ok(())
+}
+
 pub fn is_contract_paused(storage: &dyn Storage) -> Result<bool, StdError> {
     Ok(PAUSED_CONTRACT.load(storage)?)
 }
 
 pub fn pause_contract(storage: &mut dyn Storage) -> Result<(), StdError> {
+    if is_contract_paused(storage)? {
+        return Err(StdError::generic_err("Contract already paused"));
+    }
     PAUSED_CONTRACT.save(storage, &true)?;
     Ok(())
 }
 
 pub fn unpause_contract(storage: &mut dyn Storage) -> Result<(), StdError> {
+    if !is_contract_paused(storage)? {
+        return Err(StdError::generic_err("Contract already unpaused"));
+    }
     PAUSED_CONTRACT.save(storage, &false)?;
     Ok(())
 }
@@ -279,4 +290,9 @@ pub fn is_vessel_owner(
         .may_load(storage, owner.as_str())?
         .unwrap_or_default();
     Ok(owner_vessels.contains(&hydro_lock_id))
+}
+
+pub fn is_whitelisted_admin(storage: &dyn Storage, sender: &Addr) -> Result<bool, ContractError> {
+    let whitelist_admins = WHITELIST_ADMINS.load(storage)?;
+    Ok(whitelist_admins.contains(sender))
 }

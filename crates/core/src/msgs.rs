@@ -39,6 +39,9 @@ pub enum ExecuteMsg {
         hydro_lock_ids: Vec<u64>,
         auto_maintenance: bool,
     },
+    DecommissionVessels {
+        hydro_lock_ids: Vec<u64>,
+    },
 }
 
 #[cw_serde]

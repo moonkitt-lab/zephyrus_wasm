@@ -18,6 +18,10 @@ pub enum ContractError {
 
     #[error("Total shares error: {total_shares}")]
     TotalSharesError { total_shares: u8 },
+
     #[error("There is no vessel to auto maintain")]
     NoVesselsToAutoMaintain {},
+
+    #[error("The vessel cannot be decommissioned")]
+    LockNotExpired {},
 }

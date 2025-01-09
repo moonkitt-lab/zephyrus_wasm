@@ -1,8 +1,10 @@
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, Addr, Binary, Decimal, Deps, DepsMut, Env, MessageInfo,
-    Reply, Response as CwResponse, StdError, StdResult, SubMsg, WasmMsg,
+    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
+    Coin, Decimal, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse,
+    StdError, StdResult, SubMsg, WasmMsg,
 };
-use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration};
+use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens};
+use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
@@ -19,6 +21,8 @@ use crate::{
 type Response = CwResponse<NeutronMsg>;
 
 const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
+const DECOMMISSION_REPLY_ID: u64 = 2;
+
 const MAX_PAGINATION_LIMIT: usize = 1000;
 const DEFAULT_PAGINATION_LIMIT: usize = 100;
 
@@ -28,6 +32,13 @@ struct BuildVesselParameters {
     auto_maintenance: bool,
     hydromancer_id: u64,
     owner: Addr,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DecommissionVesselsParameters {
+    previous_balances: Vec<Coin>,
+    expected_unlocked_ids: Vec<u64>,
+    vessel_owner: Addr,
 }
 
 #[entry_point]
@@ -245,10 +256,69 @@ fn execute_modify_auto_maintenance(
         ))
 }
 
+fn execute_decommission_vessels(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    hydro_lock_ids: Vec<u64>,
+) -> Result<Response, ContractError> {
+    if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    let hydro_config = state::get_hydro_config(deps.storage)?;
+
+    // Check the current balance before unlocking tokens
+    let balance_query = BankQuery::AllBalances {
+        address: env.contract.address.to_string(),
+    };
+    let previous_balances: AllBalanceResponse =
+        deps.querier.query(&QueryRequest::Bank(balance_query))?;
+
+    // Retrieve the lock_entries from Hydro, and check which ones are expired
+    let lock_entries = query_lock_entries(
+        &deps.querier,
+        hydro_config.hydro_contract_address.clone(),
+        env.contract.address,
+        &hydro_lock_ids,
+    )?;
+
+    for lock_entry in lock_entries.iter() {
+        if lock_entry.1.lock_end > env.block.time {
+            return Err(ContractError::LockNotExpired {});
+        }
+    }
+
+    // Create the execute message for unlocking
+    let hydro_unlock_msg = UnlockTokens {
+        lock_ids: Some(hydro_lock_ids.clone()),
+    };
+
+    let execute_hydro_unlock_msg = WasmMsg::Execute {
+        contract_addr: hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&hydro_unlock_msg)?,
+        funds: vec![],
+    };
+
+    let decommission_vessels_params = DecommissionVesselsParameters {
+        previous_balances: previous_balances.amount,
+        expected_unlocked_ids: vec![],
+        vessel_owner: info.sender.clone(),
+    };
+
+    let execute_hydro_unlock_msg: SubMsg<NeutronMsg> =
+        SubMsg::reply_on_success(execute_hydro_unlock_msg, DECOMMISSION_REPLY_ID)
+            .with_payload(to_json_binary(&decommission_vessels_params)?);
+
+    Ok(Response::new()
+        .add_submessage(execute_hydro_unlock_msg)
+        .add_attribute("action", "decommission_vessels"))
+}
+
 #[entry_point]
 pub fn execute(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
@@ -265,6 +335,9 @@ pub fn execute(
             hydro_lock_ids,
             auto_maintenance,
         } => execute_modify_auto_maintenance(deps, info, hydro_lock_ids, auto_maintenance),
+        ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
+            execute_decommission_vessels(deps, env, info, hydro_lock_ids)
+        }
     }
 }
 
@@ -346,10 +419,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
 }
 
 #[entry_point]
-pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
+pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {
         // Cas : retour du premier message
         HYDRO_LOCK_TOKENS_REPLY_ID => handle_lock_tokens_reply(deps, msg),
+        DECOMMISSION_REPLY_ID => handle_unlock_tokens_reply(deps, env, msg),
         _ => Err(ContractError::CustomError {
             msg: "Unknown reply id".to_string(),
         }),
@@ -377,6 +451,7 @@ fn handle_lock_tokens_reply(deps: DepsMut, reply: Reply) -> Result<Response, Con
         .find_map(|attr| (attr.key == "lock_id").then(|| attr.value.parse().ok()))
         .flatten()
         .expect("lock tokens reply always contains valid lock_id attribute");
+
     domain::vessel::create_new_vessel(
         deps,
         lock_id,
@@ -392,4 +467,123 @@ fn handle_lock_tokens_reply(deps: DepsMut, reply: Reply) -> Result<Response, Con
         .add_attribute("action", "build_vessel")
         .add_attribute("hydro_lock_id", lock_id.to_string())
         .add_attribute("owner", build_vessel_params.owner.to_string()))
+}
+
+fn handle_unlock_tokens_reply(
+    deps: DepsMut,
+    env: Env,
+    reply: Reply,
+) -> Result<Response, ContractError> {
+    let response = reply
+        .result
+        .into_result()
+        .expect("always issued on_success");
+
+    let decommission_vessels_params: DecommissionVesselsParameters =
+        from_json(reply.payload).expect("decommission vessels parameters always attached");
+
+    let previous_balances = decommission_vessels_params.previous_balances;
+
+    // Retrieve unlocked tokens from reply
+    let hydro_unlocked_tokens: Vec<Coin> = response
+        .events
+        .clone()
+        .into_iter()
+        .flat_map(|e| e.attributes)
+        .find_map(|attr| {
+            (attr.key == "unlocked_tokens").then(|| {
+                attr.value
+                    .split(", ")
+                    .map(|v| v.parse::<Coin>().unwrap())
+                    .collect()
+            })
+        })
+        .expect("unlock tokens reply always contains valid unlocked_hydro_lock_ids attribute");
+
+    // Check the new balance and compare with the previous one
+    // Query current balance after unlocking
+    let balance_query = BankQuery::AllBalances {
+        address: env.contract.address.to_string(),
+    };
+    let current_balances: AllBalanceResponse =
+        deps.querier.query(&QueryRequest::Bank(balance_query))?;
+
+    // Calculate difference in balances
+    let mut received_coins: Vec<Coin> = vec![];
+    for current_coin in current_balances.amount {
+        let previous_amount = previous_balances
+            .iter()
+            .find(|c| c.denom == current_coin.denom)
+            .map(|c| c.amount)
+            .unwrap_or_default();
+
+        if current_coin.amount > previous_amount {
+            received_coins.push(Coin {
+                denom: current_coin.denom,
+                amount: current_coin.amount - previous_amount,
+            });
+        }
+    }
+
+    // Compare hydro_unlocked_tokens with received_coins
+    // It might not be in the same order
+    if hydro_unlocked_tokens != received_coins {
+        return Err(ContractError::CustomError {
+            msg: "Unlocked tokens do not match the received ones".to_string(),
+        });
+    }
+
+    // Forward all received tokens to the original sender
+    let forward_msg = BankMsg::Send {
+        to_address: decommission_vessels_params.vessel_owner.to_string(),
+        amount: hydro_unlocked_tokens, // Forward all received tokens
+    };
+
+    // Retrieve unlocked lock IDs from the reply
+    let unlocked_hydro_lock_ids: Vec<u64> = response
+        .events
+        .into_iter()
+        .flat_map(|e| e.attributes)
+        .find_map(|attr| {
+            (attr.key == "unlocked_lock_ids").then(|| {
+                attr.value
+                    .split(", ")
+                    .map(|v| v.parse::<u64>().unwrap())
+                    .collect()
+            })
+        })
+        .expect("unlock tokens reply always contains valid unlocked_lock_ids attribute");
+
+    // Check if the unlocked lock IDs match the expected ones
+    // It might not be in the same order
+    if unlocked_hydro_lock_ids != decommission_vessels_params.expected_unlocked_ids {
+        return Err(ContractError::CustomError {
+            msg: "Unlocked lock IDs do not match the expected ones".to_string(),
+        });
+    }
+
+    for hydro_lock_id in unlocked_hydro_lock_ids.iter() {
+        state::remove_vessel(
+            deps.storage,
+            &decommission_vessels_params.vessel_owner,
+            *hydro_lock_id,
+        )?;
+    }
+
+    Ok(Response::new()
+        .add_message(forward_msg)
+        .add_attribute("action", "decommission_vessels")
+        .add_attribute(
+            "unlocked_hydro_lock_ids",
+            decommission_vessels_params
+                .expected_unlocked_ids
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
+        )
+        .add_attribute(
+            "owner",
+            decommission_vessels_params.vessel_owner.to_string(),
+        ))
 }

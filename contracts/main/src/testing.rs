@@ -2,7 +2,7 @@
 mod tests {
 
     use cosmwasm_std::{
-        testing::{message_info, mock_dependencies, mock_env, mock_info, MockApi},
+        testing::{message_info, mock_dependencies, mock_env, MockApi},
         Addr, Decimal, Response,
     };
     use zephyrus_core::msgs::InstantiateMsg;

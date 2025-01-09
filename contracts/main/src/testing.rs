@@ -2,8 +2,8 @@
 mod tests {
 
     use cosmwasm_std::{
-        testing::{message_info, mock_dependencies, mock_env, mock_info, MockApi},
-        Addr, Coin, Decimal, Response,
+        testing::{message_info, mock_dependencies, mock_env, MockApi},
+        Addr, Coin, Decimal,
     };
     use zephyrus_core::msgs::{ExecuteMsg, InstantiateMsg, VesselCreationMsg};
 
@@ -51,6 +51,48 @@ mod tests {
     }
 
     #[test]
+    fn pause_fail_not_admin() {
+        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let admin_address = get_address_as_str(&deps.api, "addr0000");
+        let info = message_info(&Addr::unchecked("sender"), &[]);
+        let msg = get_default_instantiate_msg(&deps, admin_address.to_string());
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok(), "error: {:?}", res);
+        let info1 = message_info(&Addr::unchecked("sender"), &[]);
+
+        let msg = ExecuteMsg::PauseContract {};
+
+        let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            ContractError::Unauthorized.to_string()
+        );
+    }
+
+    #[test]
+    fn unpause_fail_not_admin() {
+        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let admin_address = get_address_as_str(&deps.api, "addr0000");
+        let info = message_info(&Addr::unchecked("sender"), &[]);
+        let msg = get_default_instantiate_msg(&deps, admin_address.to_string());
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        assert!(res.is_ok(), "error: {:?}", res);
+        let info1 = message_info(&Addr::unchecked("sender"), &[]);
+
+        let msg = ExecuteMsg::UnpauseContract {};
+
+        let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            ContractError::Unauthorized.to_string()
+        );
+    }
+
+    #[test]
     fn pause_basic_test() {
         let (mut deps, env) = (mock_dependencies(), mock_env());
         let admin_address = get_address_as_str(&deps.api, "addr0000");
@@ -61,9 +103,9 @@ mod tests {
         assert!(res.is_ok(), "error: {:?}", res);
         let info1 = message_info(&Addr::unchecked(admin_address.clone()), &[]);
 
-        let msg = ExecuteMsg::PauseContract {};
+        let msg_pause = ExecuteMsg::PauseContract {};
 
-        let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg);
+        let res = execute(deps.as_mut(), env.clone(), info1.clone(), msg_pause);
         assert!(res.is_ok(), "error: {:?}", res);
 
         //now every msg executed should be in error "ContractError::Paused"
@@ -114,10 +156,22 @@ mod tests {
             res.unwrap_err().to_string(),
             ContractError::Paused.to_string()
         );
+
+        let info5 = message_info(&Addr::unchecked("sender"), &[]);
+        let msg_update_class = ExecuteMsg::UpdateVesselsClass {
+            hydro_lock_ids: vec![1],
+            hydro_lock_duration: 1000,
+        };
+        let res = execute(deps.as_mut(), env.clone(), info5.clone(), msg_update_class);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            ContractError::Paused.to_string()
+        );
     }
 
     #[test]
-    fn fail_unpause_already_unpause_test() {
+    fn fail_unpause_already_unpause_contract_test() {
         let (mut deps, env) = (mock_dependencies(), mock_env());
         let admin_address = get_address_as_str(&deps.api, "addr0000");
         let info = message_info(&Addr::unchecked("sender"), &[]);

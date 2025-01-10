@@ -15,6 +15,7 @@ use zephyrus_core::msgs::{
 use crate::{
     domain,
     errors::ContractError,
+    helpers::vectors::{compare_coin_vectors, compare_u64_vectors},
     state::{self},
 };
 
@@ -34,7 +35,7 @@ struct BuildVesselParameters {
     owner: Addr,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DecommissionVesselsParameters {
     previous_balances: Vec<Coin>,
     expected_unlocked_ids: Vec<u64>,
@@ -283,9 +284,15 @@ fn execute_decommission_vessels(
         &hydro_lock_ids,
     )?;
 
-    for lock_entry in lock_entries.iter() {
-        if lock_entry.1.lock_end > env.block.time {
-            return Err(ContractError::LockNotExpired {});
+    deps.api.debug(&format!(
+        "ZEPWASM: lock_entries retrieved by direct access to : {:?}",
+        lock_entries
+    ));
+
+    let mut expected_unlocked_ids = vec![];
+    for lock_entry in lock_entries {
+        if lock_entry.1.lock_end < env.block.time {
+            expected_unlocked_ids.push(lock_entry.0);
         }
     }
 
@@ -302,17 +309,20 @@ fn execute_decommission_vessels(
 
     let decommission_vessels_params = DecommissionVesselsParameters {
         previous_balances: previous_balances.amount,
-        expected_unlocked_ids: vec![],
+        expected_unlocked_ids,
         vessel_owner: info.sender.clone(),
     };
+
+    deps.api.debug(&format!(
+        "ZEPWASM: decommission_vessels_params: {:?}",
+        decommission_vessels_params
+    ));
 
     let execute_hydro_unlock_msg: SubMsg<NeutronMsg> =
         SubMsg::reply_on_success(execute_hydro_unlock_msg, DECOMMISSION_REPLY_ID)
             .with_payload(to_json_binary(&decommission_vessels_params)?);
 
-    Ok(Response::new()
-        .add_submessage(execute_hydro_unlock_msg)
-        .add_attribute("action", "decommission_vessels"))
+    Ok(Response::new().add_submessage(execute_hydro_unlock_msg))
 }
 
 #[entry_point]
@@ -479,6 +489,8 @@ fn handle_unlock_tokens_reply(
         .into_result()
         .expect("always issued on_success");
 
+    deps.api.debug("ZEPWASM: In handle_unlock_tokens_reply");
+
     let decommission_vessels_params: DecommissionVesselsParameters =
         from_json(reply.payload).expect("decommission vessels parameters always attached");
 
@@ -492,13 +504,22 @@ fn handle_unlock_tokens_reply(
         .flat_map(|e| e.attributes)
         .find_map(|attr| {
             (attr.key == "unlocked_tokens").then(|| {
-                attr.value
-                    .split(", ")
-                    .map(|v| v.parse::<Coin>().unwrap())
-                    .collect()
+                if attr.value.is_empty() {
+                    Vec::new()
+                } else {
+                    attr.value
+                        .split(", ")
+                        .map(|v| v.parse::<Coin>().unwrap())
+                        .collect()
+                }
             })
         })
         .expect("unlock tokens reply always contains valid unlocked_hydro_lock_ids attribute");
+
+    deps.api.debug(&format!(
+        "ZEPWASM: hydro_unlocked_tokens: {:?}",
+        hydro_unlocked_tokens
+    ));
 
     // Check the new balance and compare with the previous one
     // Query current balance after unlocking
@@ -507,6 +528,11 @@ fn handle_unlock_tokens_reply(
     };
     let current_balances: AllBalanceResponse =
         deps.querier.query(&QueryRequest::Bank(balance_query))?;
+
+    deps.api.debug(&format!(
+        "ZEPWASM: current_balances: {:?}",
+        current_balances
+    ));
 
     // Calculate difference in balances
     let mut received_coins: Vec<Coin> = vec![];
@@ -525,9 +551,14 @@ fn handle_unlock_tokens_reply(
         }
     }
 
+    deps.api.debug(&format!(
+        "ZEPWASM: hydro_unlocked_tokens: {:?}, received_coins: {:?}",
+        hydro_unlocked_tokens, received_coins
+    ));
+
     // Compare hydro_unlocked_tokens with received_coins
     // It might not be in the same order
-    if hydro_unlocked_tokens != received_coins {
+    if !compare_coin_vectors(hydro_unlocked_tokens.clone(), received_coins) {
         return Err(ContractError::CustomError {
             msg: "Unlocked tokens do not match the received ones".to_string(),
         });
@@ -546,17 +577,29 @@ fn handle_unlock_tokens_reply(
         .flat_map(|e| e.attributes)
         .find_map(|attr| {
             (attr.key == "unlocked_lock_ids").then(|| {
-                attr.value
-                    .split(", ")
-                    .map(|v| v.parse::<u64>().unwrap())
-                    .collect()
+                if attr.value.is_empty() {
+                    Vec::new()
+                } else {
+                    attr.value
+                        .split(", ")
+                        .map(|v| v.parse::<u64>().unwrap())
+                        .collect()
+                }
             })
         })
-        .expect("unlock tokens reply always contains valid unlocked_lock_ids attribute");
+        .expect("Hydro's UnlockTokens reply always contains valid unlocked_lock_ids attribute");
+
+    deps.api.debug(&format!(
+        "ZEPWASM: unlocked_hydro_lock_ids: {:?}, expected_unlocked_ids: {:?}",
+        unlocked_hydro_lock_ids, decommission_vessels_params.expected_unlocked_ids
+    ));
 
     // Check if the unlocked lock IDs match the expected ones
     // It might not be in the same order
-    if unlocked_hydro_lock_ids != decommission_vessels_params.expected_unlocked_ids {
+    if !compare_u64_vectors(
+        unlocked_hydro_lock_ids.clone(),
+        decommission_vessels_params.expected_unlocked_ids,
+    ) {
         return Err(ContractError::CustomError {
             msg: "Unlocked lock IDs do not match the expected ones".to_string(),
         });
@@ -575,8 +618,7 @@ fn handle_unlock_tokens_reply(
         .add_attribute("action", "decommission_vessels")
         .add_attribute(
             "unlocked_hydro_lock_ids",
-            decommission_vessels_params
-                .expected_unlocked_ids
+            unlocked_hydro_lock_ids
                 .iter()
                 .map(|x| x.to_string())
                 .collect::<Vec<String>>()

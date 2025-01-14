@@ -1,7 +1,7 @@
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
     Coin, Decimal, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse,
-    StdError, StdResult, SubMsg, WasmMsg,
+    StdError, StdResult, Storage, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens};
 use hydro_interface::state::query_lock_entries;

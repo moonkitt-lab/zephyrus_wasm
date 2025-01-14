@@ -3,7 +3,7 @@ mod tests {
 
     use cosmwasm_std::{
         testing::{message_info, mock_dependencies, mock_env, MockApi},
-        Addr, Coin, Decimal,
+        Addr, Coin, Decimal, Response,
     };
     use zephyrus_core::msgs::{ExecuteMsg, InstantiateMsg, VesselCreationMsg};
 

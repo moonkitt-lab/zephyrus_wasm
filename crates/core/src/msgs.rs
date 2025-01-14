@@ -41,6 +41,9 @@ pub enum ExecuteMsg {
     },
     PauseContract {},
     UnpauseContract {},
+    DecommissionVessels {
+        hydro_lock_ids: Vec<u64>,
+    },
 }
 
 #[cw_serde]

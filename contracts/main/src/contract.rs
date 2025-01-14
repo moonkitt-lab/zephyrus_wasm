@@ -284,11 +284,6 @@ fn execute_decommission_vessels(
         &hydro_lock_ids,
     )?;
 
-    deps.api.debug(&format!(
-        "ZEPWASM: lock_entries retrieved by direct access to : {:?}",
-        lock_entries
-    ));
-
     let mut expected_unlocked_ids = vec![];
     for lock_entry in lock_entries {
         if lock_entry.1.lock_end < env.block.time {
@@ -312,11 +307,6 @@ fn execute_decommission_vessels(
         expected_unlocked_ids,
         vessel_owner: info.sender.clone(),
     };
-
-    deps.api.debug(&format!(
-        "ZEPWASM: decommission_vessels_params: {:?}",
-        decommission_vessels_params
-    ));
 
     let execute_hydro_unlock_msg: SubMsg<NeutronMsg> =
         SubMsg::reply_on_success(execute_hydro_unlock_msg, DECOMMISSION_REPLY_ID)
@@ -489,8 +479,6 @@ fn handle_unlock_tokens_reply(
         .into_result()
         .expect("always issued on_success");
 
-    deps.api.debug("ZEPWASM: In handle_unlock_tokens_reply");
-
     let decommission_vessels_params: DecommissionVesselsParameters =
         from_json(reply.payload).expect("decommission vessels parameters always attached");
 
@@ -516,11 +504,6 @@ fn handle_unlock_tokens_reply(
         })
         .expect("unlock tokens reply always contains valid unlocked_hydro_lock_ids attribute");
 
-    deps.api.debug(&format!(
-        "ZEPWASM: hydro_unlocked_tokens: {:?}",
-        hydro_unlocked_tokens
-    ));
-
     // Check the new balance and compare with the previous one
     // Query current balance after unlocking
     let balance_query = BankQuery::AllBalances {
@@ -528,11 +511,6 @@ fn handle_unlock_tokens_reply(
     };
     let current_balances: AllBalanceResponse =
         deps.querier.query(&QueryRequest::Bank(balance_query))?;
-
-    deps.api.debug(&format!(
-        "ZEPWASM: current_balances: {:?}",
-        current_balances
-    ));
 
     // Calculate difference in balances
     let mut received_coins: Vec<Coin> = vec![];
@@ -550,11 +528,6 @@ fn handle_unlock_tokens_reply(
             });
         }
     }
-
-    deps.api.debug(&format!(
-        "ZEPWASM: hydro_unlocked_tokens: {:?}, received_coins: {:?}",
-        hydro_unlocked_tokens, received_coins
-    ));
 
     // Compare hydro_unlocked_tokens with received_coins
     // It might not be in the same order
@@ -588,11 +561,6 @@ fn handle_unlock_tokens_reply(
             })
         })
         .expect("Hydro's UnlockTokens reply always contains valid unlocked_lock_ids attribute");
-
-    deps.api.debug(&format!(
-        "ZEPWASM: unlocked_hydro_lock_ids: {:?}, expected_unlocked_ids: {:?}",
-        unlocked_hydro_lock_ids, decommission_vessels_params.expected_unlocked_ids
-    ));
 
     // Check if the unlocked lock IDs match the expected ones
     // It might not be in the same order

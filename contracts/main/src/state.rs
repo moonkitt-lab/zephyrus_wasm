@@ -250,6 +250,40 @@ pub fn modify_auto_maintenance(
     Ok(())
 }
 
+pub fn remove_vessel(
+    storage: &mut dyn Storage,
+    owner: &Addr,
+    hydro_lock_id: HydroLockId,
+) -> Result<(), ContractError> {
+    let vessel = get_vessel(storage, hydro_lock_id)?;
+
+    VESSELS.remove(storage, hydro_lock_id);
+
+    let mut owner_vessels = OWNER_VESSELS
+        .may_load(storage, owner.as_str())?
+        .unwrap_or_default();
+
+    owner_vessels.remove(&hydro_lock_id);
+
+    OWNER_VESSELS.save(storage, owner.as_str(), &owner_vessels)?;
+
+    let mut vessels_hydromancer = HYDROMANCER_VESSELS
+        .may_load(storage, vessel.hydromancer_id)?
+        .unwrap_or_default();
+    vessels_hydromancer.remove(&hydro_lock_id);
+    HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
+
+    if vessel.auto_maintenance {
+        let mut vessels_class = AUTO_MAINTAINED_VESSELS_BY_CLASS
+            .may_load(storage, vessel.class_period)?
+            .unwrap_or_default();
+        vessels_class.remove(&hydro_lock_id);
+        AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
+    }
+
+    Ok(())
+}
+
 pub fn is_vessel_owned_by(
     storage: &dyn Storage,
     owner: &Addr,

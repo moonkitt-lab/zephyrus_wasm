@@ -9,6 +9,9 @@ pub enum ExecuteMsg {
         lock_ids: Vec<u64>,
         lock_duration: u64,
     },
+    UnlockTokens {
+        lock_ids: Option<Vec<u64>>,
+    },
 }
 
 #[cw_serde]

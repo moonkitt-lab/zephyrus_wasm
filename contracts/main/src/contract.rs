@@ -362,6 +362,10 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             start_index,
             limit,
         )?),
+        QueryMsg::IsContractPaused {} => {
+            let paused = state::is_contract_paused(deps.storage)?;
+            to_json_binary(&paused)
+        }
     }
 }
 

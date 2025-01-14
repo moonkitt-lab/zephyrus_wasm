@@ -82,6 +82,8 @@ pub enum QueryMsg {
         start_index: Option<usize>,
         limit: Option<usize>,
     },
+    #[returns(bool)]
+    IsContractPaused {},
 }
 
 #[cw_serde]

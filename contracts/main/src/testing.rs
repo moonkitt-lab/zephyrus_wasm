@@ -5,7 +5,7 @@ mod tests {
         testing::{message_info, mock_dependencies, mock_env, MockApi},
         Addr, Coin, Decimal,
     };
-    use zephyrus_core::msgs::{ExecuteMsg, InstantiateMsg, VesselCreationMsg};
+    use zephyrus_core::msgs::{BuildVesselParams, ExecuteMsg, InstantiateMsg};
 
     use crate::{
         contract::{execute, instantiate},
@@ -115,11 +115,10 @@ mod tests {
             &[Coin::new(3000u64, IBC_DENOM_1.to_string())],
         );
         let msg_build_vessel = ExecuteMsg::BuildVessel {
-            vessels: vec![VesselCreationMsg {
+            vessels: vec![BuildVesselParams {
                 lock_duration: 1000,
                 auto_maintenance: true,
                 hydromancer_id: 0,
-                share: 100,
             }],
             receiver: None,
         };

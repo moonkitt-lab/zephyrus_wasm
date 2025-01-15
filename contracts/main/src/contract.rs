@@ -92,6 +92,8 @@ fn execute_build_vessel(
     vessels: Vec<BuildVesselParams>,
     receiver: Option<String>,
 ) -> Result<Response, ContractError> {
+    validate_contract_is_not_paused(&deps)?;
+
     if info.funds.is_empty() {
         return Err(ContractError::NoTokensReceived);
     }
@@ -102,7 +104,6 @@ fn execute_build_vessel(
             funds_len: info.funds.len(),
         });
     }
-    validate_contract_is_not_paused(&deps)?;
 
     let hydro_config = state::get_hydro_config(deps.storage)?;
 
@@ -123,7 +124,7 @@ fn execute_build_vessel(
         let denom_trace = deps.querier.ibc_denom_trace(&token.denom)?;
 
         let tokenized_share_record_id = extract_tokenized_share_record_id(&denom_trace)
-            .ok_or_else(|| ContractError::InvalidLsmTokenRecieved(token.denom.clone()))?;
+            .ok_or_else(|| ContractError::InvalidLsmTokenReceived(token.denom.clone()))?;
 
         if state::is_tokenized_share_record_used(deps.storage, tokenized_share_record_id) {
             return Err(ContractError::TokenizedShareRecordAlreadyInUse(
@@ -937,7 +938,7 @@ mod test {
                 None
             )
             .unwrap_err(),
-            ContractError::InvalidLsmTokenRecieved(
+            ContractError::InvalidLsmTokenReceived(
                 "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2".to_owned()
             )
         );

@@ -34,7 +34,7 @@ pub enum ContractError {
     CreateVesselParamsLengthMismatch { params_len: usize, funds_len: usize },
 
     #[error("Invalid LSM token received: {0}")]
-    InvalidLsmTokenRecieved(String),
+    InvalidLsmTokenReceived(String),
 
     #[error("Tokenized shares record with id {0} is already in use")]
     TokenizedShareRecordAlreadyInUse(u64),

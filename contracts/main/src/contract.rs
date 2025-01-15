@@ -13,8 +13,6 @@ use zephyrus_core::msgs::{
 };
 
 use crate::{
-    // TODO: Can we remove this module?
-    // domain,
     errors::ContractError,
     helpers::ibc::{DenomTrace, QuerierExt as IbcQuerierExt},
     helpers::vectors::{compare_coin_vectors, compare_u64_vectors},

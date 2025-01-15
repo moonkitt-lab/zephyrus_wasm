@@ -7,7 +7,7 @@ pub enum ContractError {
     Std(#[from] StdError),
 
     #[error("Unauthorized")]
-    Unauthorized {},
+    Unauthorized,
     // Add any other custom errors you like here.
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
     #[error("Custom Error val: {msg:?}")]
@@ -22,6 +22,8 @@ pub enum ContractError {
     #[error("There is no vessel to auto maintain")]
     NoVesselsToAutoMaintain {},
 
+    #[error("Paused")]
+    Paused,
     #[error("The vessel cannot be decommissioned")]
     LockNotExpired {},
 }

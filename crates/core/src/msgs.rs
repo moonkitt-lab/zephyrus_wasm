@@ -39,6 +39,8 @@ pub enum ExecuteMsg {
         hydro_lock_ids: Vec<u64>,
         auto_maintenance: bool,
     },
+    PauseContract {},
+    UnpauseContract {},
     DecommissionVessels {
         hydro_lock_ids: Vec<u64>,
     },
@@ -83,6 +85,8 @@ pub enum QueryMsg {
         start_index: Option<usize>,
         limit: Option<usize>,
     },
+    #[returns(bool)]
+    IsContractPaused {},
 }
 
 #[cw_serde]

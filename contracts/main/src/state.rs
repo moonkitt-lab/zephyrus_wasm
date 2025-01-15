@@ -23,6 +23,8 @@ pub struct Hydromancer {
 const USER_NEXT_ID: Item<UserId> = Item::new("user_next_id");
 const HYDROMANCER_NEXT_ID: Item<HydromancerId> = Item::new("hydromancer_next_id");
 
+const PAUSED_CONTRACT: Item<bool> = Item::new("paused_contract");
+
 // Every address in this list is an admin
 const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");
 
@@ -45,6 +47,20 @@ const AUTO_MAINTAINED_VESSELS_BY_CLASS: Map<u64, BTreeSet<HydroLockId>> =
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
     HYDROMANCER_NEXT_ID.save(storage, &0)?;
+    Ok(())
+}
+
+pub fn is_contract_paused(storage: &dyn Storage) -> Result<bool, StdError> {
+    PAUSED_CONTRACT.load(storage)
+}
+
+pub fn pause_contract(storage: &mut dyn Storage) -> Result<(), StdError> {
+    PAUSED_CONTRACT.save(storage, &true)?;
+    Ok(())
+}
+
+pub fn unpause_contract(storage: &mut dyn Storage) -> Result<(), StdError> {
+    PAUSED_CONTRACT.save(storage, &false)?;
     Ok(())
 }
 
@@ -293,6 +309,11 @@ pub fn is_vessel_owned_by(
         .may_load(storage, owner.as_str())?
         .unwrap_or_default();
     Ok(owner_vessels.contains(&hydro_lock_id))
+}
+
+pub fn is_whitelisted_admin(storage: &dyn Storage, sender: &Addr) -> Result<bool, ContractError> {
+    let whitelist_admins = WHITELIST_ADMINS.load(storage)?;
+    Ok(whitelist_admins.contains(sender))
 }
 
 pub fn are_vessels_owned_by(

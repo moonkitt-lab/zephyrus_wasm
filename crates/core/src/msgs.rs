@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Decimal;
+use cosmwasm_std::{Addr, Decimal};
 
 pub type UserId = u64;
 pub type HydromancerId = u64;
@@ -13,6 +13,19 @@ pub struct InstantiateMsg {
     pub default_hydromancer_name: String,
     pub default_hydromancer_commission_rate: Decimal,
     pub default_hydromancer_address: String,
+}
+
+#[cw_serde]
+pub struct Constants {
+    pub default_hydromancer_id: HydromancerId,
+    pub paused_contract: bool,
+    pub hydro_config: HydroConfig,
+}
+
+#[cw_serde]
+pub struct HydroConfig {
+    pub hydro_contract_address: Addr,
+    pub hydro_tribute_contract_address: Addr,
 }
 
 #[derive(Copy)]
@@ -87,8 +100,8 @@ pub enum QueryMsg {
         start_index: Option<usize>,
         limit: Option<usize>,
     },
-    #[returns(bool)]
-    IsContractPaused {},
+    #[returns(Constants)]
+    Constants {},
 }
 
 #[cw_serde]

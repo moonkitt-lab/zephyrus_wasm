@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, VesselCreationMsg, QueryMsg, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -87,7 +87,7 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     vessels
   }: {
     receiver?: string;
-    vessels: VesselCreationMsg[];
+    vessels: BuildVesselParams[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateVesselsClass: ({
     hydroLockDuration,
@@ -130,7 +130,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     vessels
   }: {
     receiver?: string;
-    vessels: VesselCreationMsg[];
+    vessels: BuildVesselParams[];
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       build_vessel: {

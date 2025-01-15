@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, VesselCreationMsg, QueryMsg, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, VesselCreationMsg, QueryMsg, Boolean, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -28,6 +28,7 @@ export interface ZephyrusMainReadOnlyInterface {
     limit?: number;
     startIndex?: number;
   }) => Promise<VesselsResponse>;
+  isContractPaused: () => Promise<Boolean>;
 }
 export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   client: CosmWasmClient;
@@ -38,6 +39,7 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
     this.votingPower = this.votingPower.bind(this);
     this.vesselsByOwner = this.vesselsByOwner.bind(this);
     this.vesselsByHydromancer = this.vesselsByHydromancer.bind(this);
+    this.isContractPaused = this.isContractPaused.bind(this);
   }
   votingPower = async (): Promise<VotingPowerResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -78,6 +80,11 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
       }
     });
   };
+  isContractPaused = async (): Promise<Boolean> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      is_contract_paused: {}
+    });
+  };
 }
 export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   contractAddress: string;
@@ -104,6 +111,8 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     autoMaintenance: boolean;
     hydroLockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  pauseContract: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  unpauseContract: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   decommissionVessels: ({
     hydroLockIds
   }: {
@@ -123,6 +132,8 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.updateVesselsClass = this.updateVesselsClass.bind(this);
     this.autoMaintain = this.autoMaintain.bind(this);
     this.modifyAutoMaintenance = this.modifyAutoMaintenance.bind(this);
+    this.pauseContract = this.pauseContract.bind(this);
+    this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
   }
   buildVessel = async ({
@@ -170,6 +181,16 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
         auto_maintenance: autoMaintenance,
         hydro_lock_ids: hydroLockIds
       }
+    }, fee, memo, _funds);
+  };
+  pauseContract = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      pause_contract: {}
+    }, fee, memo, _funds);
+  };
+  unpauseContract = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      unpause_contract: {}
     }, fee, memo, _funds);
   };
   decommissionVessels = async ({

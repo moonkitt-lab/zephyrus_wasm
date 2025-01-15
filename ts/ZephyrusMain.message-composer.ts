@@ -8,7 +8,7 @@ import { Coin } from "@cosmjs/amino";
 import { MsgExecuteContractEncodeObject } from "@cosmjs/cosmwasm-stargate";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Decimal, InstantiateMsg, ExecuteMsg, VesselCreationMsg, QueryMsg, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, VesselCreationMsg, QueryMsg, Boolean, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
@@ -34,6 +34,8 @@ export interface ZephyrusMainMsg {
     autoMaintenance: boolean;
     hydroLockIds: number[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  pauseContract: (_funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  unpauseContract: (_funds?: Coin[]) => MsgExecuteContractEncodeObject;
   decommissionVessels: ({
     hydroLockIds
   }: {
@@ -50,6 +52,8 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.updateVesselsClass = this.updateVesselsClass.bind(this);
     this.autoMaintain = this.autoMaintain.bind(this);
     this.modifyAutoMaintenance = this.modifyAutoMaintenance.bind(this);
+    this.pauseContract = this.pauseContract.bind(this);
+    this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
   }
   buildVessel = ({
@@ -126,6 +130,32 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
             auto_maintenance: autoMaintenance,
             hydro_lock_ids: hydroLockIds
           }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  pauseContract = (_funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          pause_contract: {}
+        })),
+        funds: _funds
+      })
+    };
+  };
+  unpauseContract = (_funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          unpause_contract: {}
         })),
         funds: _funds
       })

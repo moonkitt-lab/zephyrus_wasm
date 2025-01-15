@@ -3,7 +3,7 @@ mod tests {
 
     use cosmwasm_std::{
         testing::{message_info, mock_dependencies, mock_env, MockApi},
-        Addr, Coin, Decimal, Response,
+        Addr, Coin, Decimal,
     };
     use zephyrus_core::msgs::{ExecuteMsg, InstantiateMsg, VesselCreationMsg};
 
@@ -187,7 +187,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err().to_string(),
-            "Generic error: Contract already unpaused"
+            "Generic error: Cannot unpause: Contract not paused"
         );
     }
 }

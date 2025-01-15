@@ -31,6 +31,10 @@ export type ExecuteMsg = {
     hydro_lock_ids: number[];
   };
 } | {
+  pause_contract: {};
+} | {
+  unpause_contract: {};
+} | {
   decommission_vessels: {
     hydro_lock_ids: number[];
   };
@@ -55,7 +59,10 @@ export type QueryMsg = {
     limit?: number | null;
     start_index?: number | null;
   };
+} | {
+  is_contract_paused: {};
 };
+export type Boolean = boolean;
 export interface VesselsResponse {
   limit: number;
   start_index: number;

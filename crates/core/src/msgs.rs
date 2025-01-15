@@ -15,19 +15,19 @@ pub struct InstantiateMsg {
     pub default_hydromancer_address: String,
 }
 
+#[derive(Copy)]
 #[cw_serde]
-pub struct VesselCreationMsg {
+pub struct BuildVesselParams {
     pub lock_duration: u64,
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,
-    pub share: u8,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
     // TODO: Determine message variants
     BuildVessel {
-        vessels: Vec<VesselCreationMsg>,
+        vessels: Vec<BuildVesselParams>,
         receiver: Option<String>,
     },
     UpdateVesselsClass {
@@ -44,9 +44,11 @@ pub enum ExecuteMsg {
     },
 }
 
+#[derive(Copy)]
 #[cw_serde]
 pub struct Vessel {
     pub hydro_lock_id: HydroLockId,
+    pub tokenized_share_record_id: u64,
     pub class_period: u64,
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,

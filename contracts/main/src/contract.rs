@@ -114,6 +114,9 @@ fn execute_build_vessel(
 
     let mut hydro_lock_msgs = vec![];
 
+    // Note: Check again when IBC v2 is out, because the order of tokens may not be deterministic
+    // Today with IBC v1, IBC transfers can only send one token at once, so we don't have any issue
+    // And for tokens directly sent to the contract, the order is deterministic
     for (params, token) in vessels.into_iter().zip(info.funds) {
         if !state::hydromancer_exists(deps.storage, params.hydromancer_id) {
             return Err(ContractError::HydromancerNotFound {

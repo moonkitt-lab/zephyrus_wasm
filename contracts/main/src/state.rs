@@ -19,6 +19,8 @@ pub struct Hydromancer {
     pub commission_rate: Decimal,
 }
 
+pub type TokenizedShareRecordId = u64;
+
 // Sequences
 const USER_NEXT_ID: Item<UserId> = Item::new("user_next_id");
 const HYDROMANCER_NEXT_ID: Item<HydromancerId> = Item::new("hydromancer_next_id");
@@ -37,6 +39,9 @@ const DEFAULT_HYDROMANCER_ID: Item<HydromancerId> = Item::new("default_hydromanc
 const VESSELS: Map<HydroLockId, Vessel> = Map::new("vessels");
 // Addr as &str when used as a key allows for less cloning
 const OWNER_VESSELS: Map<&str, BTreeSet<HydroLockId>> = Map::new("owner_vessels");
+
+const TOKENIZED_SHARE_RECORDS: Map<TokenizedShareRecordId, HydroLockId> =
+    Map::new("tokenized_share_records");
 
 const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
     Map::new("hydromancer_vessels_ids");
@@ -141,6 +146,10 @@ pub fn add_hydromancer(
     HYDROMANCERS.save(storage, hydromancer.hydromancer_id, hydromancer)
 }
 
+pub fn hydromancer_exists(storage: &dyn Storage, hydromancer_id: HydromancerId) -> bool {
+    HYDROMANCERS.has(storage, hydromancer_id)
+}
+
 pub fn get_hydro_config(storage: &dyn Storage) -> Result<HydroConfig, StdError> {
     HYDRO_CONFIG.load(storage)
 }
@@ -161,11 +170,15 @@ pub fn add_vessel(
     owner_vessels.insert(vessel_id);
 
     OWNER_VESSELS.save(storage, owner.as_str(), &owner_vessels)?;
+
     let mut vessels_hydromancer = HYDROMANCER_VESSELS
         .may_load(storage, vessel.hydromancer_id)?
         .unwrap_or_default();
+
     vessels_hydromancer.insert(vessel_id);
+
     HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
+
     if vessel.auto_maintenance {
         let mut vessels_class = AUTO_MAINTAINED_VESSELS_BY_CLASS
             .may_load(storage, vessel.class_period)?
@@ -174,7 +187,16 @@ pub fn add_vessel(
         AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
     }
 
+    TOKENIZED_SHARE_RECORDS.save(storage, vessel.tokenized_share_record_id, &vessel_id)?;
+
     Ok(())
+}
+
+pub fn is_tokenized_share_record_used(
+    storage: &dyn Storage,
+    tokenized_share_record_id: TokenizedShareRecordId,
+) -> bool {
+    TOKENIZED_SHARE_RECORDS.has(storage, tokenized_share_record_id)
 }
 
 pub fn get_vessel(storage: &dyn Storage, hydro_lock_id: HydroLockId) -> Result<Vessel, StdError> {
@@ -286,16 +308,22 @@ pub fn remove_vessel(
     let mut vessels_hydromancer = HYDROMANCER_VESSELS
         .may_load(storage, vessel.hydromancer_id)?
         .unwrap_or_default();
+
     vessels_hydromancer.remove(&hydro_lock_id);
+
     HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
 
     if vessel.auto_maintenance {
         let mut vessels_class = AUTO_MAINTAINED_VESSELS_BY_CLASS
             .may_load(storage, vessel.class_period)?
             .unwrap_or_default();
+
         vessels_class.remove(&hydro_lock_id);
+
         AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
     }
+
+    TOKENIZED_SHARE_RECORDS.remove(storage, vessel.tokenized_share_record_id);
 
     Ok(())
 }

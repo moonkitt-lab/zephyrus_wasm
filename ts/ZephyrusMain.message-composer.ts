@@ -8,7 +8,7 @@ import { Coin } from "@cosmjs/amino";
 import { MsgExecuteContractEncodeObject } from "@cosmjs/cosmwasm-stargate";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Decimal, InstantiateMsg, ExecuteMsg, VesselCreationMsg, QueryMsg, Boolean, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Boolean, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
@@ -17,7 +17,7 @@ export interface ZephyrusMainMsg {
     vessels
   }: {
     receiver?: string;
-    vessels: VesselCreationMsg[];
+    vessels: BuildVesselParams[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   updateVesselsClass: ({
     hydroLockDuration,
@@ -61,7 +61,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     vessels
   }: {
     receiver?: string;
-    vessels: VesselCreationMsg[];
+    vessels: BuildVesselParams[];
   }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
     return {
       typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",

@@ -16,7 +16,7 @@ export interface InstantiateMsg {
 export type ExecuteMsg = {
   build_vessel: {
     receiver?: string | null;
-    vessels: VesselCreationMsg[];
+    vessels: BuildVesselParams[];
   };
 } | {
   update_vessels_class: {
@@ -39,11 +39,10 @@ export type ExecuteMsg = {
     hydro_lock_ids: number[];
   };
 };
-export interface VesselCreationMsg {
+export interface BuildVesselParams {
   auto_maintenance: boolean;
   hydromancer_id: number;
   lock_duration: number;
-  share: number;
 }
 export type QueryMsg = {
   voting_power: {};
@@ -74,6 +73,7 @@ export interface Vessel {
   class_period: number;
   hydro_lock_id: number;
   hydromancer_id: number;
+  tokenized_share_record_id: number;
 }
 export interface VotingPowerResponse {
   voting_power: number;

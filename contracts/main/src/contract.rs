@@ -8,9 +8,10 @@ use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, Constants, ExecuteMsg, HydroConfig, HydroLockId, InstantiateMsg, MigrateMsg,
-    QueryMsg, Vessel, VesselsResponse, VotingPowerResponse,
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
+    VesselsResponse, VotingPowerResponse,
 };
+use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
 use crate::{
     errors::ContractError,
@@ -461,6 +462,11 @@ fn query_vessels_by_hydromancer(
     })
 }
 
+fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
+    let constants = state::get_constants(deps.storage)?;
+    Ok(ConstantsResponse { constants })
+}
+
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
     match msg {
@@ -480,10 +486,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             start_index,
             limit,
         )?),
-        QueryMsg::Constants {} => {
-            let constants = state::get_constants(deps.storage)?;
-            to_json_binary(&constants)
-        }
+        QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
     }
 }
 
@@ -717,7 +720,8 @@ mod test {
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
     };
     use prost::Message;
-    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg, Vessel};
+    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg};
+    use zephyrus_core::state::Vessel;
 
     use crate::{contract::LockTokensReplyPayload, errors::ContractError};
 

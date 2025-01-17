@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Addr, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -28,7 +28,7 @@ export interface ZephyrusMainReadOnlyInterface {
     limit?: number;
     startIndex?: number;
   }) => Promise<VesselsResponse>;
-  constants: () => Promise<Constants>;
+  constants: () => Promise<ConstantsResponse>;
 }
 export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   client: CosmWasmClient;
@@ -80,7 +80,7 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
       }
     });
   };
-  constants = async (): Promise<Constants> => {
+  constants = async (): Promise<ConstantsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
       constants: {}
     });

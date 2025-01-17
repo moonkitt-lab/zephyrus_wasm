@@ -2,7 +2,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
-use zephyrus_core::msgs::{Constants, HydroLockId, HydromancerId, UserId, Vessel};
+use zephyrus_core::state::{Constants, HydroLockId, HydromancerId, UserId, Vessel};
 
 use crate::errors::ContractError;
 

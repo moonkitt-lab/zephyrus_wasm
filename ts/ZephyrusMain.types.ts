@@ -62,6 +62,9 @@ export type QueryMsg = {
   constants: {};
 };
 export type Addr = string;
+export interface ConstantsResponse {
+  constants: Constants;
+}
 export interface Constants {
   default_hydromancer_id: number;
   hydro_config: HydroConfig;

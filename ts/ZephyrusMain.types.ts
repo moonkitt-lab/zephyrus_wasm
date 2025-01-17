@@ -59,9 +59,18 @@ export type QueryMsg = {
     start_index?: number | null;
   };
 } | {
-  is_contract_paused: {};
+  constants: {};
 };
-export type Boolean = boolean;
+export type Addr = string;
+export interface Constants {
+  default_hydromancer_id: number;
+  hydro_config: HydroConfig;
+  paused_contract: boolean;
+}
+export interface HydroConfig {
+  hydro_contract_address: Addr;
+  hydro_tribute_contract_address: Addr;
+}
 export interface VesselsResponse {
   limit: number;
   start_index: number;

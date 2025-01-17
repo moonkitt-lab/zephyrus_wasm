@@ -1,8 +1,11 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, StdError, Storage};
-use cw_storage_plus::{Item, Map};
+use cw_storage_plus::{Item, Key, Map, PrimaryKey};
 use std::collections::BTreeSet;
-use zephyrus_core::msgs::{Constants, HydroLockId, HydromancerId, UserId, Vessel};
+use zephyrus_core::msgs::{
+    Constants, HydroLockId, HydroProposalId, HydromancerId, RoundId, TrancheId, UserControl,
+    UserId, Vessel,
+};
 
 use crate::errors::ContractError;
 
@@ -12,6 +15,13 @@ pub struct Hydromancer {
     pub address: Addr,
     pub name: String,
     pub commission_rate: Decimal,
+}
+
+#[cw_serde]
+pub struct VesselHarbor {
+    pub user_control: UserControl,
+    pub steerer_id: u64,
+    pub hydro_lock_id: HydroLockId,
 }
 
 pub type TokenizedShareRecordId = u64;
@@ -40,6 +50,10 @@ const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
 
 const AUTO_MAINTAINED_VESSELS_BY_CLASS: Map<u64, BTreeSet<HydroLockId>> =
     Map::new("auto_maintained_vessels_by_class");
+
+const VOTES: Map<(TrancheId, RoundId, HydroProposalId), VesselHarbor> = Map::new("votes");
+const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
+    Map::new("vessels_under_user_control");
 
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
@@ -166,8 +180,65 @@ pub fn is_tokenized_share_record_used(
     TOKENIZED_SHARE_RECORDS.has(storage, tokenized_share_record_id)
 }
 
+pub fn add_vote(
+    storage: &mut dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    proposal_id: HydroProposalId,
+    vessel_harbor: &VesselHarbor,
+) -> Result<(), StdError> {
+    VOTES.save(storage, (tranche_id, round_id, proposal_id), vessel_harbor)?;
+
+    if vessel_harbor.user_control {
+        let mut vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
+            .may_load(storage, (tranche_id, round_id))
+            .unwrap_or_default();
+        match vessels_under_user_control {
+            Some(ref mut vessel_ids) => {
+                vessel_ids.insert(vessel_harbor.hydro_lock_id);
+                VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &vessel_ids)?;
+            }
+            None => {
+                let mut new_set = BTreeSet::new();
+                new_set.insert(vessel_harbor.hydro_lock_id);
+                VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &new_set)?;
+            }
+        }
+    }
+    //TODO : check if the vessel was already in harbor for this round, change it to the new harbor
+    VOTES.save(storage, (tranche_id, round_id, proposal_id), &vessel_harbor)?;
+
+    Ok(())
+}
+
+pub fn is_vessel_under_user_control(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> bool {
+    let vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
+        .may_load(storage, (tranche_id, round_id))
+        .unwrap_or_default();
+
+    match vessels_under_user_control {
+        Some(vessel_ids) => vessel_ids.contains(&hydro_lock_id),
+        None => false,
+    }
+}
+
 pub fn get_vessel(storage: &dyn Storage, hydro_lock_id: HydroLockId) -> Result<Vessel, StdError> {
     VESSELS.load(storage, hydro_lock_id)
+}
+
+pub fn get_vessels_by_ids(
+    storage: &dyn Storage,
+    hydro_lock_ids: &[HydroLockId],
+) -> Result<Vec<Vessel>, StdError> {
+    hydro_lock_ids
+        .iter()
+        .map(|id| VESSELS.load(storage, *id))
+        .collect()
 }
 
 pub fn get_vessels_by_owner(

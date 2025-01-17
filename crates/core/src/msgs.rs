@@ -4,6 +4,10 @@ use cosmwasm_std::{Addr, Decimal};
 pub type UserId = u64;
 pub type HydromancerId = u64;
 pub type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
+pub type HydroProposalId = u64;
+pub type TrancheId = u64;
+pub type RoundId = u64;
+pub type UserControl = bool;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -37,6 +41,12 @@ pub struct BuildVesselParams {
 }
 
 #[cw_serde]
+pub struct VesselsToHarbor {
+    pub vessel_ids: Vec<HydroLockId>,
+    pub harbor_id: HydroProposalId,
+}
+
+#[cw_serde]
 pub enum ExecuteMsg {
     // TODO: Determine message variants
     BuildVessel {
@@ -56,6 +66,10 @@ pub enum ExecuteMsg {
     UnpauseContract {},
     DecommissionVessels {
         hydro_lock_ids: Vec<u64>,
+    },
+    HydromancerVote {
+        tranche_id: TrancheId,
+        vessels_harbors: Vec<VesselsToHarbor>,
     },
 }
 

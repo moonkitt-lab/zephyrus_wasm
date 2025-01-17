@@ -1,5 +1,6 @@
 use cosmwasm_std::StdError;
 use thiserror::Error;
+use zephyrus_core::msgs::{HydroLockId, HydromancerId};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ContractError {
@@ -15,6 +16,15 @@ pub enum ContractError {
 
     #[error("Hydromancer {hydromancer_id} not found")]
     HydromancerNotFound { hydromancer_id: u64 },
+
+    #[error(
+        "Vessel {vessel_id} is not controlled by {vessel_hydromancer_id} not {hydromancer_id}"
+    )]
+    InvalidHydromancerId {
+        vessel_id: HydroLockId,
+        hydromancer_id: HydromancerId,
+        vessel_hydromancer_id: HydromancerId,
+    },
 
     #[error("Total shares error: {total_shares}")]
     TotalSharesError { total_shares: u8 },
@@ -32,6 +42,9 @@ pub enum ContractError {
 
     #[error("Length of create vessel params does not match the number of tokens received: number of params received {params_len}, number of tokens received {funds_len}")]
     CreateVesselParamsLengthMismatch { params_len: usize, funds_len: usize },
+
+    #[error("One or more vessels are under user control : {vessel_ids}")]
+    VesselsUnderUserControl { vessel_ids: String },
 
     #[error("Invalid LSM token received: {0}")]
     InvalidLsmTokenReceived(String),

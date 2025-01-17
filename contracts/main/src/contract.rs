@@ -3,15 +3,18 @@ use cosmwasm_std::{
     Coin, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse, StdError,
     StdResult, SubMsg, WasmMsg,
 };
-use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens};
+use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens, Vote};
+use hydro_interface::msgs::ProposalToLockups;
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
+use neutron_sdk::interchain_queries::v047::types::Proposal;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
     BuildVesselParams, Constants, ExecuteMsg, HydroConfig, HydroLockId, InstantiateMsg, MigrateMsg,
-    QueryMsg, Vessel, VesselsResponse, VotingPowerResponse,
+    QueryMsg, Vessel, VesselsResponse, VesselsToHarbor, VotingPowerResponse,
 };
 
+use crate::state::Hydromancer;
 use crate::{
     errors::ContractError,
     helpers::ibc::{DenomTrace, QuerierExt as IbcQuerierExt},
@@ -375,6 +378,69 @@ fn execute_decommission_vessels(
     Ok(Response::new().add_submessage(execute_hydro_unlock_msg))
 }
 
+fn execute_hydromancer_vote(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche_id: u64,
+    vessels_harbors: Vec<VesselsToHarbor>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, info.sender)?;
+
+    let mut proposal_votes = vec![];
+    let mut vessel_ids_under_user_control = vec![];
+    for vessels_to_harbor in vessels_harbors {
+        let vessels = state::get_vessels_by_ids(deps.storage, &vessels_to_harbor.vessel_ids)?;
+        let mut lock_ids = vec![];
+
+        for vessel in vessels {
+            if vessel.hydromancer_id != hydromancer_id {
+                return Err(ContractError::InvalidHydromancerId {
+                    vessel_id: vessel.hydro_lock_id,
+                    hydromancer_id: hydromancer_id,
+                    vessel_hydromancer_id: vessel.hydromancer_id,
+                });
+            }
+            if state::is_vessel_under_user_control(
+                deps.storage,
+                tranche_id,
+                vessels_to_harbor.harbor_id,
+                vessel.hydro_lock_id,
+            ) {
+                vessel_ids_under_user_control.push(vessel.hydro_lock_id);
+            }
+            lock_ids.push(vessel.hydro_lock_id);
+        }
+
+        let proposal_to_lockups = ProposalToLockups {
+            proposal_id: vessels_to_harbor.harbor_id,
+            lock_ids,
+        };
+        proposal_votes.push(proposal_to_lockups);
+    }
+    if !vessel_ids_under_user_control.is_empty() {
+        return Err(ContractError::VesselsUnderUserControl {
+            vessel_ids: vessel_ids_under_user_control
+                .iter()
+                .map(|u| u.to_string())
+                .collect::<Vec<String>>()
+                .join(","),
+        });
+    }
+    let vote_message = Vote {
+        tranche_id,
+        proposals_votes: proposal_votes,
+    };
+    let execute_vote_msg = WasmMsg::Execute {
+        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&vote_message)?,
+        funds: vec![],
+    };
+    let response = Response::new().add_message(execute_vote_msg);
+    Ok(response)
+}
+
 #[entry_point]
 pub fn execute(
     deps: DepsMut,
@@ -400,6 +466,10 @@ pub fn execute(
         ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
             execute_decommission_vessels(deps, env, info, hydro_lock_ids)
         }
+        ExecuteMsg::HydromancerVote {
+            tranche_id,
+            vessels_harbors,
+        } => execute_hydromancer_vote(deps, info, tranche_id, vessels_harbors),
     }
 }
 

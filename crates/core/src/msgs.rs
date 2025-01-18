@@ -1,3 +1,4 @@
+use crate::state::{Constants, Vessel};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Decimal};
 
@@ -17,19 +18,6 @@ pub struct InstantiateMsg {
     pub default_hydromancer_name: String,
     pub default_hydromancer_commission_rate: Decimal,
     pub default_hydromancer_address: String,
-}
-
-#[cw_serde]
-pub struct Constants {
-    pub default_hydromancer_id: HydromancerId,
-    pub paused_contract: bool,
-    pub hydro_config: HydroConfig,
-}
-
-#[cw_serde]
-pub struct HydroConfig {
-    pub hydro_contract_address: Addr,
-    pub hydro_tribute_contract_address: Addr,
 }
 
 #[derive(Copy)]
@@ -73,16 +61,6 @@ pub enum ExecuteMsg {
     },
 }
 
-#[derive(Copy)]
-#[cw_serde]
-pub struct Vessel {
-    pub hydro_lock_id: HydroLockId,
-    pub tokenized_share_record_id: u64,
-    pub class_period: u64,
-    pub auto_maintenance: bool,
-    pub hydromancer_id: u64,
-}
-
 #[cw_serde]
 pub struct VotingPowerResponse {
     pub voting_power: u64,
@@ -94,6 +72,11 @@ pub struct VesselsResponse {
     pub start_index: usize,
     pub limit: usize,
     pub total: usize,
+}
+
+#[cw_serde]
+pub struct ConstantsResponse {
+    pub constants: Constants,
 }
 
 #[cw_serde]
@@ -114,7 +97,7 @@ pub enum QueryMsg {
         start_index: Option<usize>,
         limit: Option<usize>,
     },
-    #[returns(Constants)]
+    #[returns(ConstantsResponse)]
     Constants {},
 }
 

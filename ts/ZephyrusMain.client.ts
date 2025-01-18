@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Boolean, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -28,7 +28,7 @@ export interface ZephyrusMainReadOnlyInterface {
     limit?: number;
     startIndex?: number;
   }) => Promise<VesselsResponse>;
-  isContractPaused: () => Promise<Boolean>;
+  constants: () => Promise<ConstantsResponse>;
 }
 export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   client: CosmWasmClient;
@@ -39,7 +39,7 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
     this.votingPower = this.votingPower.bind(this);
     this.vesselsByOwner = this.vesselsByOwner.bind(this);
     this.vesselsByHydromancer = this.vesselsByHydromancer.bind(this);
-    this.isContractPaused = this.isContractPaused.bind(this);
+    this.constants = this.constants.bind(this);
   }
   votingPower = async (): Promise<VotingPowerResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -80,9 +80,9 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
       }
     });
   };
-  isContractPaused = async (): Promise<Boolean> => {
+  constants = async (): Promise<ConstantsResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      is_contract_paused: {}
+      constants: {}
     });
   };
 }

@@ -8,9 +8,10 @@ use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ExecuteMsg, HydroLockId, InstantiateMsg, MigrateMsg, QueryMsg, Vessel,
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
     VesselsResponse, VotingPowerResponse,
 };
+use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
 use crate::{
     errors::ContractError,
@@ -49,7 +50,7 @@ pub fn instantiate(
     msg: InstantiateMsg,
 ) -> Result<Response, StdError> {
     state::initialize_sequences(deps.storage)?;
-    state::unpause_contract(deps.storage)?;
+
     let mut whitelist_admins: Vec<Addr> = vec![];
     for admin in msg.whitelist_admins {
         let admin_addr = deps.api.addr_validate(&admin)?;
@@ -58,12 +59,10 @@ pub fn instantiate(
         }
     }
     state::update_whitelist_admins(deps.storage, whitelist_admins)?;
-    let hydro_config = state::HydroConfig {
+    let hydro_config = HydroConfig {
         hydro_contract_address: deps.api.addr_validate(&msg.hydro_contract_address)?,
         hydro_tribute_contract_address: deps.api.addr_validate(&msg.tribute_contract_address)?,
     };
-
-    state::update_hydro_config(deps.storage, hydro_config)?;
 
     let hydromancer_address = deps.api.addr_validate(&msg.default_hydromancer_address)?;
 
@@ -74,7 +73,12 @@ pub fn instantiate(
         msg.default_hydromancer_commission_rate,
     )?;
 
-    state::save_default_hydroamancer_id(deps.storage, default_hydromancer_id)?;
+    let constant = Constants {
+        default_hydromancer_id,
+        paused_contract: false,
+        hydro_config,
+    };
+    state::update_constants(deps.storage, constant)?;
 
     Ok(Response::default())
 }
@@ -92,7 +96,8 @@ fn execute_build_vessel(
     vessels: Vec<BuildVesselParams>,
     receiver: Option<String>,
 ) -> Result<Response, ContractError> {
-    validate_contract_is_not_paused(&deps)?;
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
 
     if info.funds.is_empty() {
         return Err(ContractError::NoTokensReceived);
@@ -104,8 +109,6 @@ fn execute_build_vessel(
             funds_len: info.funds.len(),
         });
     }
-
-    let hydro_config = state::get_hydro_config(deps.storage)?;
 
     let owner = receiver
         .map(|addr| deps.api.addr_validate(&addr))
@@ -141,7 +144,11 @@ fn execute_build_vessel(
             owner: owner.clone(),
         })?;
 
-        let contract_addr = hydro_config.hydro_contract_address.clone().into_string();
+        let contract_addr = constants
+            .hydro_config
+            .hydro_contract_address
+            .clone()
+            .into_string();
 
         let msg = to_json_binary(&LockTokens {
             lock_duration: params.lock_duration,
@@ -166,7 +173,8 @@ fn execute_build_vessel(
 // This function loops through all the vessels, and filters those who have auto_maintenance true
 // Then, it combines them by hydro_lock_duration, and calls execute_update_vessels_class
 fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, ContractError> {
-    validate_contract_is_not_paused(&deps)?;
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
 
     let vessels_ids_by_hydro_lock_duration = state::get_vessels_id_by_class()?;
 
@@ -178,7 +186,7 @@ fn execute_auto_maintain(deps: DepsMut, _info: MessageInfo) -> Result<Response, 
     );
 
     let mut response = Response::new();
-    let hydro_config = state::get_hydro_config(deps.storage)?;
+    let hydro_config = constants.hydro_config;
 
     // Collect all keys into a Vec<u64>
     for item in iterator {
@@ -233,9 +241,10 @@ fn execute_update_vessels_class(
     hydro_lock_ids: Vec<u64>,
     hydro_lock_duration: u64,
 ) -> Result<Response, ContractError> {
-    validate_contract_is_not_paused(&deps)?;
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
 
-    let hydro_config = state::get_hydro_config(deps.storage)?;
+    let hydro_config = constants.hydro_config;
 
     let refresh_duration_msg = RefreshLockDuration {
         lock_ids: hydro_lock_ids,
@@ -258,7 +267,8 @@ fn execute_modify_auto_maintenance(
     hydro_lock_ids: Vec<u64>,
     auto_maintenance: bool,
 ) -> Result<Response, ContractError> {
-    validate_contract_is_not_paused(&deps)?;
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
 
     if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
         return Err(ContractError::Unauthorized {});
@@ -283,10 +293,10 @@ fn execute_modify_auto_maintenance(
 
 fn execute_pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
     validate_admin_address(&deps, &info.sender)?;
-
-    validate_contract_is_not_paused(&deps)?;
-
-    state::pause_contract(deps.storage)?;
+    let mut constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    constants.paused_contract = true;
+    state::update_constants(deps.storage, constants)?;
     Ok(Response::new()
         .add_attribute("action", "pause_contract")
         .add_attribute("sender", info.sender))
@@ -294,14 +304,15 @@ fn execute_pause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, 
 
 fn execute_unpause_contract(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
     validate_admin_address(&deps, &info.sender)?;
-
-    if !state::is_contract_paused(deps.storage)? {
+    let mut constants = state::get_constants(deps.storage)?;
+    if !constants.paused_contract {
         return Err(ContractError::Std(StdError::generic_err(
             "Cannot unpause: Contract not paused",
         )));
     }
+    constants.paused_contract = false;
 
-    state::unpause_contract(deps.storage)?;
+    state::update_constants(deps.storage, constants)?;
     Ok(Response::new()
         .add_attribute("action", "unpause_contract")
         .add_attribute("sender", info.sender))
@@ -313,13 +324,14 @@ fn execute_decommission_vessels(
     info: MessageInfo,
     hydro_lock_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
-    validate_contract_is_not_paused(&deps)?;
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
 
     if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
         return Err(ContractError::Unauthorized {});
     }
 
-    let hydro_config = state::get_hydro_config(deps.storage)?;
+    let hydro_config = constants.hydro_config;
 
     // Check the current balance before unlocking tokens
     let balance_query = BankQuery::AllBalances {
@@ -450,6 +462,11 @@ fn query_vessels_by_hydromancer(
     })
 }
 
+fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
+    let constants = state::get_constants(deps.storage)?;
+    Ok(ConstantsResponse { constants })
+}
+
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
     match msg {
@@ -469,16 +486,12 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             start_index,
             limit,
         )?),
-        QueryMsg::IsContractPaused {} => {
-            let paused = state::is_contract_paused(deps.storage)?;
-            to_json_binary(&paused)
-        }
+        QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
     }
 }
 
-fn validate_contract_is_not_paused(deps: &DepsMut) -> Result<(), ContractError> {
-    let paused = state::is_contract_paused(deps.storage)?;
-    match paused {
+fn validate_contract_is_not_paused(constant: &Constants) -> Result<(), ContractError> {
+    match constant.paused_contract {
         true => Err(ContractError::Paused),
         false => Ok(()),
     }
@@ -707,7 +720,8 @@ mod test {
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
     };
     use prost::Message;
-    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg, Vessel};
+    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg};
+    use zephyrus_core::state::Vessel;
 
     use crate::{contract::LockTokensReplyPayload, errors::ContractError};
 

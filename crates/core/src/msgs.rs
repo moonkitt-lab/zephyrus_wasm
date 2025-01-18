@@ -1,9 +1,6 @@
+use crate::state::{Constants, Vessel};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Decimal;
-
-pub type UserId = u64;
-pub type HydromancerId = u64;
-pub type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -46,16 +43,6 @@ pub enum ExecuteMsg {
     },
 }
 
-#[derive(Copy)]
-#[cw_serde]
-pub struct Vessel {
-    pub hydro_lock_id: HydroLockId,
-    pub tokenized_share_record_id: u64,
-    pub class_period: u64,
-    pub auto_maintenance: bool,
-    pub hydromancer_id: u64,
-}
-
 #[cw_serde]
 pub struct VotingPowerResponse {
     pub voting_power: u64,
@@ -67,6 +54,11 @@ pub struct VesselsResponse {
     pub start_index: usize,
     pub limit: usize,
     pub total: usize,
+}
+
+#[cw_serde]
+pub struct ConstantsResponse {
+    pub constants: Constants,
 }
 
 #[cw_serde]
@@ -87,8 +79,8 @@ pub enum QueryMsg {
         start_index: Option<usize>,
         limit: Option<usize>,
     },
-    #[returns(bool)]
-    IsContractPaused {},
+    #[returns(ConstantsResponse)]
+    Constants {},
 }
 
 #[cw_serde]

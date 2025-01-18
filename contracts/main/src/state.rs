@@ -2,15 +2,10 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
-use zephyrus_core::msgs::{HydroLockId, HydromancerId, UserId, Vessel};
+use zephyrus_core::state::{Constants, HydroLockId, HydromancerId, UserId, Vessel};
 
 use crate::errors::ContractError;
 
-#[cw_serde]
-pub struct HydroConfig {
-    pub hydro_contract_address: Addr,
-    pub hydro_tribute_contract_address: Addr,
-}
 #[cw_serde]
 pub struct Hydromancer {
     pub hydromancer_id: u64,
@@ -25,16 +20,13 @@ pub type TokenizedShareRecordId = u64;
 const USER_NEXT_ID: Item<UserId> = Item::new("user_next_id");
 const HYDROMANCER_NEXT_ID: Item<HydromancerId> = Item::new("hydromancer_next_id");
 
-const PAUSED_CONTRACT: Item<bool> = Item::new("paused_contract");
+const CONSTANTS: Item<Constants> = Item::new("constants");
 
 // Every address in this list is an admin
 const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");
 
-const HYDRO_CONFIG: Item<HydroConfig> = Item::new("hydro_config");
-
 const HYDROMANCERS: Map<HydromancerId, Hydromancer> = Map::new("hydromancers");
 const HYDROMANCERID_BY_ADDR: Map<&str, HydromancerId> = Map::new("hydromancerid_address");
-const DEFAULT_HYDROMANCER_ID: Item<HydromancerId> = Item::new("default_hydromancer_id");
 
 const VESSELS: Map<HydroLockId, Vessel> = Map::new("vessels");
 // Addr as &str when used as a key allows for less cloning
@@ -55,18 +47,13 @@ pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     Ok(())
 }
 
-pub fn is_contract_paused(storage: &dyn Storage) -> Result<bool, StdError> {
-    PAUSED_CONTRACT.load(storage)
-}
-
-pub fn pause_contract(storage: &mut dyn Storage) -> Result<(), StdError> {
-    PAUSED_CONTRACT.save(storage, &true)?;
+pub fn update_constants(storage: &mut dyn Storage, constants: Constants) -> Result<(), StdError> {
+    CONSTANTS.save(storage, &constants)?;
     Ok(())
 }
 
-pub fn unpause_contract(storage: &mut dyn Storage) -> Result<(), StdError> {
-    PAUSED_CONTRACT.save(storage, &false)?;
-    Ok(())
+pub fn get_constants(storage: &dyn Storage) -> Result<Constants, StdError> {
+    CONSTANTS.load(storage)
 }
 
 pub fn update_whitelist_admins(
@@ -74,14 +61,6 @@ pub fn update_whitelist_admins(
     whitelist_admins: Vec<Addr>,
 ) -> Result<(), StdError> {
     WHITELIST_ADMINS.save(storage, &whitelist_admins)?;
-    Ok(())
-}
-
-pub fn update_hydro_config(
-    storage: &mut dyn Storage,
-    hydro_config: HydroConfig,
-) -> Result<(), StdError> {
-    HYDRO_CONFIG.save(storage, &hydro_config)?;
     Ok(())
 }
 
@@ -106,14 +85,6 @@ pub fn insert_new_hydromancer(
     HYDROMANCER_NEXT_ID.save(storage, &(hydromancer_id + 1))?;
 
     Ok(hydromancer_id)
-}
-
-pub fn save_default_hydroamancer_id(
-    storage: &mut dyn Storage,
-    default_hydromancer_id: HydromancerId,
-) -> Result<(), StdError> {
-    DEFAULT_HYDROMANCER_ID.save(storage, &default_hydromancer_id)?;
-    Ok(())
 }
 
 pub fn get_hydromancer(
@@ -148,10 +119,6 @@ pub fn add_hydromancer(
 
 pub fn hydromancer_exists(storage: &dyn Storage, hydromancer_id: HydromancerId) -> bool {
     HYDROMANCERS.has(storage, hydromancer_id)
-}
-
-pub fn get_hydro_config(storage: &dyn Storage) -> Result<HydroConfig, StdError> {
-    HYDRO_CONFIG.load(storage)
 }
 
 pub fn add_vessel(

@@ -396,7 +396,6 @@ fn execute_hydromancer_vote(
         constants.hydro_config.hydro_contract_address.to_string(),
     )?;
     let mut proposal_votes = vec![];
-    let mut vessel_ids_under_user_control = vec![];
     for vessels_to_harbor in vessels_harbors {
         let vessels = state::get_vessels_by_ids(deps.storage, &vessels_to_harbor.vessel_ids)?;
         let mut lock_ids = vec![];
@@ -415,7 +414,9 @@ fn execute_hydromancer_vote(
                 current_round_id,
                 vessel.hydro_lock_id,
             ) {
-                vessel_ids_under_user_control.push(vessel.hydro_lock_id);
+                return Err(ContractError::VesselUnderUserControl {
+                    vessel_id: vessel.hydro_lock_id,
+                });
             }
             lock_ids.push(vessel.hydro_lock_id);
         }
@@ -425,15 +426,6 @@ fn execute_hydromancer_vote(
             lock_ids,
         };
         proposal_votes.push(proposal_to_lockups);
-    }
-    if !vessel_ids_under_user_control.is_empty() {
-        return Err(ContractError::VesselsUnderUserControl {
-            vessel_ids: vessel_ids_under_user_control
-                .iter()
-                .map(|u| u.to_string())
-                .collect::<Vec<String>>()
-                .join(","),
-        });
     }
 
     let vote_message = Vote {

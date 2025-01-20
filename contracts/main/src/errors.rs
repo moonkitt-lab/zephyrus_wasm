@@ -43,8 +43,8 @@ pub enum ContractError {
     #[error("Length of create vessel params does not match the number of tokens received: number of params received {params_len}, number of tokens received {funds_len}")]
     CreateVesselParamsLengthMismatch { params_len: usize, funds_len: usize },
 
-    #[error("One or more vessels are under user control : {vessel_ids}")]
-    VesselsUnderUserControl { vessel_ids: String },
+    #[error("Can't vote with vessel {vessel_id} because it's under user control")]
+    VesselUnderUserControl { vessel_id: u64 },
 
     #[error("Invalid LSM token received: {0}")]
     InvalidLsmTokenReceived(String),

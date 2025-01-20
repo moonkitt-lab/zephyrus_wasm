@@ -449,7 +449,7 @@ fn execute_hydromancer_vote(
                         )?;
                     }
                 }
-                _ => {
+                None => {
                     state::add_vessel_to_harbor(
                         deps.storage,
                         tranche_id,

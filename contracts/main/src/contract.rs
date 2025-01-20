@@ -16,6 +16,7 @@ use zephyrus_core::msgs::{
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
+use crate::state::VesselHarbor;
 use crate::{
     errors::ContractError,
     helpers::ibc::{DenomTrace, QuerierExt as IbcQuerierExt},
@@ -418,6 +419,37 @@ fn execute_hydromancer_vote(
                     vessel_id: vessel.hydro_lock_id,
                 });
             }
+            let previous_harbor_id = state::get_harbor_of_vessel(
+                deps.storage,
+                tranche_id,
+                current_round_id,
+                vessel.hydro_lock_id,
+            );
+            match previous_harbor_id {
+                Some(previous_harbor_id) => {
+                    if previous_harbor_id != vessels_to_harbor.harbor_id {
+                        state::remove_vessel_harbor(
+                            deps.storage,
+                            tranche_id,
+                            current_round_id,
+                            previous_harbor_id,
+                            vessel.hydro_lock_id,
+                        )?;
+                    }
+                }
+                _ => {}
+            }
+            state::add_vessel_to_harbor(
+                deps.storage,
+                tranche_id,
+                current_round_id,
+                vessels_to_harbor.harbor_id,
+                &VesselHarbor {
+                    user_control: false,
+                    hydro_lock_id: vessel.hydro_lock_id,
+                    steerer_id: hydromancer_id,
+                },
+            )?;
             lock_ids.push(vessel.hydro_lock_id);
         }
 

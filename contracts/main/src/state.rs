@@ -1,6 +1,7 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, StdError, Storage};
 use cw_storage_plus::{Item, Map};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use zephyrus_core::{
     msgs::{HydroProposalId, RoundId, TrancheId, UserControl},
@@ -17,11 +18,31 @@ pub struct Hydromancer {
     pub commission_rate: Decimal,
 }
 
-#[cw_serde]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VesselHarbor {
     pub user_control: UserControl,
     pub steerer_id: u64,
     pub hydro_lock_id: HydroLockId,
+}
+
+impl PartialEq for VesselHarbor {
+    fn eq(&self, other: &Self) -> bool {
+        self.hydro_lock_id == other.hydro_lock_id
+    }
+}
+
+impl Eq for VesselHarbor {}
+
+impl PartialOrd for VesselHarbor {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.hydro_lock_id.cmp(&other.hydro_lock_id))
+    }
+}
+
+impl Ord for VesselHarbor {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.hydro_lock_id.cmp(&other.hydro_lock_id)
+    }
 }
 
 pub type TokenizedShareRecordId = u64;
@@ -51,7 +72,7 @@ const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
 const AUTO_MAINTAINED_VESSELS_BY_CLASS: Map<u64, BTreeSet<HydroLockId>> =
     Map::new("auto_maintained_vessels_by_class");
 
-const VESSEL_TO_HARBOR: Map<(TrancheId, RoundId, HydroProposalId), VesselHarbor> =
+const VESSEL_TO_HARBOR: Map<(TrancheId, RoundId, HydroProposalId), BTreeSet<VesselHarbor>> =
     Map::new("vessel_to_harbor");
 const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
     Map::new("vessels_under_user_control");
@@ -188,8 +209,30 @@ pub fn add_vessel_to_harbor(
     proposal_id: HydroProposalId,
     vessel_harbor: &VesselHarbor,
 ) -> Result<(), StdError> {
-    VESSEL_TO_HARBOR.save(storage, (tranche_id, round_id, proposal_id), vessel_harbor)?;
-    if (vessel_harbor.user_control == true) {
+    let vessels_harbor = VESSEL_TO_HARBOR
+        .may_load(storage, (tranche_id, round_id, proposal_id))
+        .unwrap_or_default();
+    match vessels_harbor {
+        Some(mut vessel_harbors) => {
+            vessel_harbors.insert(vessel_harbor.clone());
+            VESSEL_TO_HARBOR.save(
+                storage,
+                (tranche_id, round_id, proposal_id),
+                &vessel_harbors,
+            )?;
+        }
+        None => {
+            let mut vessel_harbors = BTreeSet::new();
+            vessel_harbors.insert(vessel_harbor.clone());
+            VESSEL_TO_HARBOR.save(
+                storage,
+                (tranche_id, round_id, proposal_id),
+                &vessel_harbors,
+            )?;
+        }
+    }
+
+    if vessel_harbor.user_control == true {
         let vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
             .may_load(storage, (tranche_id, round_id))
             .unwrap_or_default();
@@ -207,6 +250,52 @@ pub fn add_vessel_to_harbor(
     }
 
     Ok(())
+}
+
+pub fn get_harbor_of_vessel(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> Option<HydroProposalId> {
+    let vessels_harbor_iter = VESSEL_TO_HARBOR
+        .prefix((tranche_id, round_id))
+        .range(storage, None, None, cosmwasm_std::Order::Ascending)
+        .filter_map(|item| item.ok());
+    for (harbor_id, harbors) in vessels_harbor_iter {
+        if harbors.contains(&VesselHarbor {
+            user_control: false,
+            steerer_id: 0,
+            hydro_lock_id,
+        }) {
+            return Some(harbor_id);
+        }
+    }
+    None
+}
+
+pub fn remove_vessel_harbor(
+    storage: &mut dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_proposal_id: HydroLockId,
+    hydro_lock_id: HydroLockId,
+) -> Result<BTreeSet<VesselHarbor>, StdError> {
+    VESSEL_TO_HARBOR.update(
+        storage,
+        (tranche_id, round_id, hydro_proposal_id),
+        |vessels| match vessels {
+            Some(mut vessels) => {
+                vessels.remove(&VesselHarbor {
+                    user_control: false,
+                    steerer_id: 0,
+                    hydro_lock_id,
+                });
+                Ok(vessels)
+            }
+            None => Err(StdError::generic_err("Vessel not found in harbor")),
+        },
+    )
 }
 
 pub fn is_vessel_under_user_control(

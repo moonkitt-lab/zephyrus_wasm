@@ -398,10 +398,10 @@ fn execute_hydromancer_vote(
     )?;
     let mut proposal_votes = vec![];
     for vessels_to_harbor in vessels_harbors {
-        let vessels = state::get_vessels_by_ids(deps.storage, &vessels_to_harbor.vessel_ids)?;
         let mut lock_ids = vec![];
 
-        for vessel in vessels {
+        for vessel_id in vessels_to_harbor.vessel_ids.iter() {
+            let vessel = state::get_vessel(deps.storage, *vessel_id)?;
             if vessel.hydromancer_id != hydromancer_id {
                 return Err(ContractError::InvalidHydromancerId {
                     vessel_id: vessel.hydro_lock_id,
@@ -435,21 +435,35 @@ fn execute_hydromancer_vote(
                             previous_harbor_id,
                             vessel.hydro_lock_id,
                         )?;
+                        //save could be done after the match statement, but it will be done also whan previous harbor id is the same as the new one
+                        state::add_vessel_to_harbor(
+                            deps.storage,
+                            tranche_id,
+                            current_round_id,
+                            vessels_to_harbor.harbor_id,
+                            &VesselHarbor {
+                                user_control: false,
+                                hydro_lock_id: vessel.hydro_lock_id,
+                                steerer_id: hydromancer_id,
+                            },
+                        )?;
                     }
                 }
-                _ => {}
+                _ => {
+                    state::add_vessel_to_harbor(
+                        deps.storage,
+                        tranche_id,
+                        current_round_id,
+                        vessels_to_harbor.harbor_id,
+                        &VesselHarbor {
+                            user_control: false,
+                            hydro_lock_id: vessel.hydro_lock_id,
+                            steerer_id: hydromancer_id,
+                        },
+                    )?;
+                }
             }
-            state::add_vessel_to_harbor(
-                deps.storage,
-                tranche_id,
-                current_round_id,
-                vessels_to_harbor.harbor_id,
-                &VesselHarbor {
-                    user_control: false,
-                    hydro_lock_id: vessel.hydro_lock_id,
-                    steerer_id: hydromancer_id,
-                },
-            )?;
+
             lock_ids.push(vessel.hydro_lock_id);
         }
 

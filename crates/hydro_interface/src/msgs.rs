@@ -1,4 +1,5 @@
 use cosmwasm_schema::cw_serde;
+use cosmwasm_std::Timestamp;
 
 #[cw_serde]
 pub struct ProposalToLockups {
@@ -25,4 +26,12 @@ pub enum ExecuteMsg {
 }
 
 #[cw_serde]
-pub enum QueryMsg {}
+pub enum HydroQueryMsg {
+    CurrentRound {},
+}
+
+#[cw_serde]
+pub struct CurrentRoundResponse {
+    pub round_id: u64,
+    pub round_end: Timestamp,
+}

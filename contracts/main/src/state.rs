@@ -1,30 +1,13 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal, StdError, Storage};
-use cw_storage_plus::{Item, Key, Map, PrimaryKey};
+use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
-use zephyrus_core::state::{Constants, HydroLockId, HydromancerId, UserId, Vessel};
+use zephyrus_core::{
+    msgs::{HydroProposalId, RoundId, TrancheId, UserControl},
+    state::{Constants, HydroLockId, HydromancerId, UserId, Vessel},
+};
 
 use crate::errors::ContractError;
-
-#[cw_serde]
-pub struct VoteKey(pub (TrancheId, RoundId, HydroProposalId, HydroLockId));
-
-// Implémentation de PrimaryKey pour `(u64, u64, u64, u64)`
-impl<'a> PrimaryKey<'a> for VoteKey {
-    type Prefix = (u64, u64); // Préfixe pour les deux premiers éléments
-    type SubPrefix = u64; // Sous-préfixe pour le troisième élément
-    type SuperSuffix = (u64, u64);
-    type Suffix = u64; // Dernier élément
-
-    fn key(&self) -> Vec<Key<'_>> {
-        vec![
-            Key::Val128((self.0 .0 as u128).to_be_bytes()),
-            Key::Val128((self.0 .1 as u128).to_be_bytes()),
-            Key::Val128((self.0 .2 as u128).to_be_bytes()),
-            Key::Val128((self.0 .3 as u128).to_be_bytes()),
-        ]
-    }
-}
 
 #[cw_serde]
 pub struct Hydromancer {
@@ -68,7 +51,8 @@ const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
 const AUTO_MAINTAINED_VESSELS_BY_CLASS: Map<u64, BTreeSet<HydroLockId>> =
     Map::new("auto_maintained_vessels_by_class");
 
-const VOTES: Map<VoteKey, VesselHarbor> = Map::new("votes");
+const VESSEL_TO_HARBOR: Map<(TrancheId, RoundId, HydroProposalId), VesselHarbor> =
+    Map::new("vessel_to_harbor");
 const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
     Map::new("vessels_under_user_control");
 
@@ -197,19 +181,30 @@ pub fn is_tokenized_share_record_used(
     TOKENIZED_SHARE_RECORDS.has(storage, tokenized_share_record_id)
 }
 
-pub fn add_vote(
+pub fn add_vessel_to_harbor(
     storage: &mut dyn Storage,
     tranche_id: TrancheId,
     round_id: RoundId,
     proposal_id: HydroProposalId,
-    hydro_lock_id: HydroLockId,
     vessel_harbor: &VesselHarbor,
 ) -> Result<(), StdError> {
-    VOTES.save(
-        storage,
-        VoteKey((tranche_id, round_id, proposal_id, hydro_lock_id)),
-        vessel_harbor,
-    )?;
+    VESSEL_TO_HARBOR.save(storage, (tranche_id, round_id, proposal_id), vessel_harbor)?;
+    if (vessel_harbor.user_control == true) {
+        let vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
+            .may_load(storage, (tranche_id, round_id))
+            .unwrap_or_default();
+        match vessels_under_user_control {
+            Some(mut vessel_ids) => {
+                vessel_ids.insert(vessel_harbor.hydro_lock_id);
+                VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &vessel_ids)?;
+            }
+            None => {
+                let mut vessel_ids = BTreeSet::new();
+                vessel_ids.insert(vessel_harbor.hydro_lock_id);
+                VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &vessel_ids)?;
+            }
+        }
+    }
 
     Ok(())
 }

@@ -1,16 +1,18 @@
+use std::thread::current;
+
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
     Coin, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse, StdError,
     StdResult, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens, Vote};
-use hydro_interface::msgs::ProposalToLockups;
+use hydro_interface::msgs::{CurrentRoundResponse, HydroQueryMsg, ProposalToLockups};
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
     BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
-    VesselsResponse, VotingPowerResponse,
+    RoundId, VesselsResponse, VesselsToHarbor, VotingPowerResponse,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
@@ -389,7 +391,10 @@ fn execute_hydromancer_vote(
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
     let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, info.sender)?;
-
+    let current_round_id = query_hydro_current_round(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
     let mut proposal_votes = vec![];
     let mut vessel_ids_under_user_control = vec![];
     for vessels_to_harbor in vessels_harbors {
@@ -407,7 +412,7 @@ fn execute_hydromancer_vote(
             if state::is_vessel_under_user_control(
                 deps.storage,
                 tranche_id,
-                vessels_to_harbor.harbor_id,
+                current_round_id,
                 vessel.hydro_lock_id,
             ) {
                 vessel_ids_under_user_control.push(vessel.hydro_lock_id);
@@ -430,6 +435,7 @@ fn execute_hydromancer_vote(
                 .join(","),
         });
     }
+
     let vote_message = Vote {
         tranche_id,
         proposals_votes: proposal_votes,
@@ -477,6 +483,14 @@ pub fn execute(
 
 fn query_voting_power(_deps: Deps, _env: Env) -> Result<VotingPowerResponse, StdError> {
     todo!()
+}
+
+fn query_hydro_current_round(deps: Deps, hydro_contract_addr: String) -> Result<RoundId, StdError> {
+    let current_round_resp: CurrentRoundResponse = deps
+        .querier
+        .query_wasm_smart(hydro_contract_addr, &HydroQueryMsg::CurrentRound {})
+        .expect("Failed to query hydro contract, hydro should be able to return the current round");
+    Ok(current_round_resp.round_id)
 }
 
 fn query_vessels_by_owner(

@@ -38,11 +38,20 @@ export type ExecuteMsg = {
   decommission_vessels: {
     hydro_lock_ids: number[];
   };
+} | {
+  hydromancer_vote: {
+    tranche_id: number;
+    vessels_harbors: VesselsToHarbor[];
+  };
 };
 export interface BuildVesselParams {
   auto_maintenance: boolean;
   hydromancer_id: number;
   lock_duration: number;
+}
+export interface VesselsToHarbor {
+  harbor_id: number;
+  vessel_ids: number[];
 }
 export type QueryMsg = {
   voting_power: {};

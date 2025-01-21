@@ -1,6 +1,6 @@
 use crate::state::{Constants, Vessel};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Decimal};
+use cosmwasm_std::Decimal;
 
 pub type UserId = u64;
 pub type HydromancerId = u64;

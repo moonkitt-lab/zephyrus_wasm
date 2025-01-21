@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::thread::current;
 
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,

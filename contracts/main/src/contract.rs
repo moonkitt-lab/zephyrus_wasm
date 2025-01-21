@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::thread::current;
 
 use cosmwasm_std::{
@@ -11,8 +12,8 @@ use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
-    RoundId, VesselsResponse, VesselsToHarbor, VotingPowerResponse,
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg,
+    QueryMsg, RoundId, VesselsResponse, VesselsToHarbor, VotingPowerResponse,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
@@ -383,6 +384,32 @@ fn execute_decommission_vessels(
     Ok(Response::new().add_submessage(execute_hydro_unlock_msg))
 }
 
+pub fn has_duplicate_harbor_id_in_vote(
+    vessels_harbors: Vec<VesselsToHarbor>,
+) -> (bool, Option<HydroProposalId>) {
+    let mut seen = BTreeSet::new();
+    for item in vessels_harbors.iter() {
+        if !seen.insert(item.harbor_id) {
+            return (true, Some(item.harbor_id));
+        }
+    }
+    (false, None)
+}
+
+pub fn has_duplicate_vessel_id_in_vote(
+    vessels_harbors: Vec<VesselsToHarbor>,
+) -> (bool, Option<HydroLockId>) {
+    let mut seen = BTreeSet::new();
+    for item in vessels_harbors.iter() {
+        for vessel_id in item.vessel_ids.iter() {
+            if !seen.insert(*vessel_id) {
+                return (true, Some(*vessel_id));
+            }
+        }
+    }
+    (false, None)
+}
+
 fn execute_hydromancer_vote(
     deps: DepsMut,
     info: MessageInfo,
@@ -391,6 +418,21 @@ fn execute_hydromancer_vote(
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
+
+    let (has_duplicated_harbor, harbor_id) =
+        has_duplicate_harbor_id_in_vote(vessels_harbors.clone());
+    if has_duplicated_harbor {
+        let harbor_id = harbor_id.expect("If there is duplicated harbor, id should be present");
+        return Err(ContractError::VoteDuplicatedHarborId { harbor_id });
+    }
+
+    let (has_duplicated_vessel_id, vessel_id) =
+        has_duplicate_vessel_id_in_vote(vessels_harbors.clone());
+    if has_duplicated_vessel_id {
+        let vessel_id = vessel_id.expect("If there is duplicated vessel, id should be present");
+        return Err(ContractError::VoteDuplicatedVesselId { vessel_id });
+    }
+
     let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, info.sender)?;
     let current_round_id = query_hydro_current_round(
         deps.as_ref(),
@@ -424,10 +466,11 @@ fn execute_hydromancer_vote(
                 tranche_id,
                 current_round_id,
                 vessel.hydro_lock_id,
-            );
+            )?;
             match previous_harbor_id {
                 Some(previous_harbor_id) => {
                     if previous_harbor_id != vessels_to_harbor.harbor_id {
+                        //vote has changed
                         state::remove_vessel_harbor(
                             deps.storage,
                             tranche_id,

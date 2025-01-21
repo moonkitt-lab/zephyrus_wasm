@@ -51,4 +51,10 @@ pub enum ContractError {
 
     #[error("Tokenized shares record with id {0} is already in use")]
     TokenizedShareRecordAlreadyInUse(u64),
+
+    #[error("Duplicate Harbor ID: {harbor_id}")]
+    VoteDuplicatedHarborId { harbor_id: u64 },
+
+    #[error("Duplicate Vessel ID: {vessel_id}")]
+    VoteDuplicatedVesselId { vessel_id: u64 },
 }

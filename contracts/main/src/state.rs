@@ -53,6 +53,8 @@ const AUTO_MAINTAINED_VESSELS_BY_CLASS: Map<u64, BTreeSet<HydroLockId>> =
 
 const VESSEL_TO_HARBOR: Map<((TrancheId, RoundId), HydroProposalId, HydroLockId), VesselHarbor> =
     Map::new("vessel_to_harbor");
+const HARBOR_OF_VESSEL: Map<((TrancheId, RoundId), HydroLockId), HydroProposalId> =
+    Map::new("harbor_of_vessel");
 const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
     Map::new("vessels_under_user_control");
 
@@ -197,6 +199,11 @@ pub fn add_vessel_to_harbor(
         ),
         &vessel_harbor,
     )?;
+    HARBOR_OF_VESSEL.save(
+        storage,
+        ((tranche_id, round_id), vessel_harbor.hydro_lock_id),
+        &proposal_id,
+    )?;
     if vessel_harbor.user_control == true {
         let vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
             .may_load(storage, (tranche_id, round_id))
@@ -222,18 +229,8 @@ pub fn get_harbor_of_vessel(
     tranche_id: TrancheId,
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
-) -> Option<HydroProposalId> {
-    let harbor = VESSEL_TO_HARBOR
-        .sub_prefix((tranche_id, round_id))
-        .range(storage, None, None, cosmwasm_std::Order::Ascending)
-        .find(|item| match item {
-            Ok((key, v)) => key.1 == hydro_lock_id, //key.1 is the hydro_lock_id
-            Err(_) => false,
-        });
-    match harbor {
-        Some(Ok((key, _))) => Some(key.0), //key.0 is the proposal_id (also known as harbor_id)
-        _ => None,
-    }
+) -> Result<Option<HydroProposalId>, StdError> {
+    HARBOR_OF_VESSEL.may_load(storage, ((tranche_id, round_id), hydro_lock_id))
 }
 
 pub fn remove_vessel_harbor(
@@ -252,6 +249,7 @@ pub fn remove_vessel_harbor(
         storage,
         ((tranche_id, round_id), hydro_proposal_id, hydro_lock_id),
     );
+    HARBOR_OF_VESSEL.remove(storage, ((tranche_id, round_id), hydro_lock_id));
     if vessel_to_harbor.user_control {
         let mut vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
             .may_load(storage, (tranche_id, round_id))?

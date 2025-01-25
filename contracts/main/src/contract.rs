@@ -28,6 +28,7 @@ type Response = CwResponse<NeutronMsg>;
 
 const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
 const DECOMMISSION_REPLY_ID: u64 = 2;
+const VOTE_REPLY_ID: u64 = 3;
 
 const MAX_PAGINATION_LIMIT: usize = 1000;
 const DEFAULT_PAGINATION_LIMIT: usize = 100;
@@ -520,12 +521,14 @@ fn execute_hydromancer_vote(
         tranche_id,
         proposals_votes: proposal_votes,
     };
-    let execute_vote_msg = WasmMsg::Execute {
+    let execute_hydro_vote_msg = WasmMsg::Execute {
         contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
         msg: to_json_binary(&vote_message)?,
         funds: vec![],
     };
-    let response = Response::new().add_message(execute_vote_msg);
+    let execute_hydro_vote_msg: SubMsg<NeutronMsg> =
+        SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID);
+    let response = Response::new().add_submessage(execute_hydro_vote_msg);
     Ok(response)
 }
 
@@ -674,7 +677,15 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
             .and_then(|(id, payload)| handle_lock_tokens_reply(deps, id, payload)),
 
         DECOMMISSION_REPLY_ID => handle_unlock_tokens_reply(deps, env, reply),
-
+        VOTE_REPLY_ID => {
+            let skipped_locks = parse_locks_skipped_reply(reply)?;
+            if !skipped_locks.is_empty() {
+                return Err(ContractError::CustomError {
+                    msg: format!("Some votes are not valid: {}", skipped_locks),
+                });
+            }
+            Ok(Response::new().add_attribute("skipped_locks", skipped_locks))
+        }
         _ => Err(ContractError::CustomError {
             msg: "Unknown reply id".to_string(),
         }),
@@ -735,6 +746,22 @@ fn parse_lock_tokens_reply(
     let payload = from_json(reply.payload).expect("build vessel parameters always attached");
 
     Ok((lock_id, payload))
+}
+
+fn parse_locks_skipped_reply(reply: Reply) -> Result<String, ContractError> {
+    let response = reply
+        .result
+        .into_result()
+        .expect("always issued on_success");
+
+    let skipped_locks = response
+        .events
+        .into_iter()
+        .flat_map(|e| e.attributes)
+        .find_map(|attr| (attr.key == "locks_skipped").then(|| attr.value))
+        .expect("Vote reply always contains locks_skipped attribute");
+
+    Ok(skipped_locks)
 }
 
 fn handle_unlock_tokens_reply(

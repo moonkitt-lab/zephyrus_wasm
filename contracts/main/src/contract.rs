@@ -902,14 +902,14 @@ mod test {
             MockQuerier as StdMockQuerier, MockStorage,
         },
         Addr, Binary, ContractResult, CosmosMsg, DepsMut, Empty, GrpcQuery, MessageInfo, OwnedDeps,
-        Querier, QuerierResult, QueryRequest, ReplyOn, WasmMsg,
+        Querier, QuerierResult, QueryRequest, ReplyOn, WasmMsg, WasmQuery,
     };
     use hydro_interface::msgs::ExecuteMsg as HydroExecuteMsg;
     use neutron_std::types::ibc::applications::transfer::v1::{
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
     };
     use prost::Message;
-    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg};
+    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg, VesselsToHarbor};
     use zephyrus_core::state::Vessel;
 
     use crate::{contract::LockTokensReplyPayload, errors::ContractError};
@@ -963,13 +963,24 @@ mod test {
 
     impl Querier for MockQuerier {
         fn raw_query(&self, bin_request: &[u8]) -> QuerierResult {
-            let Some(QueryRequest::<Empty>::Grpc(GrpcQuery { path, data })) =
-                from_json(bin_request).ok()
-            else {
-                return self.0.raw_query(bin_request);
-            };
+            let request: QueryRequest<Empty> = from_json(bin_request).ok().unwrap();
 
-            mock_grpc_query_handler(&path, &data)
+            match request {
+                QueryRequest::<Empty>::Grpc(GrpcQuery { path, data }) => {
+                    mock_grpc_query_handler(&path, &data)
+                }
+                QueryRequest::Wasm(WasmQuery::Smart { contract_addr, msg }) => {
+                    mock_wasm_query_handler(&contract_addr, &msg)
+                }
+                _ => self.0.raw_query(bin_request),
+            }
+            // let Some(QueryRequest::<Empty>::Grpc(GrpcQuery { path, data })) =
+            //     from_json(bin_request).ok()
+            // else {
+            //     return self.0.raw_query(bin_request);
+            // };
+
+            // mock_grpc_query_handler(&path, &data)
         }
     }
 
@@ -1011,6 +1022,74 @@ mod test {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn hydromancer_vote_fails_if_duplicate_vessel_id() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        assert_eq!(
+            super::execute_hydromancer_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("alice"),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 2,
+                            vessel_ids: vec![2, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::VoteDuplicatedVesselId { vessel_id: 2 }
+        );
+    }
+
+    #[test]
+    fn hydromancer_vote_fails_if_duplicate_harbor() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        assert_eq!(
+            super::execute_hydromancer_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("alice"),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![3, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::VoteDuplicatedHarborId { harbor_id: 1 }
+        );
     }
 
     #[test]

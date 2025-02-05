@@ -433,7 +433,8 @@ fn execute_hydromancer_vote(
         return Err(ContractError::VoteDuplicatedVesselId { vessel_id });
     }
 
-    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, info.sender)?;
+    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, info.sender)
+        .map_err(|err: StdError| ContractError::from(err))?;
     let current_round_id = query_hydro_current_round(
         deps.as_ref(),
         constants.hydro_config.hydro_contract_address.to_string(),
@@ -895,26 +896,58 @@ fn handle_unlock_tokens_reply(
 
 #[cfg(test)]
 mod test {
+    use std::time::SystemTime;
+
     use cosmwasm_std::{
         coin, coins, from_json,
         testing::{
             mock_dependencies as std_mock_dependencies, mock_env, MockApi,
             MockQuerier as StdMockQuerier, MockStorage,
         },
-        Addr, Binary, ContractResult, CosmosMsg, DepsMut, Empty, GrpcQuery, MessageInfo, OwnedDeps,
-        Querier, QuerierResult, QueryRequest, ReplyOn, WasmMsg, WasmQuery,
+        to_json_binary, Addr, Binary, ContractResult, CosmosMsg, DepsMut, Empty, GrpcQuery,
+        MessageInfo, OwnedDeps, Querier, QuerierResult, QueryRequest, ReplyOn, StdError,
+        SystemResult, WasmMsg, WasmQuery,
     };
-    use hydro_interface::msgs::ExecuteMsg as HydroExecuteMsg;
+    use hydro_interface::msgs::{
+        CurrentRoundResponse, ExecuteMsg as HydroExecuteMsg, HydroQueryMsg,
+    };
     use neutron_std::types::ibc::applications::transfer::v1::{
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
     };
     use prost::Message;
-    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg, VesselsToHarbor};
+    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg, RoundId, VesselsToHarbor};
     use zephyrus_core::state::Vessel;
 
     use crate::{contract::LockTokensReplyPayload, errors::ContractError};
 
     struct MockQuerier(StdMockQuerier);
+
+    fn mock_wasm_query_handler(contract_addr: &str, msg: &Binary) -> QuerierResult {
+        match contract_addr {
+            "hydro" => {
+                let query: HydroQueryMsg = match from_json(msg) {
+                    Ok(q) => q,
+                    Err(_) => return QuerierResult::Err(cosmwasm_std::SystemError::Unknown {}),
+                };
+                match query {
+                    HydroQueryMsg::CurrentRound {} => {
+                        let response = to_json_binary(&CurrentRoundResponse {
+                            round_id: 1,
+                            round_end: cosmwasm_std::Timestamp::from_seconds(
+                                SystemTime::now()
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                            ),
+                        })
+                        .unwrap();
+                        QuerierResult::Ok(ContractResult::Ok(response))
+                    }
+                }
+            }
+            _ => QuerierResult::Err(cosmwasm_std::SystemError::Unknown {}),
+        }
+    }
 
     fn mock_grpc_query_handler(path: &str, data: &[u8]) -> QuerierResult {
         let contract_result: ContractResult<Binary> = match path {
@@ -1025,6 +1058,43 @@ mod test {
     }
 
     #[test]
+    fn hydromancer_vote_fails_not_hydromancer() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+        let alice_address = make_valid_addr("alice");
+        assert_eq!(
+            super::execute_hydromancer_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: alice_address.clone(),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 2,
+                            vessel_ids: vec![3, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::from(StdError::generic_err(format!(
+                "Hydromancer {} not found",
+                alice_address.to_string()
+            )))
+        );
+    }
+
+    #[test]
     fn hydromancer_vote_fails_if_duplicate_vessel_id() {
         let mut deps = mock_dependencies();
 
@@ -1034,7 +1104,7 @@ mod test {
             super::execute_hydromancer_vote(
                 deps.as_mut(),
                 MessageInfo {
-                    sender: make_valid_addr("alice"),
+                    sender: make_valid_addr("zephyrus"),
                     funds: vec![]
                 },
                 1,
@@ -1068,7 +1138,7 @@ mod test {
             super::execute_hydromancer_vote(
                 deps.as_mut(),
                 MessageInfo {
-                    sender: make_valid_addr("alice"),
+                    sender: make_valid_addr("zephyrus"),
                     funds: vec![]
                 },
                 1,

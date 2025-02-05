@@ -904,8 +904,8 @@ mod test {
             mock_dependencies as std_mock_dependencies, mock_env, MockApi,
             MockQuerier as StdMockQuerier, MockStorage,
         },
-        to_json_binary, Addr, Binary, ContractResult, CosmosMsg, DepsMut, Empty, GrpcQuery,
-        MessageInfo, OwnedDeps, Querier, QuerierResult, QueryRequest, ReplyOn, StdError,
+        to_json_binary, Addr, Binary, ContractResult, CosmosMsg, Decimal, DepsMut, Empty,
+        GrpcQuery, MessageInfo, OwnedDeps, Querier, QuerierResult, QueryRequest, ReplyOn, StdError,
         SystemResult, WasmMsg, WasmQuery,
     };
     use hydro_interface::msgs::{
@@ -918,34 +918,38 @@ mod test {
     use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg, RoundId, VesselsToHarbor};
     use zephyrus_core::state::Vessel;
 
-    use crate::{contract::LockTokensReplyPayload, errors::ContractError};
+    use crate::{
+        contract::{self, LockTokensReplyPayload},
+        errors::ContractError,
+        state::{self, add_hydromancer, Hydromancer},
+    };
 
     struct MockQuerier(StdMockQuerier);
 
     fn mock_wasm_query_handler(contract_addr: &str, msg: &Binary) -> QuerierResult {
-        match contract_addr {
-            "hydro" => {
-                let query: HydroQueryMsg = match from_json(msg) {
-                    Ok(q) => q,
-                    Err(_) => return QuerierResult::Err(cosmwasm_std::SystemError::Unknown {}),
-                };
-                match query {
-                    HydroQueryMsg::CurrentRound {} => {
-                        let response = to_json_binary(&CurrentRoundResponse {
-                            round_id: 1,
-                            round_end: cosmwasm_std::Timestamp::from_seconds(
-                                SystemTime::now()
-                                    .duration_since(SystemTime::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs(),
-                            ),
-                        })
-                        .unwrap();
-                        QuerierResult::Ok(ContractResult::Ok(response))
-                    }
+        let hydro_addr: String = make_valid_addr("hydro").into_string();
+        if contract_addr == hydro_addr {
+            let query: HydroQueryMsg = match from_json(msg) {
+                Ok(q) => q,
+                Err(_) => return QuerierResult::Err(cosmwasm_std::SystemError::Unknown {}),
+            };
+            match query {
+                HydroQueryMsg::CurrentRound {} => {
+                    let response = to_json_binary(&CurrentRoundResponse {
+                        round_id: 1,
+                        round_end: cosmwasm_std::Timestamp::from_seconds(
+                            SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs(),
+                        ),
+                    })
+                    .unwrap();
+                    QuerierResult::Ok(ContractResult::Ok(response))
                 }
             }
-            _ => QuerierResult::Err(cosmwasm_std::SystemError::Unknown {}),
+        } else {
+            QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
         }
     }
 
@@ -996,6 +1000,7 @@ mod test {
 
     impl Querier for MockQuerier {
         fn raw_query(&self, bin_request: &[u8]) -> QuerierResult {
+            println!("MockQuerier!");
             let request: QueryRequest<Empty> = from_json(bin_request).ok().unwrap();
 
             match request {
@@ -1003,6 +1008,8 @@ mod test {
                     mock_grpc_query_handler(&path, &data)
                 }
                 QueryRequest::Wasm(WasmQuery::Smart { contract_addr, msg }) => {
+                    println!("WasmQuery::Smart {}", contract_addr);
+
                     mock_wasm_query_handler(&contract_addr, &msg)
                 }
                 _ => self.0.raw_query(bin_request),
@@ -1091,6 +1098,60 @@ mod test {
                 "Hydromancer {} not found",
                 alice_address.to_string()
             )))
+        );
+    }
+
+    #[test]
+    fn hydromancer_vote_with_other_vessels_fail() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        state::add_hydromancer(
+            deps.as_mut().storage,
+            &Hydromancer {
+                hydromancer_id: 1,
+                address: alice_address.clone(),
+                commission_rate: Decimal::percent(10),
+                name: "alice".to_string(),
+            },
+        )
+        .expect("Should add hydromancer");
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: 0,
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: 1,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+        println!("Execute vote hydromancer");
+        assert_eq!(
+            super::execute_hydromancer_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("zephyrus"),
+                    funds: vec![]
+                },
+                1,
+                vec![{
+                    VesselsToHarbor {
+                        harbor_id: 1,
+                        vessel_ids: vec![0],
+                    }
+                },]
+            )
+            .unwrap_err(),
+            ContractError::InvalidHydromancerId {
+                vessel_id: 0,
+                hydromancer_id: 0,
+                vessel_hydromancer_id: 1
+            }
         );
     }
 

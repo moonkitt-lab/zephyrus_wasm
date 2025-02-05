@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Decimal, StdError, Storage};
+use cosmwasm_std::{Addr, Decimal, Order, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
@@ -222,6 +222,18 @@ pub fn add_vessel_to_harbor(
     }
 
     Ok(())
+}
+
+pub fn get_vessel_to_harbor_by_harbor_id(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_proposal_id: HydroProposalId,
+) -> Result<Vec<(HydroLockId, VesselHarbor)>, StdError> {
+    VESSEL_TO_HARBOR
+        .prefix(((tranche_id, round_id), hydro_proposal_id))
+        .range(storage, None, None, Order::Ascending)
+        .collect()
 }
 
 pub fn get_harbor_of_vessel(

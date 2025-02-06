@@ -448,7 +448,7 @@ fn execute_hydromancer_vote(
             if vessel.hydromancer_id != hydromancer_id {
                 return Err(ContractError::InvalidHydromancerId {
                     vessel_id: vessel.hydro_lock_id,
-                    hydromancer_id: hydromancer_id,
+                    hydromancer_id,
                     vessel_hydromancer_id: vessel.hydromancer_id,
                 });
             }
@@ -759,7 +759,7 @@ fn parse_locks_skipped_reply(reply: Reply) -> Result<String, ContractError> {
         .events
         .into_iter()
         .flat_map(|e| e.attributes)
-        .find_map(|attr| (attr.key == "locks_skipped").then(|| attr.value))
+        .find_map(|attr| (attr.key == "locks_skipped").then_some(attr.value))
         .expect("Vote reply always contains locks_skipped attribute");
 
     Ok(skipped_locks)

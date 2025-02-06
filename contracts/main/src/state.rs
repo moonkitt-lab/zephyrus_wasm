@@ -197,14 +197,14 @@ pub fn add_vessel_to_harbor(
             proposal_id,
             vessel_harbor.hydro_lock_id,
         ),
-        &vessel_harbor,
+        vessel_harbor,
     )?;
     HARBOR_OF_VESSEL.save(
         storage,
         ((tranche_id, round_id), vessel_harbor.hydro_lock_id),
         &proposal_id,
     )?;
-    if vessel_harbor.user_control == true {
+    if vessel_harbor.user_control {
         let vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
             .may_load(storage, (tranche_id, round_id))
             .unwrap_or_default();

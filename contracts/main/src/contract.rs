@@ -922,7 +922,7 @@ mod test {
     use crate::{
         contract::{self, LockTokensReplyPayload},
         errors::ContractError,
-        state::{self, add_hydromancer, Hydromancer, VesselHarbor},
+        state::{self, Hydromancer, VesselHarbor},
     };
 
     struct MockQuerier(StdMockQuerier);
@@ -1109,14 +1109,11 @@ mod test {
         init_contract(deps.as_mut());
 
         let alice_address = make_valid_addr("alice");
-        state::add_hydromancer(
+        let alice_hydromancer_id = state::insert_new_hydromancer(
             deps.as_mut().storage,
-            &Hydromancer {
-                hydromancer_id: 1,
-                address: alice_address.clone(),
-                commission_rate: Decimal::percent(10),
-                name: "alice".to_string(),
-            },
+            alice_address.clone(),
+            "alice".to_string(),
+            Decimal::percent(10),
         )
         .expect("Should add hydromancer");
         state::add_vessel(
@@ -1126,7 +1123,7 @@ mod test {
                 tokenized_share_record_id: 0,
                 class_period: 12,
                 auto_maintenance: true,
-                hydromancer_id: 1,
+                hydromancer_id: alice_hydromancer_id,
             },
             &alice_address,
         )

@@ -4,7 +4,7 @@ use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
     msgs::{HydroProposalId, RoundId, TrancheId, UserControl, UserId},
-    state::{Constants, HydroLockId, HydromancerId, Vessel},
+    state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor},
 };
 
 use crate::errors::ContractError;
@@ -22,13 +22,6 @@ pub struct User {
     pub user_id: UserId,
     pub address: Addr,
     pub claimable_rewards: Vec<Coin>,
-}
-
-#[cw_serde]
-pub struct VesselHarbor {
-    pub user_control: UserControl,
-    pub steerer_id: u64,
-    pub hydro_lock_id: HydroLockId,
 }
 
 pub type TokenizedShareRecordId = u64;
@@ -89,6 +82,20 @@ pub fn update_whitelist_admins(
 ) -> Result<(), StdError> {
     WHITELIST_ADMINS.save(storage, &whitelist_admins)?;
     Ok(())
+}
+
+pub fn get_vessel_harbor(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> Result<(VesselHarbor, HydroProposalId), StdError> {
+    let proposal_id = HARBOR_OF_VESSEL.load(storage, ((tranche_id, round_id), hydro_lock_id))?;
+    let vessel_harbor = VESSEL_TO_HARBOR.load(
+        storage,
+        ((tranche_id, round_id), proposal_id, hydro_lock_id),
+    )?;
+    Ok((vessel_harbor, proposal_id))
 }
 
 pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> Result<UserId, StdError> {

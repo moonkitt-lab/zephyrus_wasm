@@ -1,4 +1,4 @@
-use crate::state::{Constants, Vessel};
+use crate::state::{Constants, Vessel, VesselHarbor};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::Decimal;
 
@@ -59,11 +59,21 @@ pub enum ExecuteMsg {
         tranche_id: TrancheId,
         vessels_harbors: Vec<VesselsToHarbor>,
     },
+    UserVote {
+        tranche_id: TrancheId,
+        vessels_harbors: Vec<VesselsToHarbor>,
+    },
 }
 
 #[cw_serde]
 pub struct VotingPowerResponse {
     pub voting_power: u64,
+}
+
+#[cw_serde]
+pub struct VesselHarborResponse {
+    pub harbor_id: Option<u64>,
+    pub vessel_to_harbor: Option<VesselHarbor>,
 }
 
 #[cw_serde]
@@ -99,6 +109,12 @@ pub enum QueryMsg {
     },
     #[returns(ConstantsResponse)]
     Constants {},
+    #[returns(VesselHarborResponse)]
+    VesselHarbor {
+        tranche_id: u64,
+        round_id: u64,
+        hydro_lock_id: u64,
+    },
 }
 
 #[cw_serde]

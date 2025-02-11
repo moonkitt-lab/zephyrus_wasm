@@ -43,6 +43,11 @@ export type ExecuteMsg = {
     tranche_id: number;
     vessels_harbors: VesselsToHarbor[];
   };
+} | {
+  user_vote: {
+    tranche_id: number;
+    vessels_harbors: VesselsToHarbor[];
+  };
 };
 export interface BuildVesselParams {
   auto_maintenance: boolean;
@@ -69,6 +74,12 @@ export type QueryMsg = {
   };
 } | {
   constants: {};
+} | {
+  vessel_harbor: {
+    hydro_lock_id: number;
+    round_id: number;
+    tranche_id: number;
+  };
 };
 export type Addr = string;
 export interface ConstantsResponse {
@@ -83,6 +94,15 @@ export interface HydroConfig {
   hydro_contract_address: Addr;
   hydro_tribute_contract_address: Addr;
 }
+export interface VesselHarborResponse {
+  harbor_id?: number | null;
+  vessel_to_harbor?: VesselHarbor | null;
+}
+export interface VesselHarbor {
+  hydro_lock_id: number;
+  steerer_id: number;
+  user_control: boolean;
+}
 export interface VesselsResponse {
   limit: number;
   start_index: number;
@@ -94,6 +114,7 @@ export interface Vessel {
   class_period: number;
   hydro_lock_id: number;
   hydromancer_id: number;
+  owner_id: number;
   tokenized_share_record_id: number;
 }
 export interface VotingPowerResponse {

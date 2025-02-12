@@ -3,7 +3,7 @@ use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
-    msgs::{HydroProposalId, RoundId, TrancheId, UserControl, UserId},
+    msgs::{HydroProposalId, RoundId, TrancheId, UserId},
     state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor},
 };
 

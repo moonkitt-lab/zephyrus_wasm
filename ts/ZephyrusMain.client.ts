@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, VesselsToHarbor, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselHarborResponse, VesselHarbor, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, VesselsToHarbor, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -29,12 +29,12 @@ export interface ZephyrusMainReadOnlyInterface {
     startIndex?: number;
   }) => Promise<VesselsResponse>;
   constants: () => Promise<ConstantsResponse>;
-  vesselHarbor: ({
-    hydroLockId,
+  vesselsHarbor: ({
+    lockIds,
     roundId,
     trancheId
   }: {
-    hydroLockId: number;
+    lockIds: number[];
     roundId: number;
     trancheId: number;
   }) => Promise<VesselHarborResponse>;
@@ -49,7 +49,7 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
     this.vesselsByOwner = this.vesselsByOwner.bind(this);
     this.vesselsByHydromancer = this.vesselsByHydromancer.bind(this);
     this.constants = this.constants.bind(this);
-    this.vesselHarbor = this.vesselHarbor.bind(this);
+    this.vesselsHarbor = this.vesselsHarbor.bind(this);
   }
   votingPower = async (): Promise<VotingPowerResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -95,18 +95,18 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
       constants: {}
     });
   };
-  vesselHarbor = async ({
-    hydroLockId,
+  vesselsHarbor = async ({
+    lockIds,
     roundId,
     trancheId
   }: {
-    hydroLockId: number;
+    lockIds: number[];
     roundId: number;
     trancheId: number;
   }): Promise<VesselHarborResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
-      vessel_harbor: {
-        hydro_lock_id: hydroLockId,
+      vessels_harbor: {
+        lock_ids: lockIds,
         round_id: roundId,
         tranche_id: trancheId
       }

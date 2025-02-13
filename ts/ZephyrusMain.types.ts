@@ -75,8 +75,8 @@ export type QueryMsg = {
 } | {
   constants: {};
 } | {
-  vessel_harbor: {
-    hydro_lock_id: number;
+  vessels_harbor: {
+    lock_ids: number[];
     round_id: number;
     tranche_id: number;
   };
@@ -94,15 +94,6 @@ export interface HydroConfig {
   hydro_contract_address: Addr;
   hydro_tribute_contract_address: Addr;
 }
-export interface VesselHarborResponse {
-  harbor_id?: number | null;
-  vessel_to_harbor?: VesselHarbor | null;
-}
-export interface VesselHarbor {
-  hydro_lock_id: number;
-  steerer_id: number;
-  user_control: boolean;
-}
 export interface VesselsResponse {
   limit: number;
   start_index: number;
@@ -116,6 +107,19 @@ export interface Vessel {
   hydromancer_id: number;
   owner_id: number;
   tokenized_share_record_id: number;
+}
+export interface VesselHarborResponse {
+  vessels_harbor_info: VesselHarborInfo[];
+}
+export interface VesselHarborInfo {
+  harbor_id?: number | null;
+  vessel_id: number;
+  vessel_to_harbor?: VesselHarbor | null;
+}
+export interface VesselHarbor {
+  hydro_lock_id: number;
+  steerer_id: number;
+  user_control: boolean;
 }
 export interface VotingPowerResponse {
   voting_power: number;

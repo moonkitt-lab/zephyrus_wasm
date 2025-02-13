@@ -403,6 +403,16 @@ pub fn has_duplicate_harbor_id_in_vote(
     (false, None)
 }
 
+pub fn has_duplicate_vessel_id(vessel_ids: Vec<HydroLockId>) -> (bool, Option<HydroLockId>) {
+    let mut seen = BTreeSet::new();
+    for item in vessel_ids.iter() {
+        if !seen.insert(item) {
+            return (true, Some(*item));
+        }
+    }
+    (false, None)
+}
+
 pub fn has_duplicate_vessel_id_in_vote(
     vessels_harbors: Vec<VesselsToHarbor>,
 ) -> (bool, Option<HydroLockId>) {
@@ -758,12 +768,20 @@ fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
     Ok(ConstantsResponse { constants })
 }
 
-fn query_vessel_harbor(
+fn query_vessels_harbor(
     deps: Deps,
     tranche_id: u64,
     round_id: u64,
     vessel_ids: Vec<u64>,
 ) -> StdResult<VesselHarborResponse> {
+    let (has_duplicated_vessel_id, vessel_id) = has_duplicate_vessel_id(vessel_ids.clone());
+    if has_duplicated_vessel_id {
+        let vessel_id = vessel_id.expect("If there is duplicated vessel, id should be present");
+        return Err(StdError::generic_err(format!(
+            "Duplicated vessel id: {}",
+            vessel_id
+        )));
+    }
     let mut vessels_harbor_info = vec![];
     for vessel_id in vessel_ids {
         let _ = state::get_vessel(deps.storage, vessel_id)?; //return error if there is one vessel that does not exist
@@ -811,7 +829,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             tranche_id,
             round_id,
             lock_ids,
-        } => to_json_binary(&query_vessel_harbor(deps, tranche_id, round_id, lock_ids)?),
+        } => to_json_binary(&query_vessels_harbor(deps, tranche_id, round_id, lock_ids)?),
     }
 }
 

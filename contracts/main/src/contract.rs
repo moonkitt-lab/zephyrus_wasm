@@ -12,7 +12,8 @@ use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
     BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg,
-    QueryMsg, RoundId, VesselHarborResponse, VesselsResponse, VesselsToHarbor, VotingPowerResponse,
+    QueryMsg, RoundId, VesselHarborInfo, VesselHarborResponse, VesselsResponse, VesselsToHarbor,
+    VotingPowerResponse,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
@@ -761,19 +762,29 @@ fn query_vessel_harbor(
     deps: Deps,
     tranche_id: u64,
     round_id: u64,
-    vessel_id: u64,
+    vessel_ids: Vec<u64>,
 ) -> StdResult<VesselHarborResponse> {
-    let vessel_harbor = state::get_vessel_harbor(deps.storage, tranche_id, round_id, vessel_id);
-    match vessel_harbor {
-        Err(_) => Ok(VesselHarborResponse {
-            harbor_id: None,
-            vessel_to_harbor: None,
-        }),
-        Ok(vessel_harbor) => Ok(VesselHarborResponse {
-            harbor_id: Some(vessel_harbor.1),
-            vessel_to_harbor: Some(vessel_harbor.0),
-        }),
+    let mut vessels_harbor_info = vec![];
+    for vessel_id in vessel_ids {
+        let _ = state::get_vessel(deps.storage, vessel_id)?; //return error if there is one vessel that does not exist
+        let vessel_harbor = state::get_vessel_harbor(deps.storage, tranche_id, round_id, vessel_id);
+        match vessel_harbor {
+            Err(_) => vessels_harbor_info.push(VesselHarborInfo {
+                vessel_to_harbor: None,
+                vessel_id,
+                harbor_id: None,
+            }),
+            Ok(vessel_harbor) => vessels_harbor_info.push(VesselHarborInfo {
+                vessel_to_harbor: Some(vessel_harbor.0),
+                vessel_id,
+                harbor_id: Some(vessel_harbor.1),
+            }),
+        }
     }
+
+    Ok(VesselHarborResponse {
+        vessels_harbor_info,
+    })
 }
 
 #[entry_point]
@@ -796,16 +807,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             limit,
         )?),
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
-        QueryMsg::VesselHarbor {
+        QueryMsg::VesselsHarbor {
             tranche_id,
             round_id,
-            hydro_lock_id,
-        } => to_json_binary(&query_vessel_harbor(
-            deps,
-            tranche_id,
-            round_id,
-            hydro_lock_id,
-        )?),
+            lock_ids,
+        } => to_json_binary(&query_vessel_harbor(deps, tranche_id, round_id, lock_ids)?),
     }
 }
 

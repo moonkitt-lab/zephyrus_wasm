@@ -71,9 +71,15 @@ pub struct VotingPowerResponse {
 }
 
 #[cw_serde]
-pub struct VesselHarborResponse {
-    pub harbor_id: Option<u64>,
+pub struct VesselHarborInfo {
     pub vessel_to_harbor: Option<VesselHarbor>,
+    pub vessel_id: u64,
+    pub harbor_id: Option<u64>,
+}
+
+#[cw_serde]
+pub struct VesselHarborResponse {
+    pub vessels_harbor_info: Vec<VesselHarborInfo>,
 }
 
 #[cw_serde]
@@ -110,10 +116,10 @@ pub enum QueryMsg {
     #[returns(ConstantsResponse)]
     Constants {},
     #[returns(VesselHarborResponse)]
-    VesselHarbor {
+    VesselsHarbor {
         tranche_id: u64,
         round_id: u64,
-        hydro_lock_id: u64,
+        lock_ids: Vec<u64>,
     },
 }
 

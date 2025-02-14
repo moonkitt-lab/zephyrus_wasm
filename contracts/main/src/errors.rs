@@ -1,6 +1,9 @@
 use cosmwasm_std::StdError;
 use thiserror::Error;
-use zephyrus_core::msgs::{HydroLockId, HydromancerId};
+use zephyrus_core::{
+    msgs::{HydroLockId, HydromancerId},
+    state::UserId,
+};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ContractError {
@@ -17,13 +20,18 @@ pub enum ContractError {
     #[error("Hydromancer {hydromancer_id} not found")]
     HydromancerNotFound { hydromancer_id: u64 },
 
-    #[error(
-        "Vessel {vessel_id} is not controlled by {vessel_hydromancer_id} not {hydromancer_id}"
-    )]
+    #[error("Vessel {vessel_id} is controlled by {vessel_hydromancer_id} not {hydromancer_id}")]
     InvalidHydromancerId {
         vessel_id: HydroLockId,
         hydromancer_id: HydromancerId,
         vessel_hydromancer_id: HydromancerId,
+    },
+
+    #[error("Vessel {vessel_id} is owned by {vessel_user_id} not {user_id}")]
+    InvalidUserId {
+        vessel_id: HydroLockId,
+        user_id: UserId,
+        vessel_user_id: UserId,
     },
 
     #[error("Total shares error: {total_shares}")]

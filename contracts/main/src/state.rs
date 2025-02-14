@@ -1,10 +1,10 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Decimal, Order, StdError, Storage};
+use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
-    msgs::{HydroProposalId, RoundId, TrancheId, UserControl},
-    state::{Constants, HydroLockId, HydromancerId, UserId, Vessel},
+    msgs::{HydroProposalId, RoundId, TrancheId, UserId},
+    state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor},
 };
 
 use crate::errors::ContractError;
@@ -18,10 +18,10 @@ pub struct Hydromancer {
 }
 
 #[cw_serde]
-pub struct VesselHarbor {
-    pub user_control: UserControl,
-    pub steerer_id: u64,
-    pub hydro_lock_id: HydroLockId,
+pub struct User {
+    pub user_id: UserId,
+    pub address: Addr,
+    pub claimable_rewards: Vec<Coin>,
 }
 
 pub type TokenizedShareRecordId = u64;
@@ -34,6 +34,9 @@ const CONSTANTS: Item<Constants> = Item::new("constants");
 
 // Every address in this list is an admin
 const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");
+
+const USERS: Map<UserId, User> = Map::new("users");
+const USERID_BY_ADDR: Map<&str, UserId> = Map::new("userid_address");
 
 const HYDROMANCERS: Map<HydromancerId, Hydromancer> = Map::new("hydromancers");
 const HYDROMANCERID_BY_ADDR: Map<&str, HydromancerId> = Map::new("hydromancerid_address");
@@ -81,6 +84,57 @@ pub fn update_whitelist_admins(
     Ok(())
 }
 
+pub fn get_vessel_harbor(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> Result<(VesselHarbor, HydroProposalId), StdError> {
+    let proposal_id = HARBOR_OF_VESSEL.load(storage, ((tranche_id, round_id), hydro_lock_id))?;
+    let vessel_harbor = VESSEL_TO_HARBOR.load(
+        storage,
+        ((tranche_id, round_id), proposal_id, hydro_lock_id),
+    )?;
+    Ok((vessel_harbor, proposal_id))
+}
+
+pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> Result<UserId, StdError> {
+    let user_id = get_user_id_by_address(storage, user_address.clone());
+    match user_id {
+        Ok(user_id) => Err(StdError::generic_err(format!(
+            "User {} already exists with id {}",
+            user_address, user_id
+        ))),
+        Err(_) => {
+            //user id was not found, so we can create a new user
+            let user_id = USER_NEXT_ID.may_load(storage)?.unwrap_or_default();
+
+            let user = User {
+                user_id,
+                address: user_address.clone(),
+                claimable_rewards: vec![],
+            };
+            USERS.save(storage, user_id, &user)?;
+
+            USERID_BY_ADDR.save(storage, user_address.as_str(), &user_id)?;
+
+            USER_NEXT_ID.save(storage, &(user_id + 1))?;
+
+            Ok(user_id)
+        }
+    }
+}
+
+pub fn get_user_id_by_address(storage: &dyn Storage, user_addr: Addr) -> Result<UserId, StdError> {
+    match USERID_BY_ADDR.load(storage, user_addr.as_str()) {
+        Ok(user_id) => Ok(user_id),
+        Err(_) => Err(StdError::generic_err(format!(
+            "User {} not found",
+            user_addr
+        ))),
+    }
+}
+
 pub fn insert_new_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_address: Addr,
@@ -125,13 +179,6 @@ pub fn get_hydromancer_id_by_address(
             hydromancer_addr
         ))),
     }
-}
-
-pub fn add_hydromancer(
-    storage: &mut dyn Storage,
-    hydromancer: &Hydromancer,
-) -> Result<(), StdError> {
-    HYDROMANCERS.save(storage, hydromancer.hydromancer_id, hydromancer)
 }
 
 pub fn hydromancer_exists(storage: &dyn Storage, hydromancer_id: HydromancerId) -> bool {

@@ -8,7 +8,7 @@ import { Coin } from "@cosmjs/amino";
 import { MsgExecuteContractEncodeObject } from "@cosmjs/cosmwasm-stargate";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, VesselsToHarbor, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, VesselsToHarbor, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
@@ -48,6 +48,13 @@ export interface ZephyrusMainMsg {
     trancheId: number;
     vesselsHarbors: VesselsToHarbor[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  userVote: ({
+    trancheId,
+    vesselsHarbors
+  }: {
+    trancheId: number;
+    vesselsHarbors: VesselsToHarbor[];
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   sender: string;
@@ -63,6 +70,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
     this.hydromancerVote = this.hydromancerVote.bind(this);
+    this.userVote = this.userVote.bind(this);
   }
   buildVessel = ({
     receiver,
@@ -202,6 +210,28 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
         contract: this.contractAddress,
         msg: toUtf8(JSON.stringify({
           hydromancer_vote: {
+            tranche_id: trancheId,
+            vessels_harbors: vesselsHarbors
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  userVote = ({
+    trancheId,
+    vesselsHarbors
+  }: {
+    trancheId: number;
+    vesselsHarbors: VesselsToHarbor[];
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          user_vote: {
             tranche_id: trancheId,
             vessels_harbors: vesselsHarbors
           }

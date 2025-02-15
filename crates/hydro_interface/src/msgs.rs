@@ -23,6 +23,10 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         proposals_votes: Vec<ProposalToLockups>,
     },
+    Unvote {
+        tranche_id: u64,
+        lock_ids: Vec<u64>,
+    },
 }
 
 #[cw_serde]

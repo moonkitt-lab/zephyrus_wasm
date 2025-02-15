@@ -63,6 +63,11 @@ pub enum ExecuteMsg {
         tranche_id: TrancheId,
         vessels_harbors: Vec<VesselsToHarbor>,
     },
+    ChangeHydromancer {
+        tranche_id: TrancheId,
+        hydromancer_id: HydromancerId,
+        hydro_lock_ids: Vec<u64>,
+    },
 }
 
 #[cw_serde]

@@ -288,8 +288,8 @@ pub fn get_harbor_of_vessel(
     tranche_id: TrancheId,
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
-) -> Result<Option<HydroProposalId>, StdError> {
-    HARBOR_OF_VESSEL.may_load(storage, ((tranche_id, round_id), hydro_lock_id))
+) -> Result<HydroProposalId, StdError> {
+    HARBOR_OF_VESSEL.load(storage, ((tranche_id, round_id), hydro_lock_id))
 }
 
 pub fn remove_vessel_harbor(
@@ -506,4 +506,77 @@ pub fn are_vessels_owned_by(
     Ok(hydro_lock_ids
         .iter()
         .all(|&id_to_check| owner_vessels.contains(&id_to_check)))
+}
+
+pub fn change_vessel_hydromancer(
+    storage: &mut dyn Storage,
+    tranche_id: TrancheId,
+    hydro_lock_id: HydroLockId,
+    current_round_id: RoundId,
+    new_hydromancer_id: HydromancerId,
+) -> Result<(), ContractError> {
+    let mut vessel = get_vessel(storage, hydro_lock_id)?;
+
+    let old_hydromancer_id = vessel.hydromancer_id;
+
+    //if vesssel is under user control then it have to be removed from user control
+    //we have to do it even if the new hydromancer is the same as the old one, because the user can give back control to hydromancer
+    let mut vote_reseted = false;
+    if is_vessel_under_user_control(storage, tranche_id, current_round_id, hydro_lock_id) {
+        let hydro_proposal_id =
+            get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id).ok();
+
+        if let Some(proposal_id) = hydro_proposal_id {
+            remove_vessel_harbor(
+                storage,
+                tranche_id,
+                current_round_id,
+                proposal_id,
+                hydro_lock_id,
+            )?;
+        }
+        vote_reseted = true;
+    }
+
+    if old_hydromancer_id == new_hydromancer_id {
+        return Ok(());
+    }
+
+    //new hydromancer is different from the old one so we have to reset the vote if it was not reseted before
+    if !vote_reseted {
+        let hydro_proposal_id =
+            get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id).ok();
+
+        if let Some(proposal_id) = hydro_proposal_id {
+            remove_vessel_harbor(
+                storage,
+                tranche_id,
+                current_round_id,
+                proposal_id,
+                hydro_lock_id,
+            )?;
+        }
+    }
+
+    let mut old_hydromancer_vessels = HYDROMANCER_VESSELS
+        .may_load(storage, old_hydromancer_id)?
+        .unwrap_or_default();
+
+    old_hydromancer_vessels.remove(&hydro_lock_id);
+
+    HYDROMANCER_VESSELS.save(storage, old_hydromancer_id, &old_hydromancer_vessels)?;
+
+    let mut new_hydromancer_vessels = HYDROMANCER_VESSELS
+        .may_load(storage, new_hydromancer_id)?
+        .unwrap_or_default();
+
+    new_hydromancer_vessels.insert(hydro_lock_id);
+
+    HYDROMANCER_VESSELS.save(storage, new_hydromancer_id, &new_hydromancer_vessels)?;
+
+    vessel.hydromancer_id = new_hydromancer_id;
+
+    VESSELS.save(storage, hydro_lock_id, &vessel)?;
+
+    Ok(())
 }

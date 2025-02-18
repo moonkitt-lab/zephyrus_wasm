@@ -48,6 +48,12 @@ export type ExecuteMsg = {
     tranche_id: number;
     vessels_harbors: VesselsToHarbor[];
   };
+} | {
+  change_hydromancer: {
+    hydro_lock_ids: number[];
+    hydromancer_id: number;
+    tranche_id: number;
+  };
 };
 export interface BuildVesselParams {
   auto_maintenance: boolean;

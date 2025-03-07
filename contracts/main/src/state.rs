@@ -61,6 +61,202 @@ const HARBOR_OF_VESSEL: Map<((TrancheId, RoundId), HydroLockId), HydroProposalId
 const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
     Map::new("vessels_under_user_control");
 
+//Track time weighted shares
+const HYDROMANCER_SHARES_BY_VALIDATOR: Map<((HydromancerId, RoundId), &str), u128> =
+    Map::new("hydromancer_shares_by_validator");
+const HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR: Map<
+    ((HydromancerId, RoundId), HydroProposalId, &str),
+    u128,
+> = Map::new("hydromancer_proposal_shares_by_validator");
+
+const SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<
+    ((UserId, RoundId), HydroProposalId, &str),
+    u128,
+> = Map::new("hydromancer_proposal_shares_by_validator");
+
+const USER_HYDROMANCER_SHARES: Map<((UserId, HydromancerId, RoundId), &str), u128> =
+    Map::new("hydromancer_shares");
+
+pub fn add_weighted_shares_to_user_hydromancer(
+    storage: &mut dyn Storage,
+    user_id: UserId,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = USER_HYDROMANCER_SHARES
+        .load(storage, ((user_id, hydromancer_id, round_id), validator))
+        .unwrap_or_default();
+    USER_HYDROMANCER_SHARES.save(
+        storage,
+        ((user_id, hydromancer_id, round_id), validator),
+        &(current_shares + shares),
+    )?;
+    Ok(())
+}
+
+pub fn remove_weighted_shares_to_user_hydromancer(
+    storage: &mut dyn Storage,
+    user_id: UserId,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = USER_HYDROMANCER_SHARES
+        .load(storage, ((user_id, hydromancer_id, round_id), validator))
+        .unwrap_or_default();
+    if current_shares < shares {
+        return Err(StdError::generic_err(format!(
+            "Not enough shares to remove {} from user {} and validator {}",
+            shares, user_id, validator
+        )));
+    }
+    USER_HYDROMANCER_SHARES.save(
+        storage,
+        ((user_id, hydromancer_id, round_id), validator),
+        &(current_shares - shares),
+    )?;
+    Ok(())
+}
+
+pub fn add_weighted_shares_under_user_control(
+    storage: &mut dyn Storage,
+    user_id: UserId,
+    round_id: RoundId,
+    proposal_id: HydroProposalId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
+        .load(storage, ((user_id, round_id), proposal_id, validator))
+        .unwrap_or_default();
+    SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
+        storage,
+        ((user_id, round_id), proposal_id, validator),
+        &(current_shares + shares),
+    )?;
+    Ok(())
+}
+
+pub fn remove_weighted_shares_under_user_control(
+    storage: &mut dyn Storage,
+    user_id: UserId,
+    round_id: RoundId,
+    proposal_id: HydroProposalId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
+        .load(storage, ((user_id, round_id), proposal_id, validator))
+        .unwrap_or_default();
+    if current_shares < shares {
+        return Err(StdError::generic_err(format!(
+            "Not enough shares to remove {} from user {} and validator {}",
+            shares, user_id, validator
+        )));
+    }
+    SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
+        storage,
+        ((user_id, round_id), proposal_id, validator),
+        &(current_shares - shares),
+    )?;
+    Ok(())
+}
+
+pub fn add_weighted_shares_to_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = HYDROMANCER_SHARES_BY_VALIDATOR
+        .load(storage, ((hydromancer_id, round_id), validator))
+        .unwrap_or_default();
+    HYDROMANCER_SHARES_BY_VALIDATOR.save(
+        storage,
+        ((hydromancer_id, round_id), validator),
+        &(current_shares + shares),
+    )?;
+    Ok(())
+}
+
+pub fn remove_weighted_shares_to_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = HYDROMANCER_SHARES_BY_VALIDATOR
+        .load(storage, ((hydromancer_id, round_id), validator))
+        .unwrap_or_default();
+    if current_shares < shares {
+        return Err(StdError::generic_err(format!(
+            "Not enough shares to remove {} from hydromancer {} and validator {}",
+            shares, hydromancer_id, validator
+        )));
+    }
+    HYDROMANCER_SHARES_BY_VALIDATOR.save(
+        storage,
+        ((hydromancer_id, round_id), validator),
+        &(current_shares - shares),
+    )?;
+    Ok(())
+}
+
+pub fn add_weighted_shares_to_proposal_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    proposal_id: HydroProposalId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR
+        .load(
+            storage,
+            ((hydromancer_id, round_id), proposal_id, validator),
+        )
+        .unwrap_or_default();
+    HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR.save(
+        storage,
+        ((hydromancer_id, round_id), proposal_id, validator),
+        &(current_shares + shares),
+    )?;
+    Ok(())
+}
+
+pub fn remove_weighted_shares_to_proposal_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    proposal_id: HydroProposalId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR
+        .load(
+            storage,
+            ((hydromancer_id, round_id), proposal_id, validator),
+        )
+        .unwrap_or_default();
+    if current_shares < shares {
+        return Err(StdError::generic_err(format!(
+            "Not enough shares to remove {} from hydromancer {} and validator {}",
+            shares, hydromancer_id, validator
+        )));
+    }
+    HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR.save(
+        storage,
+        ((hydromancer_id, round_id), proposal_id, validator),
+        &(current_shares - shares),
+    )?;
+    Ok(())
+}
+
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
     HYDROMANCER_NEXT_ID.save(storage, &0)?;

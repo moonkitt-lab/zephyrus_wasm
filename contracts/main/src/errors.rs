@@ -26,6 +26,8 @@ pub enum ContractError {
         hydromancer_id: HydromancerId,
         vessel_hydromancer_id: HydromancerId,
     },
+    #[error("Vessel {lock_id} has no time wieghted shares on hydro")]
+    NoTimeWeightedShares { lock_id: HydroLockId },
 
     #[error("Vessel {vessel_id} is owned by {vessel_user_id} not {user_id}")]
     InvalidUserId {

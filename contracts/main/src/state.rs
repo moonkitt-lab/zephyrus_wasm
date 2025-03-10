@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, Storage};
+use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
@@ -62,7 +62,7 @@ const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId
     Map::new("vessels_under_user_control");
 
 //Track time weighted shares
-const HYDROMANCER_SHARES_BY_VALIDATOR: Map<((HydromancerId, RoundId), &str), u128> =
+const HYDROMANCER_SHARES_BY_VALIDATOR: Map<((HydromancerId, TrancheId, RoundId), &str), u128> =
     Map::new("hydromancer_shares_by_validator");
 const HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR: Map<
     ((HydromancerId, RoundId), HydroProposalId, &str),
@@ -70,15 +70,16 @@ const HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR: Map<
 > = Map::new("hydromancer_proposal_shares_by_validator");
 
 const SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<
-    ((UserId, RoundId), HydroProposalId, &str),
+    ((UserId, TrancheId, RoundId), HydroProposalId, &str),
     u128,
 > = Map::new("hydromancer_proposal_shares_by_validator");
 
-const USER_HYDROMANCER_SHARES: Map<((UserId, HydromancerId, RoundId), &str), u128> =
+const USER_HYDROMANCER_SHARES: Map<((UserId, HydromancerId, TrancheId), RoundId, &str), u128> =
     Map::new("hydromancer_shares");
 
 pub fn add_weighted_shares_to_user_hydromancer(
     storage: &mut dyn Storage,
+    tranche_id: TrancheId,
     user_id: UserId,
     hydromancer_id: HydromancerId,
     round_id: RoundId,
@@ -86,26 +87,33 @@ pub fn add_weighted_shares_to_user_hydromancer(
     shares: u128,
 ) -> Result<(), StdError> {
     let current_shares = USER_HYDROMANCER_SHARES
-        .load(storage, ((user_id, hydromancer_id, round_id), validator))
+        .load(
+            storage,
+            ((user_id, hydromancer_id, tranche_id), round_id, validator),
+        )
         .unwrap_or_default();
     USER_HYDROMANCER_SHARES.save(
         storage,
-        ((user_id, hydromancer_id, round_id), validator),
+        ((user_id, hydromancer_id, tranche_id), round_id, validator),
         &(current_shares + shares),
     )?;
     Ok(())
 }
 
-pub fn remove_weighted_shares_to_user_hydromancer(
+pub fn sub_weighted_shares_to_user_hydromancer(
     storage: &mut dyn Storage,
     user_id: UserId,
+    tranche_id: TrancheId,
     hydromancer_id: HydromancerId,
     round_id: RoundId,
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
     let current_shares = USER_HYDROMANCER_SHARES
-        .load(storage, ((user_id, hydromancer_id, round_id), validator))
+        .load(
+            storage,
+            ((user_id, hydromancer_id, tranche_id), round_id, validator),
+        )
         .unwrap_or_default();
     if current_shares < shares {
         return Err(StdError::generic_err(format!(
@@ -115,7 +123,7 @@ pub fn remove_weighted_shares_to_user_hydromancer(
     }
     USER_HYDROMANCER_SHARES.save(
         storage,
-        ((user_id, hydromancer_id, round_id), validator),
+        ((user_id, hydromancer_id, tranche_id), round_id, validator),
         &(current_shares - shares),
     )?;
     Ok(())
@@ -124,32 +132,40 @@ pub fn remove_weighted_shares_to_user_hydromancer(
 pub fn add_weighted_shares_under_user_control(
     storage: &mut dyn Storage,
     user_id: UserId,
+    tranche_id: TrancheId,
     round_id: RoundId,
     proposal_id: HydroProposalId,
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
     let current_shares = SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
-        .load(storage, ((user_id, round_id), proposal_id, validator))
+        .load(
+            storage,
+            ((user_id, tranche_id, round_id), proposal_id, validator),
+        )
         .unwrap_or_default();
     SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
         storage,
-        ((user_id, round_id), proposal_id, validator),
+        ((user_id, tranche_id, round_id), proposal_id, validator),
         &(current_shares + shares),
     )?;
     Ok(())
 }
 
-pub fn remove_weighted_shares_under_user_control(
+pub fn sub_weighted_shares_under_user_control(
     storage: &mut dyn Storage,
     user_id: UserId,
+    tranche_id: TrancheId,
     round_id: RoundId,
     proposal_id: HydroProposalId,
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
     let current_shares = SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
-        .load(storage, ((user_id, round_id), proposal_id, validator))
+        .load(
+            storage,
+            ((user_id, tranche_id, round_id), proposal_id, validator),
+        )
         .unwrap_or_default();
     if current_shares < shares {
         return Err(StdError::generic_err(format!(
@@ -159,7 +175,7 @@ pub fn remove_weighted_shares_under_user_control(
     }
     SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
         storage,
-        ((user_id, round_id), proposal_id, validator),
+        ((user_id, tranche_id, round_id), proposal_id, validator),
         &(current_shares - shares),
     )?;
     Ok(())
@@ -168,30 +184,32 @@ pub fn remove_weighted_shares_under_user_control(
 pub fn add_weighted_shares_to_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
     round_id: RoundId,
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
     let current_shares = HYDROMANCER_SHARES_BY_VALIDATOR
-        .load(storage, ((hydromancer_id, round_id), validator))
+        .load(storage, ((hydromancer_id, tranche_id, round_id), validator))
         .unwrap_or_default();
     HYDROMANCER_SHARES_BY_VALIDATOR.save(
         storage,
-        ((hydromancer_id, round_id), validator),
+        ((hydromancer_id, tranche_id, round_id), validator),
         &(current_shares + shares),
     )?;
     Ok(())
 }
 
-pub fn remove_weighted_shares_to_hydromancer(
+pub fn sub_weighted_shares_to_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
     round_id: RoundId,
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
     let current_shares = HYDROMANCER_SHARES_BY_VALIDATOR
-        .load(storage, ((hydromancer_id, round_id), validator))
+        .load(storage, ((hydromancer_id, tranche_id, round_id), validator))
         .unwrap_or_default();
     if current_shares < shares {
         return Err(StdError::generic_err(format!(
@@ -201,10 +219,28 @@ pub fn remove_weighted_shares_to_hydromancer(
     }
     HYDROMANCER_SHARES_BY_VALIDATOR.save(
         storage,
-        ((hydromancer_id, round_id), validator),
+        ((hydromancer_id, tranche_id, round_id), validator),
         &(current_shares - shares),
     )?;
     Ok(())
+}
+
+pub fn has_shares_for_hydromancer_and_round(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> StdResult<bool> {
+    let key_prefix = (hydromancer_id, tranche_id, round_id);
+
+    // Vérifie s'il existe au moins une entrée avec ce (hydromancer_id, round_id)
+    let has_data = HYDROMANCER_SHARES_BY_VALIDATOR
+        .prefix(key_prefix)
+        .keys(storage, None, None, cosmwasm_std::Order::Ascending)
+        .next()
+        .is_some();
+
+    Ok(has_data)
 }
 
 pub fn add_weighted_shares_to_proposal_hydromancer(
@@ -229,7 +265,7 @@ pub fn add_weighted_shares_to_proposal_hydromancer(
     Ok(())
 }
 
-pub fn remove_weighted_shares_to_proposal_hydromancer(
+pub fn sub_weighted_shares_to_proposal_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
     round_id: RoundId,
@@ -477,6 +513,19 @@ pub fn get_vessel_to_harbor_by_harbor_id(
         .prefix(((tranche_id, round_id), hydro_proposal_id))
         .range(storage, None, None, Order::Ascending)
         .collect()
+}
+
+pub fn get_vessel_to_harbor(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_proposal_id: HydroProposalId,
+    hydro_lock_id: HydroLockId,
+) -> Result<VesselHarbor, StdError> {
+    VESSEL_TO_HARBOR.load(
+        storage,
+        ((tranche_id, round_id), hydro_proposal_id, hydro_lock_id),
+    )
 }
 
 pub fn get_harbor_of_vessel(
@@ -775,4 +824,14 @@ pub fn change_vessel_hydromancer(
     VESSELS.save(storage, hydro_lock_id, &vessel)?;
 
     Ok(())
+}
+
+pub fn get_vessels_count_by_hydromancer(
+    storage: &dyn Storage,
+    hydromancer_id: HydromancerId,
+) -> Result<usize, StdError> {
+    let vessels = HYDROMANCER_VESSELS
+        .load(storage, hydromancer_id)
+        .unwrap_or_default();
+    Ok(vessels.len())
 }

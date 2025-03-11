@@ -496,7 +496,7 @@ fn execute_hydromancer_vote(
                             previous_harbor_id,
                             vessel.hydro_lock_id,
                         )?;
-                        //save could be done after the match statement, but it will be done also whan previous harbor id is the same as the new one
+                        //save could be done after the match statement, but it will be done also when previous harbor id is the same as the new one
                         state::add_vessel_to_harbor(
                             deps.storage,
                             tranche_id,

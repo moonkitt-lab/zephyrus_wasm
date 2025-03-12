@@ -64,15 +64,11 @@ const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId
 //Track time weighted shares
 const HYDROMANCER_SHARES_BY_VALIDATOR: Map<((HydromancerId, TrancheId, RoundId), &str), u128> =
     Map::new("hydromancer_shares_by_validator");
-const HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR: Map<
-    ((HydromancerId, RoundId), HydroProposalId, &str),
-    u128,
-> = Map::new("hydromancer_proposal_shares_by_validator");
+const PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR: Map<(HydroProposalId, HydromancerId, &str), u128> =
+    Map::new("proposal_hydromancer_shares_by_validator");
 
-const SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<
-    ((UserId, TrancheId, RoundId), HydroProposalId, &str),
-    u128,
-> = Map::new("hydromancer_proposal_shares_by_validator");
+const SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<(HydroProposalId, UserId, &str), u128> =
+    Map::new("proposal_user_shares_by_validator");
 
 const USER_HYDROMANCER_SHARES: Map<((UserId, HydromancerId, TrancheId), RoundId, &str), u128> =
     Map::new("hydromancer_shares");
@@ -132,21 +128,16 @@ pub fn sub_weighted_shares_to_user_hydromancer(
 pub fn add_weighted_shares_under_user_control(
     storage: &mut dyn Storage,
     user_id: UserId,
-    tranche_id: TrancheId,
-    round_id: RoundId,
     proposal_id: HydroProposalId,
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
     let current_shares = SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
-        .load(
-            storage,
-            ((user_id, tranche_id, round_id), proposal_id, validator),
-        )
+        .load(storage, (proposal_id, user_id, validator))
         .unwrap_or_default();
     SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
         storage,
-        ((user_id, tranche_id, round_id), proposal_id, validator),
+        (proposal_id, user_id, validator),
         &(current_shares + shares),
     )?;
     Ok(())
@@ -155,17 +146,12 @@ pub fn add_weighted_shares_under_user_control(
 pub fn sub_weighted_shares_under_user_control(
     storage: &mut dyn Storage,
     user_id: UserId,
-    tranche_id: TrancheId,
-    round_id: RoundId,
     proposal_id: HydroProposalId,
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
     let current_shares = SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
-        .load(
-            storage,
-            ((user_id, tranche_id, round_id), proposal_id, validator),
-        )
+        .load(storage, (proposal_id, user_id, validator))
         .unwrap_or_default();
     if current_shares < shares {
         return Err(StdError::generic_err(format!(
@@ -175,7 +161,7 @@ pub fn sub_weighted_shares_under_user_control(
     }
     SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
         storage,
-        ((user_id, tranche_id, round_id), proposal_id, validator),
+        (proposal_id, user_id, validator),
         &(current_shares - shares),
     )?;
     Ok(())
@@ -251,15 +237,12 @@ pub fn add_weighted_shares_to_proposal_hydromancer(
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
-    let current_shares = HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR
-        .load(
-            storage,
-            ((hydromancer_id, round_id), proposal_id, validator),
-        )
+    let current_shares = PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR
+        .load(storage, (proposal_id, hydromancer_id, validator))
         .unwrap_or_default();
-    HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR.save(
+    PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR.save(
         storage,
-        ((hydromancer_id, round_id), proposal_id, validator),
+        (proposal_id, hydromancer_id, validator),
         &(current_shares + shares),
     )?;
     Ok(())
@@ -273,11 +256,8 @@ pub fn sub_weighted_shares_to_proposal_hydromancer(
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
-    let current_shares = HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR
-        .load(
-            storage,
-            ((hydromancer_id, round_id), proposal_id, validator),
-        )
+    let current_shares = PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR
+        .load(storage, (proposal_id, hydromancer_id, validator))
         .unwrap_or_default();
     if current_shares < shares {
         return Err(StdError::generic_err(format!(
@@ -285,9 +265,9 @@ pub fn sub_weighted_shares_to_proposal_hydromancer(
             shares, hydromancer_id, validator
         )));
     }
-    HYDROMANCER_PROPOSAL_SHARES_BY_VALIDATOR.save(
+    PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR.save(
         storage,
-        ((hydromancer_id, round_id), proposal_id, validator),
+        (proposal_id, hydromancer_id, validator),
         &(current_shares - shares),
     )?;
     Ok(())

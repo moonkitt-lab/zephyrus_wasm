@@ -807,8 +807,6 @@ fn execute_user_vote(
                             state::add_weighted_shares_under_user_control(
                                 deps.storage,
                                 user_id,
-                                tranche_id,
-                                current_round_id,
                                 vessels_to_harbor.harbor_id,
                                 &lock_current_weighted_shares.validator,
                                 lock_current_weighted_shares.time_weighted_share,
@@ -818,8 +816,6 @@ fn execute_user_vote(
                             state::sub_weighted_shares_under_user_control(
                                 deps.storage,
                                 user_id,
-                                tranche_id,
-                                current_round_id,
                                 previous_harbor_id,
                                 &lock_current_weighted_shares.validator,
                                 lock_current_weighted_shares.time_weighted_share,
@@ -827,8 +823,6 @@ fn execute_user_vote(
                             state::add_weighted_shares_under_user_control(
                                 deps.storage,
                                 user_id,
-                                tranche_id,
-                                current_round_id,
                                 vessels_to_harbor.harbor_id,
                                 &lock_current_weighted_shares.validator,
                                 lock_current_weighted_shares.time_weighted_share,
@@ -852,8 +846,6 @@ fn execute_user_vote(
                     state::add_weighted_shares_under_user_control(
                         deps.storage,
                         user_id,
-                        tranche_id,
-                        current_round_id,
                         vessels_to_harbor.harbor_id,
                         &lock_current_weighted_shares.validator,
                         lock_current_weighted_shares.time_weighted_share,

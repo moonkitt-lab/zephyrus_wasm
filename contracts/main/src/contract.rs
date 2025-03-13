@@ -934,10 +934,14 @@ fn parse_locks_skipped_reply(reply: Reply) -> Result<Vec<u64>, ContractError> {
         .find_map(|attr| (attr.key == "locks_skipped").then_some(attr.value))
         .expect("Vote reply always contains locks_skipped attribute");
 
-    Ok(skipped_locks
-        .split(",")
-        .map(|s| s.parse().unwrap())
-        .collect())
+    Ok(if skipped_locks.is_empty() {
+        vec![]
+    } else {
+        skipped_locks
+            .split(',')
+            .map(|s| s.parse().unwrap()) // Attention: `unwrap` peut toujours paniquer ici !
+            .collect()
+    })
 }
 
 fn handle_unlock_tokens_reply(

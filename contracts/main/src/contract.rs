@@ -5,7 +5,9 @@ use cosmwasm_std::{
     Coin, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse, StdError,
     StdResult, SubMsg, WasmMsg,
 };
-use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens, Vote};
+use hydro_interface::msgs::ExecuteMsg::{
+    LockTokens, RefreshLockDuration, UnlockTokens, Unvote, Vote,
+};
 use hydro_interface::msgs::{CurrentRoundResponse, HydroQueryMsg, ProposalToLockups};
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -526,12 +528,48 @@ fn execute_user_vote(
         constants.hydro_config.hydro_contract_address.to_string(),
     )?;
     let mut proposal_votes = vec![];
+    let mut unvote_ids = vec![];
+
     for vessels_to_harbor in vessels_harbors.clone() {
+        for vessel_id in vessels_to_harbor.vessel_ids.iter() {
+            //if not under user control and already voted by hydromancer, lock_id should be unvote, otherwise if user vote the same proposal as hydromancer it will be skipped by hydro than zephyrus and still under hydromancer control
+            if !state::is_vessel_under_user_control(
+                deps.storage,
+                tranche_id,
+                current_round_id,
+                *vessel_id,
+            ) {
+                if let Some(_) = state::get_harbor_of_vessel(
+                    deps.storage,
+                    tranche_id,
+                    current_round_id,
+                    *vessel_id,
+                )? {
+                    //vessel used by hydromancer should be unvoted
+                    unvote_ids.push(vessel_id.clone());
+                }
+            }
+        }
+
         let proposal_to_lockups = ProposalToLockups {
             proposal_id: vessels_to_harbor.harbor_id,
             lock_ids: vessels_to_harbor.vessel_ids.clone(),
         };
         proposal_votes.push(proposal_to_lockups);
+    }
+    let mut response = Response::new();
+    if !unvote_ids.is_empty() {
+        let unvote_msg = Unvote {
+            tranche_id,
+            lock_ids: unvote_ids.clone(),
+        };
+
+        let execute_unvote_msg = WasmMsg::Execute {
+            contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+            msg: to_json_binary(&unvote_msg)?,
+            funds: vec![],
+        };
+        response = response.add_message(execute_unvote_msg);
     }
 
     let payload = to_json_binary(&VoteReplyPayload {
@@ -553,8 +591,7 @@ fn execute_user_vote(
     };
     let execute_hydro_vote_msg: SubMsg<NeutronMsg> =
         SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID).with_payload(payload);
-    let response = Response::new().add_submessage(execute_hydro_vote_msg);
-    Ok(response)
+    Ok(response.add_submessage(execute_hydro_vote_msg))
 }
 
 #[entry_point]
@@ -765,6 +802,7 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, 
     Ok(Response::default())
 }
 
+//Handle vote reply, used after both user and hydromancer vote
 fn handle_vote_reply(
     deps: DepsMut,
     payload: VoteReplyPayload,
@@ -797,18 +835,19 @@ fn handle_vote_reply(
                         vessel_hydromancer_id: vessel.hydromancer_id,
                     });
                 }
+                //hydromancer can't vote with a vessel under user control
+                if state::is_vessel_under_user_control(
+                    deps.storage,
+                    payload.tranche_id,
+                    payload.round_id,
+                    vessel.hydro_lock_id,
+                ) {
+                    return Err(ContractError::VesselUnderUserControl {
+                        vessel_id: vessel.hydro_lock_id,
+                    });
+                }
             }
 
-            if state::is_vessel_under_user_control(
-                deps.storage,
-                payload.tranche_id,
-                payload.round_id,
-                vessel.hydro_lock_id,
-            ) {
-                return Err(ContractError::VesselUnderUserControl {
-                    vessel_id: vessel.hydro_lock_id,
-                });
-            }
             let previous_harbor_id = state::get_harbor_of_vessel(
                 deps.storage,
                 payload.tranche_id,

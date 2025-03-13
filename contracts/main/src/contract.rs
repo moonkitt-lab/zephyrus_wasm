@@ -1432,6 +1432,123 @@ mod test {
     }
 
     #[test]
+    fn hydromancer_vote_succeed_without_change_because_vote_skipped_by_hydro() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: 0,
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            2,
+            &VesselHarbor {
+                user_control: false,
+                hydro_lock_id: 0,
+                steerer_id: default_hydromancer_id,
+            },
+        )
+        .expect("Should add vessel to harbor");
+
+        let res = super::execute_hydromancer_vote(
+            deps.as_mut(),
+            MessageInfo {
+                sender: make_valid_addr("zephyrus"),
+                funds: vec![],
+            },
+            1,
+            vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                assert_eq!(
+                    submsg.reply_on,
+                    ReplyOn::Success,
+                    "all lock messages should be reply_on_success"
+                );
+
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(proposals_votes.len(), 1);
+            assert_eq!(proposals_votes[0].proposal_id, 1);
+            assert_eq!(proposals_votes[0].lock_ids, vec![0]);
+        } else {
+            panic!("Le message ne correspond pas au pattern attendu !");
+        }
+
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        let skipped_ids = vec![0];
+        let _ = super::handle_vote_reply(deps.as_mut(), payload, skipped_ids).unwrap();
+
+        let vessels_to_harbor2 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 2)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor2.len(), 1);
+        assert_eq!(vessels_to_harbor2[0].1.hydro_lock_id, 0);
+        assert_eq!(vessels_to_harbor2[0].1.steerer_id, default_hydromancer_id);
+        //vote shoulb be skipped so harbor1 should not have vessels
+        let vessels_to_harbor1 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor1.len(), 0);
+    }
+
+    #[test]
     fn hydromancer_new_vote_succeed() {
         let mut deps = mock_dependencies();
 
@@ -2324,12 +2441,13 @@ mod test {
             }],
         )
         .unwrap();
-
-        assert_eq!(res.messages.len(), 1);
+        //because vessel was used by hydromancer, there should be 2 messages (unvote, vote)
+        assert_eq!(res.messages.len(), 2);
 
         let decoded_submessages: Vec<HydroExecuteMsg> = res
             .messages
             .iter()
+            .filter(|submsg| submsg.reply_on == ReplyOn::Success)
             .map(|submsg| {
                 assert_eq!(
                     submsg.reply_on,

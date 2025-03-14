@@ -73,6 +73,22 @@ const SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<(HydroProposalId, UserId, &str
 const USER_HYDROMANCER_SHARES: Map<((UserId, HydromancerId, TrancheId), RoundId, &str), u128> =
     Map::new("hydromancer_shares");
 
+pub fn get_hydromancer_shares_by_round(
+    storage: &dyn Storage,
+    hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> Result<Vec<(String, u128)>, StdError> {
+    HYDROMANCER_SHARES_BY_VALIDATOR
+        .prefix((hydromancer_id, tranche_id, round_id))
+        .range(storage, None, None, Order::Ascending)
+        .map(|item| {
+            let (key, value) = item?;
+            Ok((key, value))
+        })
+        .collect::<StdResult<Vec<_>>>()
+}
+
 pub fn add_weighted_shares_to_user_hydromancer(
     storage: &mut dyn Storage,
     tranche_id: TrancheId,
@@ -125,7 +141,7 @@ pub fn sub_weighted_shares_to_user_hydromancer(
     Ok(())
 }
 
-pub fn add_weighted_shares_under_user_control(
+pub fn add_weighted_shares_under_user_control_for_proposal(
     storage: &mut dyn Storage,
     user_id: UserId,
     proposal_id: HydroProposalId,
@@ -143,7 +159,7 @@ pub fn add_weighted_shares_under_user_control(
     Ok(())
 }
 
-pub fn sub_weighted_shares_under_user_control(
+pub fn sub_weighted_shares_under_user_control_for_proposal(
     storage: &mut dyn Storage,
     user_id: UserId,
     proposal_id: HydroProposalId,
@@ -232,7 +248,6 @@ pub fn has_shares_for_hydromancer_and_round(
 pub fn add_weighted_shares_to_proposal_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
-    round_id: RoundId,
     proposal_id: HydroProposalId,
     validator: &str,
     shares: u128,
@@ -251,7 +266,6 @@ pub fn add_weighted_shares_to_proposal_hydromancer(
 pub fn sub_weighted_shares_to_proposal_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
-    round_id: RoundId,
     proposal_id: HydroProposalId,
     validator: &str,
     shares: u128,

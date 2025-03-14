@@ -758,7 +758,10 @@ fn initialize_time_weighted_shares_for_hydromancer_and_current_round(
         tranche_id,
         current_round,
     )?;
-
+    println!(
+        "hydromancer_round_shares_already_initialized: {}",
+        hydromancer_round_shares_already_initialized
+    );
     if !hydromancer_round_shares_already_initialized {
         let count_vessels = state::get_vessels_count_by_hydromancer(deps.storage, hydromancer_id)?;
         let vessels = state::get_vessels_by_hydromancer(
@@ -1088,7 +1091,6 @@ fn handle_vote_reply(
                                     state::sub_weighted_shares_to_proposal_hydromancer(
                                         deps.storage,
                                         previous_vessel_to_harbor.steerer_id,
-                                        payload.round_id,
                                         previous_harbor_id,
                                         &lock_current_weighted_shares.validator,
                                         lock_current_weighted_shares.time_weighted_share,
@@ -1127,7 +1129,6 @@ fn handle_vote_reply(
                             state::sub_weighted_shares_to_proposal_hydromancer(
                                 deps.storage,
                                 payload.steerer_id,
-                                payload.round_id,
                                 previous_harbor_id,
                                 &lock_current_weighted_shares.validator,
                                 lock_current_weighted_shares.time_weighted_share,
@@ -1136,7 +1137,6 @@ fn handle_vote_reply(
                             state::add_weighted_shares_to_proposal_hydromancer(
                                 deps.storage,
                                 payload.steerer_id,
-                                payload.round_id,
                                 vessels_to_harbor.harbor_id,
                                 &lock_current_weighted_shares.validator,
                                 lock_current_weighted_shares.time_weighted_share,
@@ -1173,7 +1173,6 @@ fn handle_vote_reply(
                             state::add_weighted_shares_to_proposal_hydromancer(
                                 deps.storage,
                                 payload.steerer_id,
-                                payload.round_id,
                                 vessels_to_harbor.harbor_id,
                                 &lock_current_weighted_shares.validator,
                                 lock_current_weighted_shares.time_weighted_share,
@@ -3340,6 +3339,8 @@ mod test {
         let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
             .expect("Should add user");
 
+        let zephyrus_addr = make_valid_addr("zephyrus");
+
         let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
             .unwrap()
             .default_hydromancer_id;
@@ -3360,7 +3361,7 @@ mod test {
         state::add_vessel(
             deps.as_mut().storage,
             &Vessel {
-                hydro_lock_id: 0,
+                hydro_lock_id: 1,
                 tokenized_share_record_id: 1,
                 class_period: 6,
                 auto_maintenance: true,
@@ -3371,16 +3372,134 @@ mod test {
         )
         .expect("Should add vessel");
 
-        let res = super::execute_change_hydromancer(
-            deps.as_mut(),
+        let _ = super::execute_hydromancer_vote(
+            &mut deps.as_mut(),
+            mock_env(),
             MessageInfo {
-                sender: alice_address.clone(),
+                sender: zephyrus_addr.clone(),
                 funds: vec![],
             },
             1,
-            default_hydromancer_id,
-            vec![0],
+            vec![
+                {
+                    VesselsToHarbor {
+                        harbor_id: 1,
+                        vessel_ids: vec![1, 2],
+                    }
+                },
+                {
+                    VesselsToHarbor {
+                        harbor_id: 2,
+                        vessel_ids: vec![3, 4],
+                    }
+                },
+            ],
         )
         .unwrap();
+        let hydromancer_shares = state::get_hydromancer_shares_by_round(
+            deps.as_ref().storage,
+            default_hydromancer_id,
+            1,
+            1,
+        )
+        .expect("Hydromancer shares should exist");
+
+        assert_eq!(hydromancer_shares.len(), 1);
+        assert_eq!(hydromancer_shares[0].1, 1_000_000 + 2_000_000); //see mock querier , values are hardcoded by lock ids
+        assert_eq!(hydromancer_shares[0].0, "crosnest");
+    }
+
+    #[test]
+    fn hydromancer_vote_shares_initialized_with_user_controlled_vessel() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+
+        let zephyrus_addr = make_valid_addr("zephyrus");
+
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: 0,
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            1,
+            &VesselHarbor {
+                user_control: true,
+                hydro_lock_id: 0,
+                steerer_id: user_id,
+            },
+        )
+        .expect("Should add vessel to harbor");
+
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 1,
+                tokenized_share_record_id: 1,
+                class_period: 6,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        let _ = super::execute_hydromancer_vote(
+            &mut deps.as_mut(),
+            mock_env(),
+            MessageInfo {
+                sender: zephyrus_addr.clone(),
+                funds: vec![],
+            },
+            1,
+            vec![
+                {
+                    VesselsToHarbor {
+                        harbor_id: 1,
+                        vessel_ids: vec![1, 2],
+                    }
+                },
+                {
+                    VesselsToHarbor {
+                        harbor_id: 2,
+                        vessel_ids: vec![3, 4],
+                    }
+                },
+            ],
+        )
+        .unwrap();
+        let hydromancer_shares = state::get_hydromancer_shares_by_round(
+            deps.as_ref().storage,
+            default_hydromancer_id,
+            1,
+            1,
+        )
+        .expect("Hydromancer shares should exist");
+
+        assert_eq!(hydromancer_shares.len(), 1);
+        assert_eq!(hydromancer_shares[0].1, 2_000_000); //see mock querier , value is hardcoded by lock ids
+        assert_eq!(hydromancer_shares[0].0, "crosnest");
     }
 }

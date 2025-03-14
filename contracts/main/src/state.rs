@@ -524,7 +524,7 @@ pub fn change_vessel_hydromancer(
     let mut vote_reseted = false;
     if is_vessel_under_user_control(storage, tranche_id, current_round_id, hydro_lock_id) {
         let hydro_proposal_id =
-            get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id).ok();
+            get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id)?;
 
         if let Some(proposal_id) = hydro_proposal_id {
             remove_vessel_harbor(
@@ -545,7 +545,7 @@ pub fn change_vessel_hydromancer(
     //new hydromancer is different from the old one so we have to reset the vote if it was not reseted before
     if !vote_reseted {
         let hydro_proposal_id =
-            get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id).ok();
+            get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id)?;
 
         if let Some(proposal_id) = hydro_proposal_id {
             remove_vessel_harbor(

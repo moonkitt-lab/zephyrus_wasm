@@ -46,6 +46,15 @@ struct LockTokensReplyPayload {
     owner_id: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+struct VoteReplyPayload {
+    tranche_id: u64,
+    vessels_harbors: Vec<VesselsToHarbor>,
+    steerer_id: u64,
+    round_id: u64,
+    user_vote: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DecommissionVesselsParameters {
     previous_balances: Vec<Coin>,
@@ -471,127 +480,10 @@ fn execute_hydromancer_vote(
         constants.hydro_config.hydro_contract_address.to_string(),
     )?;
     let mut proposal_votes = vec![];
-    for vessels_to_harbor in vessels_harbors {
-        let mut lock_ids = vec![];
-
-        for vessel_id in vessels_to_harbor.vessel_ids.iter() {
-            let vessel = state::get_vessel(deps.storage, *vessel_id)?;
-
-            if vessel.hydromancer_id != hydromancer_id {
-                return Err(ContractError::InvalidHydromancerId {
-                    vessel_id: vessel.hydro_lock_id,
-                    hydromancer_id,
-                    vessel_hydromancer_id: vessel.hydromancer_id,
-                });
-            }
-            if state::is_vessel_under_user_control(
-                deps.storage,
-                tranche_id,
-                current_round_id,
-                vessel.hydro_lock_id,
-            ) {
-                return Err(ContractError::VesselUnderUserControl {
-                    vessel_id: vessel.hydro_lock_id,
-                });
-            }
-            let current_time_weighted_shares =
-                query_hydro_current_time_weighted_shares_by_hydromancer(
-                    deps.as_ref(),
-                    env.clone(),
-                    constants.hydro_config.hydro_contract_address.to_string(),
-                    info.sender.clone(),
-                    vec![vessel],
-                )?;
-            if current_time_weighted_shares
-                .lock_time_weighted_shares
-                .is_empty()
-            {
-                return Err(ContractError::NoTimeWeightedShares {
-                    lock_id: vessel.hydro_lock_id,
-                });
-            }
-            let lock_current_weighted_shares =
-                &current_time_weighted_shares.lock_time_weighted_shares[0];
-
-            let previous_harbor_id = state::get_harbor_of_vessel(
-                deps.storage,
-                tranche_id,
-                current_round_id,
-                vessel.hydro_lock_id,
-            );
-            match previous_harbor_id {
-                Ok(previous_harbor_id) => {
-                    if previous_harbor_id != vessels_to_harbor.harbor_id {
-                        //vote has changed
-                        state::remove_vessel_harbor(
-                            deps.storage,
-                            tranche_id,
-                            current_round_id,
-                            previous_harbor_id,
-                            vessel.hydro_lock_id,
-                        )?;
-                        //remove weighted shares from old proposal id
-                        state::sub_weighted_shares_to_proposal_hydromancer(
-                            deps.storage,
-                            hydromancer_id,
-                            current_round_id,
-                            previous_harbor_id,
-                            &lock_current_weighted_shares.validator,
-                            lock_current_weighted_shares.time_weighted_share,
-                        )?;
-                        //save could be done after the match statement, but it will be done also whan previous harbor id is the same as the new one
-                        state::add_vessel_to_harbor(
-                            deps.storage,
-                            tranche_id,
-                            current_round_id,
-                            vessels_to_harbor.harbor_id,
-                            &VesselHarbor {
-                                user_control: false,
-                                hydro_lock_id: vessel.hydro_lock_id,
-                                steerer_id: hydromancer_id,
-                            },
-                        )?;
-                        //add weighted shares to new proposal id
-                        state::sub_weighted_shares_to_proposal_hydromancer(
-                            deps.storage,
-                            hydromancer_id,
-                            current_round_id,
-                            vessels_to_harbor.harbor_id,
-                            &lock_current_weighted_shares.validator,
-                            lock_current_weighted_shares.time_weighted_share,
-                        )?;
-                    }
-                }
-                Err(_) => {
-                    state::add_vessel_to_harbor(
-                        deps.storage,
-                        tranche_id,
-                        current_round_id,
-                        vessels_to_harbor.harbor_id,
-                        &VesselHarbor {
-                            user_control: false,
-                            hydro_lock_id: vessel.hydro_lock_id,
-                            steerer_id: hydromancer_id,
-                        },
-                    )?;
-                    //add weighted shares to new proposal id
-                    state::sub_weighted_shares_to_proposal_hydromancer(
-                        deps.storage,
-                        hydromancer_id,
-                        current_round_id,
-                        vessels_to_harbor.harbor_id,
-                        &lock_current_weighted_shares.validator,
-                        lock_current_weighted_shares.time_weighted_share,
-                    )?;
-                }
-            }
-
-            lock_ids.push(vessel.hydro_lock_id);
-        }
-
+    for vessels_to_harbor in vessels_harbors.clone() {
         let proposal_to_lockups = ProposalToLockups {
             proposal_id: vessels_to_harbor.harbor_id,
-            lock_ids,
+            lock_ids: vessels_to_harbor.vessel_ids.clone(),
         };
         proposal_votes.push(proposal_to_lockups);
     }
@@ -605,8 +497,15 @@ fn execute_hydromancer_vote(
         msg: to_json_binary(&vote_message)?,
         funds: vec![],
     };
+    let payload = to_json_binary(&VoteReplyPayload {
+        tranche_id,
+        vessels_harbors,
+        steerer_id: hydromancer_id,
+        round_id: current_round_id,
+        user_vote: false,
+    })?;
     let execute_hydro_vote_msg: SubMsg<NeutronMsg> =
-        SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID);
+        SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID).with_payload(payload);
     let response = Response::new().add_submessage(execute_hydro_vote_msg);
     Ok(response)
 }
@@ -696,172 +595,57 @@ fn execute_user_vote(
         constants.hydro_config.hydro_contract_address.to_string(),
     )?;
     let mut proposal_votes = vec![];
+    let mut unvote_ids = vec![];
 
-    for vessels_to_harbor in vessels_harbors {
-        let mut lock_ids = vec![];
-
+    for vessels_to_harbor in vessels_harbors.clone() {
         for vessel_id in vessels_to_harbor.vessel_ids.iter() {
-            let vessel = state::get_vessel(deps.storage, *vessel_id)?;
-            if vessel.owner_id != user_id {
-                return Err(ContractError::InvalidUserId {
-                    vessel_id: vessel.hydro_lock_id,
-                    user_id,
-                    vessel_user_id: vessel.owner_id,
-                });
-            }
-
-            let is_hydromancer_shares_initialized = state::has_shares_for_hydromancer_and_round(
-                deps.storage,
-                vessel.hydromancer_id,
-                tranche_id,
-                current_round_id,
-            )?;
-
-            let previous_harbor_id = state::get_harbor_of_vessel(
+            //if not under user control and already voted by hydromancer, lock_id should be unvote, otherwise if user vote the same proposal as hydromancer it will be skipped by hydro than zephyrus and still under hydromancer control
+            if !state::is_vessel_under_user_control(
                 deps.storage,
                 tranche_id,
                 current_round_id,
-                vessel.hydro_lock_id,
-            );
-
-            let current_time_weighted_shares: CurrentRoundTimeWeightedSharesResponse =
-                deps.querier.query_wasm_smart(
-                    constants.hydro_config.hydro_contract_address.to_string(),
-                    &HydroQueryMsg::CurrentRoundTimeWeightedShares {
-                        owner: env.contract.address.to_string(),
-                        lock_ids: vec![vessel.hydro_lock_id],
-                    },
-                )?;
-            if current_time_weighted_shares
-                .lock_time_weighted_shares
-                .is_empty()
-            {
-                return Err(ContractError::NoTimeWeightedShares {
-                    lock_id: vessel.hydro_lock_id,
-                });
-            }
-            let lock_current_weighted_shares =
-                &current_time_weighted_shares.lock_time_weighted_shares[0];
-
-            match previous_harbor_id {
-                Ok(previous_harbor_id) => {
-                    if previous_harbor_id != vessels_to_harbor.harbor_id {
-                        //vote has changed
-                        state::remove_vessel_harbor(
-                            deps.storage,
-                            tranche_id,
-                            current_round_id,
-                            previous_harbor_id,
-                            vessel.hydro_lock_id,
-                        )?;
-                        //save could be done after the match statement, but it will be done also whan previous harbor id is the same as the new one
-                        state::add_vessel_to_harbor(
-                            deps.storage,
-                            tranche_id,
-                            current_round_id,
-                            vessels_to_harbor.harbor_id,
-                            &VesselHarbor {
-                                user_control: true,
-                                hydro_lock_id: vessel.hydro_lock_id,
-                                steerer_id: user_id,
-                            },
-                        )?;
-                        let previous_vessel_to_harbor = state::get_vessel_to_harbor(
-                            deps.storage,
-                            tranche_id,
-                            current_round_id,
-                            previous_harbor_id,
-                            vessel.hydro_lock_id,
-                        )?;
-
-                        if !previous_vessel_to_harbor.user_control {
-                            //Hydromancer was in charge remove weighted shares from hydromancer
-                            if is_hydromancer_shares_initialized {
-                                state::sub_weighted_shares_to_hydromancer(
-                                    deps.storage,
-                                    previous_vessel_to_harbor.steerer_id,
-                                    tranche_id,
-                                    current_round_id,
-                                    &lock_current_weighted_shares.validator,
-                                    lock_current_weighted_shares.time_weighted_share,
-                                )?;
-                                state::sub_weighted_shares_to_proposal_hydromancer(
-                                    deps.storage,
-                                    previous_vessel_to_harbor.steerer_id,
-                                    current_round_id,
-                                    previous_harbor_id,
-                                    &lock_current_weighted_shares.validator,
-                                    lock_current_weighted_shares.time_weighted_share,
-                                )?;
-                                state::sub_weighted_shares_to_user_hydromancer(
-                                    deps.storage,
-                                    user_id,
-                                    tranche_id,
-                                    previous_vessel_to_harbor.steerer_id,
-                                    current_round_id,
-                                    &lock_current_weighted_shares.validator,
-                                    lock_current_weighted_shares.time_weighted_share,
-                                )?;
-                            }
-
-                            state::add_weighted_shares_under_user_control(
-                                deps.storage,
-                                user_id,
-                                vessels_to_harbor.harbor_id,
-                                &lock_current_weighted_shares.validator,
-                                lock_current_weighted_shares.time_weighted_share,
-                            )?;
-                        } else {
-                            //User was in charge remove weighted shares from user previous vote
-                            state::sub_weighted_shares_under_user_control(
-                                deps.storage,
-                                user_id,
-                                previous_harbor_id,
-                                &lock_current_weighted_shares.validator,
-                                lock_current_weighted_shares.time_weighted_share,
-                            )?;
-                            state::add_weighted_shares_under_user_control(
-                                deps.storage,
-                                user_id,
-                                vessels_to_harbor.harbor_id,
-                                &lock_current_weighted_shares.validator,
-                                lock_current_weighted_shares.time_weighted_share,
-                            )?;
-                        }
-                    }
-                }
-                Err(_) => {
-                    state::add_vessel_to_harbor(
-                        deps.storage,
-                        tranche_id,
-                        current_round_id,
-                        vessels_to_harbor.harbor_id,
-                        &VesselHarbor {
-                            user_control: true,
-                            hydro_lock_id: vessel.hydro_lock_id,
-                            steerer_id: user_id,
-                        },
-                    )?;
-
-                    state::add_weighted_shares_under_user_control(
-                        deps.storage,
-                        user_id,
-                        vessels_to_harbor.harbor_id,
-                        &lock_current_weighted_shares.validator,
-                        lock_current_weighted_shares.time_weighted_share,
-                    )?;
+                *vessel_id,
+            ) {
+                if let Some(_) = state::get_harbor_of_vessel(
+                    deps.storage,
+                    tranche_id,
+                    current_round_id,
+                    *vessel_id,
+                )? {
+                    //vessel used by hydromancer should be unvoted
+                    unvote_ids.push(vessel_id.clone());
                 }
             }
-
-            lock_ids.push(vessel.hydro_lock_id);
         }
 
         let proposal_to_lockups = ProposalToLockups {
             proposal_id: vessels_to_harbor.harbor_id,
-            lock_ids,
+            lock_ids: vessels_to_harbor.vessel_ids.clone(),
         };
         proposal_votes.push(proposal_to_lockups);
     }
+    let mut response = Response::new();
+    if !unvote_ids.is_empty() {
+        let unvote_msg = Unvote {
+            tranche_id,
+            lock_ids: unvote_ids.clone(),
+        };
+
+        let execute_unvote_msg = WasmMsg::Execute {
+            contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+            msg: to_json_binary(&unvote_msg)?,
+            funds: vec![],
+        };
+        response = response.add_message(execute_unvote_msg);
+    }
+
+    let payload = to_json_binary(&VoteReplyPayload {
+        tranche_id,
+        vessels_harbors,
+        steerer_id: user_id,
+        round_id: current_round_id,
+        user_vote: true,
+    })?;
 
     let vote_message = Vote {
         tranche_id,
@@ -873,9 +657,8 @@ fn execute_user_vote(
         funds: vec![],
     };
     let execute_hydro_vote_msg: SubMsg<NeutronMsg> =
-        SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID);
-    let response = Response::new().add_submessage(execute_hydro_vote_msg);
-    Ok(response)
+        SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID).with_payload(payload);
+    Ok(response.add_submessage(execute_hydro_vote_msg))
 }
 
 #[entry_point]
@@ -988,7 +771,7 @@ fn initialize_time_weighted_shares_for_hydromancer_and_current_round(
             deps.as_ref(),
             env,
             hydro_contract_addr,
-            hydromancer_addr.clone(),
+            hydromancer_id,
             vessels,
         )?;
 
@@ -1035,7 +818,7 @@ fn query_hydro_current_time_weighted_shares_by_hydromancer(
     deps: Deps,
     env: Env,
     hydro_contract_addr: String,
-    hydromancer_addr: Addr,
+    hydromancer_id: u64,
     vessels: Vec<Vessel>,
 ) -> Result<CurrentRoundTimeWeightedSharesResponse, StdError> {
     let lock_ids = vessels.iter().map(|v| v.hydro_lock_id).collect::<Vec<_>>();
@@ -1051,7 +834,7 @@ fn query_hydro_current_time_weighted_shares_by_hydromancer(
         .map_err(|e| {
             StdError::generic_err(format!(
                 "Failed to get time weighted shares for hydromancer {} from hydro : {}",
-                hydromancer_addr, e
+                hydromancer_id, e
             ))
         })?;
     Ok(time_weighted_shares)
@@ -1174,13 +957,10 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
 
         DECOMMISSION_REPLY_ID => handle_unlock_tokens_reply(deps, env, reply),
         VOTE_REPLY_ID => {
-            let skipped_locks = parse_locks_skipped_reply(reply)?;
-            if !skipped_locks.is_empty() {
-                return Err(ContractError::CustomError {
-                    msg: format!("Some votes are not valid: {}", skipped_locks),
-                });
-            }
-            Ok(Response::new().add_attribute("skipped_locks", skipped_locks))
+            let skipped_locks = parse_locks_skipped_reply(reply.clone())?;
+            let payload: VoteReplyPayload =
+                from_json(reply.payload).expect("Vote parameters always attached");
+            handle_vote_reply(deps, env, payload, skipped_locks)
         }
         _ => Err(ContractError::CustomError {
             msg: "Unknown reply id".to_string(),
@@ -1191,6 +971,240 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
 #[entry_point]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, StdError> {
     Ok(Response::default())
+}
+
+//Handle vote reply, used after both user and hydromancer vote
+fn handle_vote_reply(
+    deps: DepsMut,
+    env: Env,
+    payload: VoteReplyPayload,
+    skipped_locks: Vec<u64>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    for vessels_to_harbor in payload.vessels_harbors.clone() {
+        let mut lock_ids = vec![];
+
+        for vessel_id in vessels_to_harbor.vessel_ids.iter() {
+            //if vessel is skipped, it means that hydro was not able to vote for it, zephyrus skips it too
+            if skipped_locks.contains(vessel_id) {
+                continue;
+            }
+            let vessel = state::get_vessel(deps.storage, *vessel_id)?;
+            let current_time_weighted_shares: CurrentRoundTimeWeightedSharesResponse =
+                deps.querier.query_wasm_smart(
+                    constants.hydro_config.hydro_contract_address.to_string(),
+                    &HydroQueryMsg::CurrentRoundTimeWeightedShares {
+                        owner: env.contract.address.to_string(),
+                        lock_ids: vec![vessel.hydro_lock_id],
+                    },
+                )?;
+            if current_time_weighted_shares
+                .lock_time_weighted_shares
+                .is_empty()
+            {
+                return Err(ContractError::NoTimeWeightedShares {
+                    lock_id: vessel.hydro_lock_id,
+                });
+            }
+            let lock_current_weighted_shares =
+                &current_time_weighted_shares.lock_time_weighted_shares[0];
+            if payload.user_vote {
+                //control that vessel is owned by user who wants to vote
+                if vessel.owner_id != payload.steerer_id {
+                    return Err(ContractError::InvalidUserId {
+                        vessel_id: vessel.hydro_lock_id,
+                        user_id: payload.steerer_id,
+                        vessel_user_id: vessel.owner_id,
+                    });
+                }
+            } else {
+                //control that vessel is delegated to hydromancer who wants to vote
+                if vessel.hydromancer_id != payload.steerer_id {
+                    return Err(ContractError::InvalidHydromancerId {
+                        vessel_id: vessel.hydro_lock_id,
+                        hydromancer_id: payload.steerer_id,
+                        vessel_hydromancer_id: vessel.hydromancer_id,
+                    });
+                }
+                //hydromancer can't vote with a vessel under user control
+                if state::is_vessel_under_user_control(
+                    deps.storage,
+                    payload.tranche_id,
+                    payload.round_id,
+                    vessel.hydro_lock_id,
+                ) {
+                    return Err(ContractError::VesselUnderUserControl {
+                        vessel_id: vessel.hydro_lock_id,
+                    });
+                }
+            }
+
+            let previous_harbor_id = state::get_harbor_of_vessel(
+                deps.storage,
+                payload.tranche_id,
+                payload.round_id,
+                vessel.hydro_lock_id,
+            )?;
+            let is_hydromancer_shares_initialized = state::has_shares_for_hydromancer_and_round(
+                deps.storage,
+                vessel.hydromancer_id,
+                payload.tranche_id,
+                payload.round_id,
+            )?;
+            match previous_harbor_id {
+                Some(previous_harbor_id) => {
+                    let previous_vessel_to_harbor = state::get_vessel_to_harbor(
+                        deps.storage,
+                        payload.tranche_id,
+                        payload.round_id,
+                        previous_harbor_id,
+                        vessel.hydro_lock_id,
+                    )?;
+
+                    if previous_harbor_id != vessels_to_harbor.harbor_id {
+                        //vote has changed
+                        state::remove_vessel_harbor(
+                            deps.storage,
+                            payload.tranche_id,
+                            payload.round_id,
+                            previous_harbor_id,
+                            vessel.hydro_lock_id,
+                        )?;
+
+                        if payload.user_vote {
+                            //user vote
+                            if !previous_vessel_to_harbor.user_control {
+                                if is_hydromancer_shares_initialized {
+                                    //vessel was controled by hydromancer and now it is controlled by user
+                                    //hydromancer shares are intialized we can substract them
+                                    state::sub_weighted_shares_to_hydromancer(
+                                        deps.storage,
+                                        previous_vessel_to_harbor.steerer_id,
+                                        payload.tranche_id,
+                                        payload.round_id,
+                                        &lock_current_weighted_shares.validator,
+                                        lock_current_weighted_shares.time_weighted_share,
+                                    )?;
+                                    state::sub_weighted_shares_to_proposal_hydromancer(
+                                        deps.storage,
+                                        previous_vessel_to_harbor.steerer_id,
+                                        payload.round_id,
+                                        previous_harbor_id,
+                                        &lock_current_weighted_shares.validator,
+                                        lock_current_weighted_shares.time_weighted_share,
+                                    )?;
+                                    state::sub_weighted_shares_to_user_hydromancer(
+                                        deps.storage,
+                                        payload.steerer_id,
+                                        payload.tranche_id,
+                                        vessel.hydromancer_id,
+                                        payload.round_id,
+                                        &lock_current_weighted_shares.validator,
+                                        lock_current_weighted_shares.time_weighted_share,
+                                    )?;
+                                }
+                            } else {
+                                //vesssel was already under user control
+                                state::sub_weighted_shares_under_user_control_for_proposal(
+                                    deps.storage,
+                                    payload.steerer_id,
+                                    previous_harbor_id,
+                                    &lock_current_weighted_shares.validator,
+                                    lock_current_weighted_shares.time_weighted_share,
+                                )?;
+                            }
+
+                            state::add_weighted_shares_under_user_control_for_proposal(
+                                deps.storage,
+                                payload.steerer_id,
+                                vessels_to_harbor.harbor_id,
+                                &lock_current_weighted_shares.validator,
+                                lock_current_weighted_shares.time_weighted_share,
+                            )?;
+                        } else {
+                            //Hydromancer vote
+                            //remove weighted shares from old proposal id
+                            state::sub_weighted_shares_to_proposal_hydromancer(
+                                deps.storage,
+                                payload.steerer_id,
+                                payload.round_id,
+                                previous_harbor_id,
+                                &lock_current_weighted_shares.validator,
+                                lock_current_weighted_shares.time_weighted_share,
+                            )?;
+                            //add weighted shares to new proposal id
+                            state::add_weighted_shares_to_proposal_hydromancer(
+                                deps.storage,
+                                payload.steerer_id,
+                                payload.round_id,
+                                vessels_to_harbor.harbor_id,
+                                &lock_current_weighted_shares.validator,
+                                lock_current_weighted_shares.time_weighted_share,
+                            )?;
+                        }
+                        //save could be done after the match statement, but it will be done also when previous harbor id is the same as the new one
+                        state::add_vessel_to_harbor(
+                            deps.storage,
+                            payload.tranche_id,
+                            payload.round_id,
+                            vessels_to_harbor.harbor_id,
+                            &VesselHarbor {
+                                user_control: payload.user_vote,
+                                hydro_lock_id: vessel.hydro_lock_id,
+                                steerer_id: payload.steerer_id,
+                            },
+                        )?;
+                    }
+                }
+                None => {
+                    if payload.user_vote {
+                        state::add_weighted_shares_under_user_control_for_proposal(
+                            deps.storage,
+                            payload.steerer_id,
+                            vessels_to_harbor.harbor_id,
+                            &lock_current_weighted_shares.validator,
+                            lock_current_weighted_shares.time_weighted_share,
+                        )?;
+                    } else {
+                        if is_hydromancer_shares_initialized {
+                            //vessel was controled by hydromancer and now it is controlled by user
+                            //hydromancer shares are intialized we can substract them
+                            //add weighted shares to new proposal id
+                            state::add_weighted_shares_to_proposal_hydromancer(
+                                deps.storage,
+                                payload.steerer_id,
+                                payload.round_id,
+                                vessels_to_harbor.harbor_id,
+                                &lock_current_weighted_shares.validator,
+                                lock_current_weighted_shares.time_weighted_share,
+                            )?;
+                        }
+                    }
+                    state::add_vessel_to_harbor(
+                        deps.storage,
+                        payload.tranche_id,
+                        payload.round_id,
+                        vessels_to_harbor.harbor_id,
+                        &VesselHarbor {
+                            user_control: payload.user_vote,
+                            hydro_lock_id: vessel.hydro_lock_id,
+                            steerer_id: payload.steerer_id,
+                        },
+                    )?;
+                }
+            }
+
+            lock_ids.push(vessel.hydro_lock_id);
+        }
+    }
+    Ok(Response::new().add_attribute(
+        "skipped_locks",
+        skipped_locks
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    ))
 }
 
 fn handle_lock_tokens_reply(
@@ -1246,7 +1260,7 @@ fn parse_lock_tokens_reply(
     Ok((lock_id, payload))
 }
 
-fn parse_locks_skipped_reply(reply: Reply) -> Result<String, ContractError> {
+fn parse_locks_skipped_reply(reply: Reply) -> Result<Vec<u64>, ContractError> {
     let response = reply
         .result
         .into_result()
@@ -1259,7 +1273,14 @@ fn parse_locks_skipped_reply(reply: Reply) -> Result<String, ContractError> {
         .find_map(|attr| (attr.key == "locks_skipped").then_some(attr.value))
         .expect("Vote reply always contains locks_skipped attribute");
 
-    Ok(skipped_locks)
+    Ok(if skipped_locks.is_empty() {
+        vec![]
+    } else {
+        skipped_locks
+            .split(',')
+            .map(|s| s.parse().unwrap()) // Attention: `unwrap` peut toujours paniquer ici !
+            .collect()
+    })
 }
 
 fn handle_unlock_tokens_reply(
@@ -1393,7 +1414,7 @@ fn handle_unlock_tokens_reply(
 
 #[cfg(test)]
 mod test {
-    use std::time::SystemTime;
+    use std::{collections::HashMap, time::SystemTime};
 
     use cosmwasm_std::{
         coin, coins, from_json,
@@ -1421,7 +1442,7 @@ mod test {
     };
 
     use crate::{
-        contract::LockTokensReplyPayload,
+        contract::{LockTokensReplyPayload, VoteReplyPayload},
         errors::ContractError,
         state::{self},
     };
@@ -1448,14 +1469,25 @@ mod test {
                     QuerierResult::Ok(ContractResult::Ok(response))
                 }
                 HydroQueryMsg::CurrentRoundTimeWeightedShares { lock_ids, owner } => {
-                    let crosnest = true;
+                    let mut map = HashMap::new();
+
+                    map.insert(0, 1_000_000);
+                    map.insert(1, 2_000_000);
+                    map.insert(2, 3_000_000);
+                    map.insert(3, 6_000_000);
+                    map.insert(4, 12_000_000);
+
                     let shares = lock_ids
                         .iter()
                         .map(|lock_id| {
-                            let val = if crosnest { "crosnest" } else { "hightstakes" };
+                            let val = "crosnest";
                             LockTimeWeightedShare {
                                 lock_id: *lock_id,
-                                time_weighted_share: 100000000u128,
+                                time_weighted_share: if let Some(v) = map.get(lock_id) {
+                                    *v
+                                } else {
+                                    0
+                                },
                                 validator: val.to_string(),
                             }
                         })
@@ -1640,6 +1672,7 @@ mod test {
         let mut deps = mock_dependencies();
 
         init_contract(deps.as_mut());
+        let constant = state::get_constants(deps.as_ref().storage).unwrap();
 
         let alice_address = make_valid_addr("alice");
         let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
@@ -1665,23 +1698,20 @@ mod test {
         )
         .expect("Should add vessel");
         println!("Execute vote hydromancer");
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: constant.default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
         assert_eq!(
-            super::execute_hydromancer_vote(
-                &mut deps.as_mut(),
-                mock_env(),
-                MessageInfo {
-                    sender: make_valid_addr("zephyrus"),
-                    funds: vec![]
-                },
-                1,
-                vec![{
-                    VesselsToHarbor {
-                        harbor_id: 1,
-                        vessel_ids: vec![0],
-                    }
-                },]
-            )
-            .unwrap_err(),
+            super::handle_vote_reply(deps.as_mut(), mock_env(), payload, vec![]).unwrap_err(),
             ContractError::InvalidHydromancerId {
                 vessel_id: 0,
                 hydromancer_id: 0,
@@ -1728,25 +1758,140 @@ mod test {
             },
         )
         .expect("Should add vessel to harbor");
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
         assert_eq!(
-            super::execute_hydromancer_vote(
-                &mut deps.as_mut(),
-                mock_env(),
-                MessageInfo {
-                    sender: make_valid_addr("zephyrus"),
-                    funds: vec![]
-                },
-                1,
-                vec![{
-                    VesselsToHarbor {
-                        harbor_id: 1,
-                        vessel_ids: vec![0],
-                    }
-                },]
-            )
-            .unwrap_err(),
+            super::handle_vote_reply(deps.as_mut(), mock_env(), payload, vec![]).unwrap_err(),
             ContractError::VesselUnderUserControl { vessel_id: 0 }
         );
+    }
+
+    #[test]
+    fn hydromancer_vote_succeed_without_change_because_vote_skipped_by_hydro() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: 0,
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            2,
+            &VesselHarbor {
+                user_control: false,
+                hydro_lock_id: 0,
+                steerer_id: default_hydromancer_id,
+            },
+        )
+        .expect("Should add vessel to harbor");
+
+        let res = super::execute_hydromancer_vote(
+            &mut deps.as_mut(),
+            mock_env(),
+            MessageInfo {
+                sender: make_valid_addr("zephyrus"),
+                funds: vec![],
+            },
+            1,
+            vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                assert_eq!(
+                    submsg.reply_on,
+                    ReplyOn::Success,
+                    "all lock messages should be reply_on_success"
+                );
+
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(proposals_votes.len(), 1);
+            assert_eq!(proposals_votes[0].proposal_id, 1);
+            assert_eq!(proposals_votes[0].lock_ids, vec![0]);
+        } else {
+            panic!("Le message ne correspond pas au pattern attendu !");
+        }
+
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        let skipped_ids = vec![0];
+        let _ = super::handle_vote_reply(deps.as_mut(), mock_env(), payload, skipped_ids).unwrap();
+
+        let vessels_to_harbor2 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 2)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor2.len(), 1);
+        assert_eq!(vessels_to_harbor2[0].1.hydro_lock_id, 0);
+        assert_eq!(vessels_to_harbor2[0].1.steerer_id, default_hydromancer_id);
+        //vote shoulb be skipped so harbor1 should not have vessels
+        let vessels_to_harbor1 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor1.len(), 0);
     }
 
     #[test]
@@ -1826,6 +1971,21 @@ mod test {
         } else {
             panic!("Le message ne correspond pas au pattern attendu !");
         }
+
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+
+        let _ = super::handle_vote_reply(deps.as_mut(), mock_env(), payload, vec![]).unwrap();
 
         let vessels_to_harbor =
             state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
@@ -1925,6 +2085,21 @@ mod test {
         } else {
             panic!("Le message ne correspond pas au pattern attendu !");
         }
+
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+
+        let _ = super::handle_vote_reply(deps.as_mut(), mock_env(), payload, vec![]).unwrap();
 
         let vessels_to_harbor1 =
             state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
@@ -2441,23 +2616,20 @@ mod test {
         )
         .expect("Should add vessel");
         println!("Execute vote hydromancer");
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: true,
+            steerer_id: bob_user_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
         assert_eq!(
-            super::execute_user_vote(
-                deps.as_mut(),
-                mock_env(),
-                MessageInfo {
-                    sender: make_valid_addr("bob"),
-                    funds: vec![]
-                },
-                1,
-                vec![{
-                    VesselsToHarbor {
-                        harbor_id: 1,
-                        vessel_ids: vec![0],
-                    }
-                },]
-            )
-            .unwrap_err(),
+            super::handle_vote_reply(deps.as_mut(), mock_env(), payload, vec![]).unwrap_err(),
             ContractError::InvalidUserId {
                 vessel_id: 0,
                 user_id: bob_user_id,
@@ -2544,6 +2716,20 @@ mod test {
             panic!("Le message ne correspond pas au pattern attendu !");
         }
 
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: true,
+            steerer_id: user_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        let _ = super::handle_vote_reply(deps.as_mut(), mock_env(), payload, vec![]).unwrap();
+
         let vessels_to_harbor =
             state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
                 .expect("Vessel to harbor should exist");
@@ -2608,12 +2794,13 @@ mod test {
             }],
         )
         .unwrap();
-
-        assert_eq!(res.messages.len(), 1);
+        //because vessel was used by hydromancer, there should be 2 messages (unvote, vote)
+        assert_eq!(res.messages.len(), 2);
 
         let decoded_submessages: Vec<HydroExecuteMsg> = res
             .messages
             .iter()
+            .filter(|submsg| submsg.reply_on == ReplyOn::Success)
             .map(|submsg| {
                 assert_eq!(
                     submsg.reply_on,
@@ -2643,6 +2830,19 @@ mod test {
         } else {
             panic!("Le message ne correspond pas au pattern attendu !");
         }
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: true,
+            steerer_id: user_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        let _ = super::handle_vote_reply(deps.as_mut(), mock_env(), payload, vec![]).unwrap();
 
         let vessels_to_harbor1 =
             state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
@@ -3127,5 +3327,60 @@ mod test {
             1,
             0
         ))
+    }
+
+    #[test]
+    fn hydromancer_vote_shares_initialized() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: 0,
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: 1,
+                class_period: 6,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        let res = super::execute_change_hydromancer(
+            deps.as_mut(),
+            MessageInfo {
+                sender: alice_address.clone(),
+                funds: vec![],
+            },
+            1,
+            default_hydromancer_id,
+            vec![0],
+        )
+        .unwrap();
     }
 }

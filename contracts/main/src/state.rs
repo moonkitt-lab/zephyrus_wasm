@@ -288,8 +288,8 @@ pub fn get_harbor_of_vessel(
     tranche_id: TrancheId,
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
-) -> Result<HydroProposalId, StdError> {
-    HARBOR_OF_VESSEL.load(storage, ((tranche_id, round_id), hydro_lock_id))
+) -> Result<Option<HydroProposalId>, StdError> {
+    HARBOR_OF_VESSEL.may_load(storage, ((tranche_id, round_id), hydro_lock_id))
 }
 
 pub fn remove_vessel_harbor(

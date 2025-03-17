@@ -3,7 +3,7 @@ use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
-    msgs::{HydroProposalId, RoundId, TrancheId, UserId},
+    msgs::{HydroProposalId, RoundId, TrancheId, TributeId, UserId},
     state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor},
 };
 
@@ -73,6 +73,9 @@ const SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<(HydroProposalId, UserId, &str
 const USER_HYDROMANCER_SHARES: Map<((UserId, HydromancerId, TrancheId), RoundId, &str), u128> =
     Map::new("hydromancer_shares");
 
+const HYDROMANCER_TRIBUTES: Map<(HydromancerId, TributeId), Coin> =
+    Map::new("hydromancer_tributes");
+
 pub fn get_hydromancer_shares_by_round(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
@@ -87,6 +90,26 @@ pub fn get_hydromancer_shares_by_round(
             Ok((key, value))
         })
         .collect::<StdResult<Vec<_>>>()
+}
+
+pub fn get_proposal_time_weigthed_shares(
+    storage: &dyn Storage,
+    proposal_id: HydroProposalId,
+) -> Result<Vec<(HydromancerId, String, u128)>, StdError> {
+    let mut result = Vec::new();
+
+    // ⚠️ On passe un tuple `(proposal_id,)` pour respecter la structure de clé partielle attendue
+    let prefix_iter = PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR
+        .sub_prefix(proposal_id) // ✅ Ajout d'une virgule pour former un tuple correct
+        .range(storage, None, None, Order::Ascending);
+
+    for item in prefix_iter {
+        let ((hydromancer_id, validator), value) = item?;
+
+        result.push((hydromancer_id, validator.to_string(), value));
+    }
+
+    Ok(result)
 }
 
 pub fn add_weighted_shares_to_user_hydromancer(
@@ -392,6 +415,16 @@ pub fn get_hydromancer(
         Ok(hydromancer) => Ok(hydromancer),
         Err(_) => Err(ContractError::HydromancerNotFound { hydromancer_id }),
     }
+}
+
+pub fn get_all_hydromancers(storage: &dyn Storage) -> Result<Vec<Hydromancer>, StdError> {
+    HYDROMANCERS
+        .range(storage, None, None, Order::Ascending)
+        .map(|item| {
+            let (_, hydromancer) = item?;
+            Ok(hydromancer)
+        })
+        .collect()
 }
 
 pub fn get_hydromancer_id_by_address(

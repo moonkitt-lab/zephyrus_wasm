@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Timestamp, Uint128};
+use cosmwasm_std::{Coin, Decimal, Timestamp};
 
 #[cw_serde]
 pub struct ProposalToLockups {
@@ -8,7 +8,7 @@ pub struct ProposalToLockups {
 }
 
 #[cw_serde]
-pub enum ExecuteMsg {
+pub enum HydroExecuteMsg {
     LockTokens {
         lock_duration: u64,
     },
@@ -27,19 +27,30 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         lock_ids: Vec<u64>,
     },
+    ClaimTribute {
+        round_id: u64,
+        tranche_id: u64,
+        tribute_id: u64,
+        voter_address: String,
+    },
 }
 
 #[cw_serde]
 pub enum HydroQueryMsg {
     CurrentRound {},
-    TimeWeightedSharesVotingPower {
-        time_weighted_shares: u128,
-        validator: String,
+    ValidatorPowerRatio { validator: String, round_id: u64 },
+    CurrentRoundTimeWeightedShares { owner: String, lock_ids: Vec<u64> },
+}
+#[cw_serde]
+pub enum TributeQueryMsg {
+    // Returns all tributes for a certain round and tranche
+    //  that a certain user address is able to claim, but has not claimed yet.
+    OutstandingTributeClaims {
+        user_address: String,
         round_id: u64,
-    },
-    CurrentRoundTimeWeightedShares {
-        owner: String,
-        lock_ids: Vec<u64>,
+        tranche_id: u64,
+        start_from: u32,
+        limit: u32,
     },
 }
 
@@ -65,4 +76,23 @@ pub struct CurrentRoundTimeWeightedSharesResponse {
 #[cw_serde]
 pub struct TimeWeightedSharesVotingPowerResponse {
     pub voting_power: u128,
+}
+
+#[cw_serde]
+pub struct ValidatorPowerRatioResponse {
+    pub ratio: Decimal,
+}
+
+#[cw_serde]
+pub struct TributeClaim {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub tribute_id: u64,
+    pub amount: Coin,
+}
+
+#[cw_serde]
+pub struct OutstandingTributeClaimsResponse {
+    pub claims: Vec<TributeClaim>,
 }

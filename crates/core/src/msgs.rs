@@ -7,6 +7,7 @@ pub type HydromancerId = u64;
 pub type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
 pub type HydroProposalId = u64;
 pub type TrancheId = u64;
+pub type TributeId = u64;
 pub type RoundId = u64;
 pub type UserControl = bool;
 
@@ -67,6 +68,10 @@ pub enum ExecuteMsg {
         tranche_id: TrancheId,
         hydromancer_id: HydromancerId,
         hydro_lock_ids: Vec<u64>,
+    },
+    Claim {
+        tranche_id: TrancheId,
+        round_ids: Vec<RoundId>,
     },
 }
 

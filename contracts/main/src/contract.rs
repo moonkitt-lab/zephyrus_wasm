@@ -1,15 +1,17 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
-    Coin, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse, StdError,
-    StdResult, SubMsg, WasmMsg,
+    Coin, Decimal, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse,
+    StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
-use hydro_interface::msgs::ExecuteMsg::{
+use hydro_interface::msgs::HydroExecuteMsg::{
     LockTokens, RefreshLockDuration, UnlockTokens, Unvote, Vote,
 };
 use hydro_interface::msgs::{
-    CurrentRoundResponse, CurrentRoundTimeWeightedSharesResponse, HydroQueryMsg, ProposalToLockups,
+    CurrentRoundResponse, CurrentRoundTimeWeightedSharesResponse, HydroExecuteMsg, HydroQueryMsg,
+    OutstandingTributeClaimsResponse, ProposalToLockups, TributeQueryMsg,
+    ValidatorPowerRatioResponse,
 };
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -510,6 +512,89 @@ fn execute_hydromancer_vote(
     Ok(response)
 }
 
+fn execute_claim(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    tranche_id: u64,
+    round_ids: Vec<u64>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    let mut response = Response::new();
+    for round_id in round_ids.iter() {
+        let outstanding_tribute_claims = query_hydro_outstanding_tribute_claims(
+            deps.as_ref(),
+            env.clone(),
+            constants
+                .hydro_config
+                .hydro_tribute_contract_address
+                .clone(),
+            tranche_id,
+            *round_id,
+        )?;
+        let mut validators_power_ratio: HashMap<String, Decimal> = HashMap::new();
+
+        for claim in outstanding_tribute_claims.claims.iter() {
+            let claim_msg = WasmMsg::Execute {
+                contract_addr: constants
+                    .hydro_config
+                    .hydro_tribute_contract_address
+                    .to_string(),
+                msg: to_json_binary(&HydroExecuteMsg::ClaimTribute {
+                    round_id: claim.round_id,
+                    tranche_id: claim.tranche_id,
+                    tribute_id: claim.tribute_id,
+                    voter_address: env.contract.address.to_string(),
+                })?,
+                funds: vec![],
+            };
+            let hydromancer_validator_shares =
+                state::get_proposal_time_weigthed_shares(deps.storage, claim.proposal_id)?;
+            let mut total_zephyrus_proposal_voting_power = 0;
+            for hydro_val_sahres in hydromancer_validator_shares {
+                let (hydromancer_id, validator, shares) = hydro_val_sahres;
+                let mut validator_power_ratio = validators_power_ratio.get(&validator);
+                if validator_power_ratio.is_none() {
+                    let val_info_response: ValidatorPowerRatioResponse =
+                        deps.querier.query_wasm_smart(
+                            constants.hydro_config.hydro_contract_address.to_string(),
+                            &HydroQueryMsg::ValidatorPowerRatio {
+                                validator: validator.clone(),
+                                round_id: *round_id,
+                            },
+                        )?;
+                    validators_power_ratio
+                        .insert(validator.clone(), val_info_response.ratio.clone());
+                    validator_power_ratio = validators_power_ratio.get(&validator);
+                }
+                let validator_power_ratio =
+                    validator_power_ratio.expect("Validator power ratio should be present");
+                let voting_power =
+                    validator_power_ratio.checked_mul(Decimal::from_ratio(shares, Uint128::one()));
+                let voting_power = match voting_power {
+                    Err(_) => {
+                        // if there was an overflow error, log this but return 0
+                        deps.api.debug(&format!(
+                            "An error occured while computing voting power for time weighted shares: {:?} and validator : {:?}",
+                            shares,validator
+                        ));
+
+                        Uint128::zero()
+                    }
+                    Ok(current_voting_power) => current_voting_power.to_uint_ceil(),
+                };
+                total_zephyrus_proposal_voting_power += voting_power.u128();
+            }
+
+            response = response.add_message(claim_msg);
+        }
+    }
+
+    Ok(response)
+}
+
 fn execute_change_hydromancer(
     deps: DepsMut,
     info: MessageInfo,
@@ -699,6 +784,10 @@ pub fn execute(
             hydromancer_id,
             hydro_lock_ids,
         } => execute_change_hydromancer(deps, info, tranche_id, hydromancer_id, hydro_lock_ids),
+        ExecuteMsg::Claim {
+            tranche_id,
+            round_ids,
+        } => execute_claim(deps, env, info, tranche_id, round_ids),
     }
 }
 
@@ -712,6 +801,27 @@ fn query_hydro_current_round(deps: Deps, hydro_contract_addr: String) -> Result<
         .query_wasm_smart(hydro_contract_addr, &HydroQueryMsg::CurrentRound {})
         .expect("Failed to query hydro contract, hydro should be able to return the current round");
     Ok(current_round_resp.round_id)
+}
+
+fn query_hydro_outstanding_tribute_claims(
+    deps: Deps,
+    env: Env,
+    tribute_address_contract: Addr,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> Result<OutstandingTributeClaimsResponse, StdError> {
+    let outstanding_tribute_claims: OutstandingTributeClaimsResponse =
+        deps.querier.query_wasm_smart(
+            tribute_address_contract,
+            &TributeQueryMsg::OutstandingTributeClaims {
+                user_address: env.contract.address.to_string(),
+                round_id: round_id,
+                tranche_id: tranche_id,
+                start_from: 0,
+                limit: 1000, //probably never reaches this limit, if it does, next user claim will process the rest
+            },
+        )?;
+    Ok(outstanding_tribute_claims)
 }
 
 fn query_vessels_by_owner(
@@ -1426,9 +1536,8 @@ mod test {
         WasmMsg, WasmQuery,
     };
     use hydro_interface::msgs::{
-        CurrentRoundResponse, CurrentRoundTimeWeightedSharesResponse,
-        ExecuteMsg as HydroExecuteMsg, HydroQueryMsg, LockTimeWeightedShare,
-        TimeWeightedSharesVotingPowerResponse,
+        CurrentRoundResponse, CurrentRoundTimeWeightedSharesResponse, HydroExecuteMsg,
+        HydroQueryMsg, LockTimeWeightedShare, ValidatorPowerRatioResponse,
     };
     use neutron_std::types::ibc::applications::transfer::v1::{
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
@@ -1456,13 +1565,12 @@ mod test {
                 Err(_) => return QuerierResult::Err(cosmwasm_std::SystemError::Unknown {}),
             };
             match query {
-                HydroQueryMsg::TimeWeightedSharesVotingPower {
+                HydroQueryMsg::ValidatorPowerRatio {
                     round_id: _,
-                    time_weighted_shares,
                     validator: _,
                 } => {
-                    let response = to_json_binary(&TimeWeightedSharesVotingPowerResponse {
-                        voting_power: time_weighted_shares,
+                    let response = to_json_binary(&ValidatorPowerRatioResponse {
+                        ratio: Decimal::one(),
                     })
                     .unwrap();
                     QuerierResult::Ok(ContractResult::Ok(response))

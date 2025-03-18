@@ -67,14 +67,47 @@ const HYDROMANCER_SHARES_BY_VALIDATOR: Map<((HydromancerId, TrancheId, RoundId),
 const PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR: Map<(HydroProposalId, HydromancerId, &str), u128> =
     Map::new("proposal_hydromancer_shares_by_validator");
 
-const SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<(HydroProposalId, UserId, &str), u128> =
+const PROPOSAL_SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<(HydroProposalId, UserId, &str), u128> =
     Map::new("proposal_user_shares_by_validator");
 
-const USER_HYDROMANCER_SHARES: Map<((UserId, HydromancerId, TrancheId), RoundId, &str), u128> =
+const USER_HYDROMANCER_SHARES: Map<((UserId, TrancheId, RoundId), HydromancerId, &str), u128> =
     Map::new("hydromancer_shares");
 
-const HYDROMANCER_TRIBUTES: Map<(HydromancerId, TributeId), Coin> =
+const TRIBUTES_HYDROMANCER: Map<(RoundId, HydromancerId, TributeId), Coin> =
     Map::new("hydromancer_tributes");
+
+const CLAIMED_TRIBUTE: Map<(RoundId, UserId, TributeId), bool> = Map::new("claimed_tribute");
+
+pub fn add_tribute_hydromancer(
+    storage: &mut dyn Storage,
+    round_id: RoundId,
+    hydromancer_id: HydromancerId,
+    tribute_id: TributeId,
+    amount: Coin,
+) -> Result<(), StdError> {
+    TRIBUTES_HYDROMANCER.save(storage, (round_id, hydromancer_id, tribute_id), &amount)?;
+    Ok(())
+}
+
+pub fn get_user_hydromancer_shares_by_user_tranche_round(
+    storage: &dyn Storage,
+    user_id: UserId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> Result<Vec<(HydromancerId, String, u128)>, StdError> {
+    let mut result = Vec::new();
+
+    let prefix_iter = USER_HYDROMANCER_SHARES
+        .sub_prefix((user_id, tranche_id, round_id))
+        .range(storage, None, None, Order::Ascending);
+
+    for item in prefix_iter {
+        let ((hydromancer_id, validator), value) = item?;
+        result.push((hydromancer_id, validator.to_string(), value));
+    }
+
+    Ok(result)
+}
 
 pub fn get_hydromancer_shares_by_round(
     storage: &dyn Storage,
@@ -92,7 +125,7 @@ pub fn get_hydromancer_shares_by_round(
         .collect::<StdResult<Vec<_>>>()
 }
 
-pub fn get_proposal_time_weigthed_shares(
+pub fn get_proposal_time_weigthed_shares_by_hydromancer_validators(
     storage: &dyn Storage,
     proposal_id: HydroProposalId,
 ) -> Result<Vec<(HydromancerId, String, u128)>, StdError> {
@@ -100,7 +133,27 @@ pub fn get_proposal_time_weigthed_shares(
 
     // ⚠️ On passe un tuple `(proposal_id,)` pour respecter la structure de clé partielle attendue
     let prefix_iter = PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR
-        .sub_prefix(proposal_id) // ✅ Ajout d'une virgule pour former un tuple correct
+        .sub_prefix(proposal_id)
+        .range(storage, None, None, Order::Ascending);
+
+    for item in prefix_iter {
+        let ((hydromancer_id, validator), value) = item?;
+
+        result.push((hydromancer_id, validator.to_string(), value));
+    }
+
+    Ok(result)
+}
+
+pub fn get_proposal_time_weigthed_shares_by_user_validators(
+    storage: &dyn Storage,
+    proposal_id: HydroProposalId,
+) -> Result<Vec<(HydromancerId, String, u128)>, StdError> {
+    let mut result = Vec::new();
+
+    // ⚠️ On passe un tuple `(proposal_id,)` pour respecter la structure de clé partielle attendue
+    let prefix_iter = PROPOSAL_SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
+        .sub_prefix(proposal_id)
         .range(storage, None, None, Order::Ascending);
 
     for item in prefix_iter {
@@ -124,12 +177,12 @@ pub fn add_weighted_shares_to_user_hydromancer(
     let current_shares = USER_HYDROMANCER_SHARES
         .load(
             storage,
-            ((user_id, hydromancer_id, tranche_id), round_id, validator),
+            ((user_id, tranche_id, round_id), hydromancer_id, validator),
         )
         .unwrap_or_default();
     USER_HYDROMANCER_SHARES.save(
         storage,
-        ((user_id, hydromancer_id, tranche_id), round_id, validator),
+        ((user_id, tranche_id, round_id), hydromancer_id, validator),
         &(current_shares + shares),
     )?;
     Ok(())
@@ -147,7 +200,7 @@ pub fn sub_weighted_shares_to_user_hydromancer(
     let current_shares = USER_HYDROMANCER_SHARES
         .load(
             storage,
-            ((user_id, hydromancer_id, tranche_id), round_id, validator),
+            ((user_id, tranche_id, round_id), hydromancer_id, validator),
         )
         .unwrap_or_default();
     if current_shares < shares {
@@ -158,7 +211,7 @@ pub fn sub_weighted_shares_to_user_hydromancer(
     }
     USER_HYDROMANCER_SHARES.save(
         storage,
-        ((user_id, hydromancer_id, tranche_id), round_id, validator),
+        ((user_id, tranche_id, round_id), hydromancer_id, validator),
         &(current_shares - shares),
     )?;
     Ok(())
@@ -171,10 +224,10 @@ pub fn add_weighted_shares_under_user_control_for_proposal(
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
-    let current_shares = SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
+    let current_shares = PROPOSAL_SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
         .load(storage, (proposal_id, user_id, validator))
         .unwrap_or_default();
-    SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
+    PROPOSAL_SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
         storage,
         (proposal_id, user_id, validator),
         &(current_shares + shares),
@@ -189,7 +242,7 @@ pub fn sub_weighted_shares_under_user_control_for_proposal(
     validator: &str,
     shares: u128,
 ) -> Result<(), StdError> {
-    let current_shares = SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
+    let current_shares = PROPOSAL_SHARES_UNDER_USER_CONTROL_BY_VALIDATOR
         .load(storage, (proposal_id, user_id, validator))
         .unwrap_or_default();
     if current_shares < shares {
@@ -198,7 +251,7 @@ pub fn sub_weighted_shares_under_user_control_for_proposal(
             shares, user_id, validator
         )));
     }
-    SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
+    PROPOSAL_SHARES_UNDER_USER_CONTROL_BY_VALIDATOR.save(
         storage,
         (proposal_id, user_id, validator),
         &(current_shares - shares),

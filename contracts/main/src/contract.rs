@@ -17,9 +17,9 @@ use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg,
-    QueryMsg, RoundId, TrancheId, VesselHarborInfo, VesselHarborResponse, VesselsResponse,
-    VesselsToHarbor, VotingPowerResponse,
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, HydromancerId,
+    InstantiateMsg, MigrateMsg, QueryMsg, RoundId, TrancheId, UserId, VesselHarborInfo,
+    VesselHarborResponse, VesselsResponse, VesselsToHarbor, VotingPowerResponse,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
@@ -36,6 +36,7 @@ type Response = CwResponse<NeutronMsg>;
 const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
 const DECOMMISSION_REPLY_ID: u64 = 2;
 const VOTE_REPLY_ID: u64 = 3;
+const CLAIM_REPLY_ID: u64 = 4;
 
 const MAX_PAGINATION_LIMIT: usize = 1000;
 const DEFAULT_PAGINATION_LIMIT: usize = 100;
@@ -523,7 +524,14 @@ fn execute_claim(
     validate_contract_is_not_paused(&constants)?;
 
     let mut response = Response::new();
+    let current_round_id = query_hydro_current_round(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
     for round_id in round_ids.iter() {
+        if *round_id >= current_round_id {
+            continue;
+        }
         let outstanding_tribute_claims = query_hydro_outstanding_tribute_claims(
             deps.as_ref(),
             env.clone(),
@@ -551,8 +559,13 @@ fn execute_claim(
                 funds: vec![],
             };
             let hydromancer_validator_shares =
-                state::get_proposal_time_weigthed_shares(deps.storage, claim.proposal_id)?;
-            let mut total_zephyrus_proposal_voting_power = 0;
+                state::get_proposal_time_weigthed_shares_by_hydromancer_validators(
+                    deps.storage,
+                    claim.proposal_id,
+                )?;
+            let mut zephyrus_voting_power: u128 = 0u128;
+            let mut hydromancer_voting_power: HashMap<HydromancerId, u128> = HashMap::new();
+            let mut user_voting_power: HashMap<UserId, u128> = HashMap::new();
             for hydro_val_sahres in hydromancer_validator_shares {
                 let (hydromancer_id, validator, shares) = hydro_val_sahres;
                 let mut validator_power_ratio = validators_power_ratio.get(&validator);
@@ -585,10 +598,70 @@ fn execute_claim(
                     }
                     Ok(current_voting_power) => current_voting_power.to_uint_ceil(),
                 };
-                total_zephyrus_proposal_voting_power += voting_power.u128();
+                let vp = hydromancer_voting_power
+                    .entry(hydromancer_id)
+                    .or_insert(0u128);
+                *vp += voting_power.u128();
+                zephyrus_voting_power += voting_power.u128();
+            }
+            let user_validator_shares =
+                state::get_proposal_time_weigthed_shares_by_user_validators(
+                    deps.storage,
+                    claim.proposal_id,
+                )?;
+            for user_val_shares in user_validator_shares {
+                let (user_id, validator, shares) = user_val_shares;
+                let mut validator_power_ratio = validators_power_ratio.get(&validator);
+                if validator_power_ratio.is_none() {
+                    let val_info_response: ValidatorPowerRatioResponse =
+                        deps.querier.query_wasm_smart(
+                            constants.hydro_config.hydro_contract_address.to_string(),
+                            &HydroQueryMsg::ValidatorPowerRatio {
+                                validator: validator.clone(),
+                                round_id: *round_id,
+                            },
+                        )?;
+                    validators_power_ratio
+                        .insert(validator.clone(), val_info_response.ratio.clone());
+                    validator_power_ratio = validators_power_ratio.get(&validator);
+                }
+                let validator_power_ratio =
+                    validator_power_ratio.expect("Validator power ratio should be present");
+                let voting_power =
+                    validator_power_ratio.checked_mul(Decimal::from_ratio(shares, Uint128::one()));
+                let voting_power = match voting_power {
+                    Err(_) => {
+                        // if there was an overflow error, log this but return 0
+                        deps.api.debug(&format!(
+                            "An error occured while computing voting power for time weighted shares: {:?} and validator : {:?}",
+                            shares,validator
+                        ));
+
+                        Uint128::zero()
+                    }
+                    Ok(current_voting_power) => current_voting_power.to_uint_ceil(),
+                };
+                let vp = hydromancer_voting_power.entry(user_id).or_insert(0u128);
+                *vp += voting_power.u128();
+                zephyrus_voting_power += voting_power.u128();
             }
 
-            response = response.add_message(claim_msg);
+            for (hydromancer_id, value) in hydromancer_voting_power.iter() {
+                let amount = Decimal::from_ratio(claim.amount.amount, Uint128::one())
+                    * Decimal::from_ratio(*value, zephyrus_voting_power);
+                state::add_tribute_hydromancer(
+                    deps.storage,
+                    *round_id,
+                    *hydromancer_id,
+                    claim.tribute_id,
+                    Coin::new(amount.to_uint_floor(), claim.amount.denom.clone()),
+                )?;
+            }
+            let execute_hydro_claim_msg: SubMsg<NeutronMsg> =
+                SubMsg::reply_on_success(claim_msg, CLAIM_REPLY_ID)
+                    .with_payload(to_json_binary(&claim)?);
+
+            response = response.add_submessage(execute_hydro_claim_msg);
         }
     }
 

@@ -70,43 +70,143 @@ const PROPOSAL_HYDROMANCER_SHARES_BY_VALIDATOR: Map<(HydroProposalId, Hydromance
 const PROPOSAL_SHARES_UNDER_USER_CONTROL_BY_VALIDATOR: Map<(HydroProposalId, UserId, &str), u128> =
     Map::new("proposal_user_shares_by_validator");
 
-const USER_HYDROMANCER_SHARES: Map<((UserId, TrancheId, RoundId), HydromancerId, &str), u128> =
+const USER_HYDROMANCER_SHARES: Map<((TrancheId, RoundId), UserId, (HydromancerId, &str)), u128> =
     Map::new("hydromancer_shares");
 
-const TRIBUTES_HYDROMANCER: Map<(RoundId, HydromancerId, TributeId), Coin> =
+const HYDROMANCER_TRIBUTES: Map<((TrancheId, RoundId), HydromancerId, TributeId), Coin> =
     Map::new("hydromancer_tributes");
+
+const ACTIVE_USER_TRIBUTES: Map<((TrancheId, RoundId), UserId, TributeId), Coin> =
+    Map::new("tributes");
 
 const CLAIMED_TRIBUTE: Map<(RoundId, UserId, TributeId), bool> = Map::new("claimed_tribute");
 
-pub fn add_tribute_hydromancer(
+const HYDROMANCER_TRANCHE_ROUND_VOTING_POWER: Map<(HydromancerId, TrancheId, RoundId), u128> =
+    Map::new("hydromancer_tranche_round_voting_power");
+
+const USER_HYDROMANCER_TRANCHE_ROUND_VOTING_POWER: Map<
+    ((UserId, HydromancerId), TrancheId, RoundId),
+    u128,
+> = Map::new("user_hydromancer_tranche_round_voting_power");
+
+pub fn get_hydromancer_tribute(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydromancer_id: HydromancerId,
+) -> Result<Vec<(TributeId, Coin)>, StdError> {
+    HYDROMANCER_TRIBUTES
+        .prefix(((tranche_id, round_id), hydromancer_id))
+        .range(storage, None, None, Order::Ascending)
+        .collect()
+}
+
+pub fn add_user_hydromancer_tranche_round_voting_power(
     storage: &mut dyn Storage,
+    user_id: UserId,
+    hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    voting_power: u128,
+) -> Result<(), StdError> {
+    let current_vp = USER_HYDROMANCER_TRANCHE_ROUND_VOTING_POWER
+        .load(storage, ((user_id, hydromancer_id), tranche_id, round_id))
+        .unwrap_or_default();
+
+    USER_HYDROMANCER_TRANCHE_ROUND_VOTING_POWER.save(
+        storage,
+        ((user_id, hydromancer_id), tranche_id, round_id),
+        &(current_vp + voting_power),
+    )?;
+    Ok(())
+}
+
+pub fn add_hydromancer_tranche_round_voting_power(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    voting_power: u128,
+) -> Result<(), StdError> {
+    let current_vp = HYDROMANCER_TRANCHE_ROUND_VOTING_POWER
+        .load(storage, (hydromancer_id, tranche_id, round_id))
+        .unwrap_or_default();
+
+    HYDROMANCER_TRANCHE_ROUND_VOTING_POWER.save(
+        storage,
+        (hydromancer_id, tranche_id, round_id),
+        &(current_vp + voting_power),
+    )?;
+    Ok(())
+}
+
+pub fn add_tribute_to_hydromancer(
+    storage: &mut dyn Storage,
+    tranche_id: TrancheId,
     round_id: RoundId,
     hydromancer_id: HydromancerId,
     tribute_id: TributeId,
     amount: Coin,
 ) -> Result<(), StdError> {
-    TRIBUTES_HYDROMANCER.save(storage, (round_id, hydromancer_id, tribute_id), &amount)?;
+    HYDROMANCER_TRIBUTES.save(
+        storage,
+        ((tranche_id, round_id), hydromancer_id, tribute_id),
+        &amount,
+    )?;
     Ok(())
 }
 
-pub fn get_user_hydromancer_shares_by_user_tranche_round(
-    storage: &dyn Storage,
-    user_id: UserId,
+pub fn add_tribute_to_user(
+    storage: &mut dyn Storage,
     tranche_id: TrancheId,
     round_id: RoundId,
-) -> Result<Vec<(HydromancerId, String, u128)>, StdError> {
+    user_id: UserId,
+    tribute_id: TributeId,
+    amount: Coin,
+) -> Result<(), StdError> {
+    ACTIVE_USER_TRIBUTES.save(
+        storage,
+        ((tranche_id, round_id), user_id, tribute_id),
+        &amount,
+    )?;
+    Ok(())
+}
+
+pub fn get_users_hydromancer_shares_by_user_tranche_round(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> Result<Vec<(UserId, HydromancerId, String, u128)>, StdError> {
     let mut result = Vec::new();
 
     let prefix_iter = USER_HYDROMANCER_SHARES
-        .sub_prefix((user_id, tranche_id, round_id))
+        .sub_prefix(((tranche_id, round_id)))
         .range(storage, None, None, Order::Ascending);
 
     for item in prefix_iter {
-        let ((hydromancer_id, validator), value) = item?;
-        result.push((hydromancer_id, validator.to_string(), value));
+        let ((user_id, (hydromancer_id, validator)), value) = item?;
+        result.push((user_id, hydromancer_id, validator.to_string(), value));
     }
 
     Ok(result)
+}
+
+pub fn has_at_least_one_tribute_for_tranche_round(
+    storage: &dyn Storage,
+
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> StdResult<bool> {
+    let key_prefix = (tranche_id, round_id);
+
+    // Verify is exist at least one entry for (hydromancer_id, round_id)
+    let has_data = HYDROMANCER_TRIBUTES
+        .sub_prefix(key_prefix)
+        .keys(storage, None, None, cosmwasm_std::Order::Ascending)
+        .next()
+        .is_some();
+
+    Ok(has_data)
 }
 
 pub fn get_hydromancer_shares_by_round(
@@ -177,12 +277,12 @@ pub fn add_weighted_shares_to_user_hydromancer(
     let current_shares = USER_HYDROMANCER_SHARES
         .load(
             storage,
-            ((user_id, tranche_id, round_id), hydromancer_id, validator),
+            ((tranche_id, round_id), user_id, (hydromancer_id, validator)),
         )
         .unwrap_or_default();
     USER_HYDROMANCER_SHARES.save(
         storage,
-        ((user_id, tranche_id, round_id), hydromancer_id, validator),
+        ((tranche_id, round_id), user_id, (hydromancer_id, validator)),
         &(current_shares + shares),
     )?;
     Ok(())
@@ -200,7 +300,7 @@ pub fn sub_weighted_shares_to_user_hydromancer(
     let current_shares = USER_HYDROMANCER_SHARES
         .load(
             storage,
-            ((user_id, tranche_id, round_id), hydromancer_id, validator),
+            ((tranche_id, round_id), user_id, (hydromancer_id, validator)),
         )
         .unwrap_or_default();
     if current_shares < shares {
@@ -211,7 +311,7 @@ pub fn sub_weighted_shares_to_user_hydromancer(
     }
     USER_HYDROMANCER_SHARES.save(
         storage,
-        ((user_id, tranche_id, round_id), hydromancer_id, validator),
+        ((tranche_id, round_id), user_id, (hydromancer_id, validator)),
         &(current_shares - shares),
     )?;
     Ok(())
@@ -311,7 +411,7 @@ pub fn has_shares_for_hydromancer_and_round(
 ) -> StdResult<bool> {
     let key_prefix = (hydromancer_id, tranche_id, round_id);
 
-    // Vérifie s'il existe au moins une entrée avec ce (hydromancer_id, round_id)
+    // Verify is exist at least one entry for (hydromancer_id, round_id)
     let has_data = HYDROMANCER_SHARES_BY_VALIDATOR
         .prefix(key_prefix)
         .keys(storage, None, None, cosmwasm_std::Order::Ascending)

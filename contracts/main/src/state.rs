@@ -79,7 +79,11 @@ const HYDROMANCER_TRIBUTES: Map<((TrancheId, RoundId), HydromancerId, TributeId)
 const ACTIVE_USER_TRIBUTES: Map<((TrancheId, RoundId), UserId, TributeId), Coin> =
     Map::new("tributes");
 
-const CLAIMED_TRIBUTE: Map<(RoundId, UserId, TributeId), bool> = Map::new("claimed_tribute");
+const CLAIMED_HYDROMANCER_TRIBUTE: Map<(RoundId, UserId, TributeId), bool> =
+    Map::new("claimed_tribute");
+
+const CLAIMED_USER_STEERER_TRIBUTE: Map<(RoundId, UserId, TributeId), bool> =
+    Map::new("claimed_tribute");
 
 const HYDROMANCER_TRANCHE_ROUND_VOTING_POWER: Map<(HydromancerId, TrancheId, RoundId), u128> =
     Map::new("hydromancer_tranche_round_voting_power");
@@ -88,6 +92,76 @@ const USER_HYDROMANCER_TRANCHE_ROUND_VOTING_POWER: Map<
     ((UserId, HydromancerId), TrancheId, RoundId),
     u128,
 > = Map::new("user_hydromancer_tranche_round_voting_power");
+
+const VOTING_POWER_INITIALIZED: Map<(TrancheId, RoundId), bool> =
+    Map::new("voting_power_initialized");
+
+pub fn user_tribute_claimed(
+    storage: &mut dyn Storage,
+    round_id: RoundId,
+    user_id: UserId,
+    tribute_id: TributeId,
+) -> Result<(), StdError> {
+    CLAIMED_USER_STEERER_TRIBUTE.save(storage, (round_id, user_id, tribute_id), &true)?;
+    Ok(())
+}
+
+pub fn is_user_steerer_tribute_claimed(
+    storage: &dyn Storage,
+    round_id: RoundId,
+    user_id: UserId,
+    tribute_id: TributeId,
+) -> bool {
+    let result = CLAIMED_USER_STEERER_TRIBUTE.load(storage, (round_id, user_id, tribute_id));
+    match result {
+        Ok(value) => value,
+        Err(_) => false,
+    }
+}
+
+pub fn hydromancer_tribute_claimed(
+    storage: &mut dyn Storage,
+    round_id: RoundId,
+    user_id: UserId,
+    tribute_id: TributeId,
+) -> Result<(), StdError> {
+    CLAIMED_HYDROMANCER_TRIBUTE.save(storage, (round_id, user_id, tribute_id), &true)?;
+    Ok(())
+}
+
+pub fn is_hydromancer_tribute_claimed(
+    storage: &dyn Storage,
+    round_id: RoundId,
+    user_id: UserId,
+    tribute_id: TributeId,
+) -> bool {
+    let result = CLAIMED_HYDROMANCER_TRIBUTE.load(storage, (round_id, user_id, tribute_id));
+    match result {
+        Ok(value) => value,
+        Err(_) => false,
+    }
+}
+
+pub fn voting_power_initialized(
+    storage: &mut dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> Result<(), StdError> {
+    VOTING_POWER_INITIALIZED.save(storage, (tranche_id, round_id), &true)?;
+    Ok(())
+}
+
+pub fn is_voting_power_initialized(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> bool {
+    let result = VOTING_POWER_INITIALIZED.load(storage, (tranche_id, round_id));
+    match result {
+        Ok(value) => value,
+        Err(_) => false,
+    }
+}
 
 pub fn get_hydromancer_tribute(
     storage: &dyn Storage,
@@ -99,6 +173,33 @@ pub fn get_hydromancer_tribute(
         .prefix(((tranche_id, round_id), hydromancer_id))
         .range(storage, None, None, Order::Ascending)
         .collect()
+}
+
+pub fn get_tributes_by_hydromancers(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> Result<Vec<(HydromancerId, TributeId, Coin)>, StdError> {
+    HYDROMANCER_TRIBUTES
+        .sub_prefix((tranche_id, round_id))
+        .range(storage, None, None, Order::Ascending)
+        .map(|item| {
+            let ((hydromancer_id, tribute_id), value) = item?;
+            Ok((hydromancer_id, tribute_id, value))
+        })
+        .collect()
+}
+
+pub fn get_user_voting_power_by_hydromancer(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    user_id: UserId,
+    hydromancer_id: HydromancerId,
+) -> Option<u128> {
+    USER_HYDROMANCER_TRANCHE_ROUND_VOTING_POWER
+        .load(storage, ((user_id, hydromancer_id), tranche_id, round_id))
+        .ok()
 }
 
 pub fn add_user_hydromancer_tranche_round_voting_power(
@@ -119,6 +220,17 @@ pub fn add_user_hydromancer_tranche_round_voting_power(
         &(current_vp + voting_power),
     )?;
     Ok(())
+}
+
+pub fn get_hydromancer_tranche_round_voting_power(
+    storage: &dyn Storage,
+    hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> Option<u128> {
+    HYDROMANCER_TRANCHE_ROUND_VOTING_POWER
+        .load(storage, (hydromancer_id, tranche_id, round_id))
+        .ok()
 }
 
 pub fn add_hydromancer_tranche_round_voting_power(
@@ -170,6 +282,18 @@ pub fn add_tribute_to_user(
         &amount,
     )?;
     Ok(())
+}
+
+pub fn get_tributes_under_user_control_by_user(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    user_id: UserId,
+) -> Result<Vec<(TributeId, Coin)>, StdError> {
+    ACTIVE_USER_TRIBUTES
+        .prefix(((tranche_id, round_id), user_id))
+        .range(storage, None, None, Order::Ascending)
+        .collect()
 }
 
 pub fn get_users_hydromancer_shares_by_user_tranche_round(

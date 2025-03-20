@@ -2,8 +2,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
-    Coin, Decimal, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse,
-    StdError, StdResult, SubMsg, Uint128, WasmMsg,
+    Coin, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply,
+    Response as CwResponse, StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
 use hydro_interface::msgs::HydroExecuteMsg::{
     LockTokens, RefreshLockDuration, UnlockTokens, Unvote, Vote,
@@ -23,7 +23,7 @@ use zephyrus_core::msgs::{
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
-use crate::state::get_vessels_by_hydromancer;
+use crate::state::{get_vessels_by_hydromancer, is_user_steerer_tribute_claimed};
 use crate::{
     errors::ContractError,
     helpers::ibc::{DenomTrace, QuerierExt as IbcQuerierExt},
@@ -56,6 +56,12 @@ struct VoteReplyPayload {
     steerer_id: u64,
     round_id: u64,
     user_vote: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ClaimReplyPayload {
+    claim: TributeClaim,
+    sender: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -522,9 +528,6 @@ fn execute_claim(
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
-
-    let hydromancer_id =
-        state::get_hydromancer_id_by_address(deps.storage, info.sender.clone()).ok();
     let user_id = state::get_user_id_by_address(deps.storage, info.sender.clone()).ok();
 
     let mut response = Response::new();
@@ -541,8 +544,7 @@ fn execute_claim(
             continue;
         }
         // intialize voting power if it's not yet initialized, vp are initialized on first claim for a round
-        if !state::has_at_least_one_tribute_for_tranche_round(deps.storage, tranche_id, *round_id)?
-        {
+        if !state::is_voting_power_initialized(deps.storage, tranche_id, *round_id) {
             initialize_user_voting_power_and_deleguated_to_hydromancers_by_trancheid_roundid(
                 deps,
                 constants.clone(),
@@ -577,19 +579,100 @@ fn execute_claim(
             };
 
             let execute_hydro_claim_msg: SubMsg<NeutronMsg> =
-                SubMsg::reply_on_success(claim_msg, CLAIM_REPLY_ID)
-                    .with_payload(to_json_binary(&claim)?);
+                SubMsg::reply_on_success(claim_msg, CLAIM_REPLY_ID).with_payload(to_json_binary(
+                    &ClaimReplyPayload {
+                        claim: claim.clone(),
+                        sender: info.sender.to_string(),
+                    },
+                )?);
 
             response = response.add_submessage(execute_hydro_claim_msg);
         }
 
-        //now we need to distribute to the sender tributes already claimed
+        //now we need to distribute to the sender tributes already claimed on hydro
         match user_id {
-            Some(user_id) => {}
-            None => {}
-        }
-        match hydromancer_id {
-            Some(hydromancer_id) => {}
+            Some(user_id) => {
+                let all_hydromancers_tributes =
+                    state::get_tributes_by_hydromancers(deps.storage, tranche_id, *round_id)?;
+                for (hydromancer_id, tribute_id, amount) in all_hydromancers_tributes.iter() {
+                    //check if tribute is already claimed
+                    if !state::is_hydromancer_tribute_claimed(
+                        deps.storage,
+                        *round_id,
+                        user_id,
+                        *tribute_id,
+                    ) {
+                        let user_hydromancer_vp = state::get_user_voting_power_by_hydromancer(
+                            deps.storage,
+                            tranche_id,
+                            *round_id,
+                            user_id,
+                            *hydromancer_id,
+                        );
+                        match user_hydromancer_vp {
+                            Some(user_hydromancer_vp) => {
+                                let hydromancer_tranche_round_vp: Option<u128> =
+                                    state::get_hydromancer_tranche_round_voting_power(
+                                        deps.storage,
+                                        tranche_id,
+                                        *round_id,
+                                        *hydromancer_id,
+                                    );
+                                if hydromancer_tranche_round_vp.is_none() {
+                                    continue;
+                                }
+                                let hydromancer_tranche_round_vp =
+                                    hydromancer_tranche_round_vp.unwrap();
+                                let user_amount =
+                                    Decimal::from_ratio(amount.amount, Uint128::one())
+                                        * Decimal::from_ratio(
+                                            user_hydromancer_vp,
+                                            hydromancer_tranche_round_vp,
+                                        );
+                                let send_msg = CosmosMsg::Bank(BankMsg::Send {
+                                    to_address: info.sender.to_string(),
+                                    amount: vec![Coin {
+                                        denom: amount.denom.clone(),
+                                        amount: user_amount.to_uint_floor(),
+                                    }],
+                                });
+                                response = response.add_message(send_msg);
+                                state::hydromancer_tribute_claimed(
+                                    deps.storage,
+                                    *round_id,
+                                    user_id,
+                                    *tribute_id,
+                                )?;
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                let tributes_user_under_control = state::get_tributes_under_user_control_by_user(
+                    deps.storage,
+                    tranche_id,
+                    *round_id,
+                    user_id,
+                )?;
+                for (tribute_id, amount) in tributes_user_under_control.iter() {
+                    if !state::is_user_steerer_tribute_claimed(
+                        deps.storage,
+                        *round_id,
+                        user_id,
+                        *tribute_id,
+                    ) {
+                        let send_msg = CosmosMsg::Bank(BankMsg::Send {
+                            to_address: info.sender.to_string(),
+                            amount: vec![Coin {
+                                denom: amount.denom.clone(),
+                                amount: amount.amount,
+                            }],
+                        });
+                        response = response.add_message(send_msg);
+                        state::user_tribute_claimed(deps.storage, *round_id, user_id, *tribute_id)?;
+                    }
+                }
+            }
             None => {}
         }
     }
@@ -1073,6 +1156,7 @@ fn initialize_user_voting_power_and_deleguated_to_hydromancers_by_trancheid_roun
             voting_power.u128(),
         )?;
     }
+    state::voting_power_initialized(deps.storage, tranche_id, round_id)?;
     Ok(())
 }
 
@@ -1145,12 +1229,12 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, 
 }
 
 fn handle_claim_reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, ContractError> {
-    let claim: TributeClaim = from_json(reply.payload)?;
+    let payload: ClaimReplyPayload = from_json(reply.payload)?;
     let constants = state::get_constants(deps.storage)?;
     let hydromancer_validator_shares =
         state::get_proposal_time_weigthed_shares_by_hydromancer_validators(
             deps.storage,
-            claim.proposal_id,
+            payload.claim.proposal_id,
         )?;
     let mut zephyrus_voting_power: u128 = 0u128;
     let mut hydromancer_voting_power: HashMap<HydromancerId, u128> = HashMap::new();
@@ -1162,7 +1246,7 @@ fn handle_claim_reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response,
             constants.hydro_config.hydro_contract_address.to_string(),
             &HydroQueryMsg::ValidatorPowerRatio {
                 validator: validator.clone(),
-                round_id: claim.round_id,
+                round_id: payload.claim.round_id,
             },
         )?;
         let validator_power_ratio = val_info_response.ratio;
@@ -1188,7 +1272,7 @@ fn handle_claim_reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response,
     }
     let user_validator_shares = state::get_proposal_time_weigthed_shares_by_user_validators(
         deps.storage,
-        claim.proposal_id,
+        payload.claim.proposal_id,
     )?;
     for user_val_shares in user_validator_shares {
         let (user_id, validator, shares) = user_val_shares;
@@ -1197,7 +1281,7 @@ fn handle_claim_reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response,
             constants.hydro_config.hydro_contract_address.to_string(),
             &HydroQueryMsg::ValidatorPowerRatio {
                 validator: validator.clone(),
-                round_id: claim.round_id,
+                round_id: payload.claim.round_id,
             },
         )?;
 
@@ -1216,40 +1300,75 @@ fn handle_claim_reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response,
             }
             Ok(current_voting_power) => current_voting_power.to_uint_ceil(),
         };
-        let vp = hydromancer_voting_power.entry(user_id).or_insert(0u128);
+        let vp = user_voting_power.entry(user_id).or_insert(0u128);
         *vp += voting_power.u128();
         zephyrus_voting_power += voting_power.u128();
     }
     let mut total_coin_distributed = Uint128::zero();
+    let mut response = Response::new();
+    let sender_user_id = state::get_user_id_by_address(
+        deps.storage,
+        deps.api.addr_validate(&payload.sender.clone())?,
+    )?;
     for (hydromancer_id, value) in hydromancer_voting_power.iter() {
-        let amount = Decimal::from_ratio(claim.amount.amount, Uint128::one())
+        let mut amount = Decimal::from_ratio(payload.claim.amount.amount, Uint128::one())
             * Decimal::from_ratio(*value, zephyrus_voting_power);
+        let hydromancer = state::get_hydromancer(deps.storage, *hydromancer_id)?;
+        let hydromancer_fee = amount * hydromancer.commission_rate;
+        amount = amount - hydromancer_fee;
         let amount = amount.to_uint_floor();
         total_coin_distributed += amount;
         state::add_tribute_to_hydromancer(
             deps.storage,
-            claim.tranche_id,
-            claim.round_id,
+            payload.claim.tranche_id,
+            payload.claim.round_id,
             *hydromancer_id,
-            claim.tribute_id,
-            Coin::new(amount, claim.amount.denom.clone()),
+            payload.claim.tribute_id,
+            Coin::new(amount, payload.claim.amount.denom.clone()),
         )?;
+        let send_msg = CosmosMsg::Bank(BankMsg::Send {
+            to_address: hydromancer.address.to_string(),
+            amount: vec![Coin {
+                denom: payload.claim.amount.denom.clone(),
+                amount: hydromancer_fee.to_uint_floor(),
+            }],
+        });
+        response = response.add_message(send_msg);
+        //TODO Distribute to sender its share of tribute if he has any
     }
+
     for (user_id, value) in user_voting_power.iter() {
-        let amount = Decimal::from_ratio(claim.amount.amount, Uint128::one())
+        let amount = Decimal::from_ratio(payload.claim.amount.amount, Uint128::one())
             * Decimal::from_ratio(*value, zephyrus_voting_power);
         let amount = amount.to_uint_floor();
         total_coin_distributed += amount;
         state::add_tribute_to_user(
             deps.storage,
-            claim.tranche_id,
-            claim.round_id,
+            payload.claim.tranche_id,
+            payload.claim.round_id,
             *user_id,
-            claim.tribute_id,
-            Coin::new(amount, claim.amount.denom.clone()),
+            payload.claim.tribute_id,
+            Coin::new(amount, payload.claim.amount.denom.clone()),
         )?;
+        //if tribute is user's tribute we send it to him
+        if sender_user_id == *user_id {
+            let send_msg = CosmosMsg::Bank(BankMsg::Send {
+                to_address: payload.sender.clone(),
+                amount: vec![Coin {
+                    denom: payload.claim.amount.denom.clone(),
+                    amount: amount,
+                }],
+            });
+            response = response.add_message(send_msg);
+            state::user_tribute_claimed(
+                deps.storage,
+                payload.claim.round_id,
+                *user_id,
+                payload.claim.tribute_id,
+            )?;
+        }
     }
-    Ok(Response::new())
+    Ok(response)
 }
 
 //Handle vote reply, used after both user and hydromancer vote

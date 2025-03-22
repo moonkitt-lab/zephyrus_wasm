@@ -38,6 +38,7 @@ pub enum HydroExecuteMsg {
 #[cw_serde]
 pub enum HydroQueryMsg {
     CurrentRound {},
+    Tranches {},
     ValidatorPowerRatio { validator: String, round_id: u64 },
     CurrentRoundTimeWeightedShares { owner: String, lock_ids: Vec<u64> },
 }
@@ -95,4 +96,16 @@ pub struct TributeClaim {
 #[cw_serde]
 pub struct OutstandingTributeClaimsResponse {
     pub claims: Vec<TributeClaim>,
+}
+
+#[cw_serde]
+pub struct Tranche {
+    pub id: u64,
+    pub name: String,
+    pub metadata: String,
+}
+
+#[cw_serde]
+pub struct TranchesResponse {
+    pub tranches: Vec<Tranche>,
 }

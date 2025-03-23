@@ -35,7 +35,7 @@ const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
 const DECOMMISSION_REPLY_ID: u64 = 2;
 const VOTE_REPLY_ID: u64 = 3;
 const CLAIM_REPLY_ID: u64 = 4;
-const REFRESH_DURATION_REPLY_ID: u64 = 5;
+const REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID: u64 = 5;
 
 const MAX_PAGINATION_LIMIT: usize = 1000;
 const DEFAULT_PAGINATION_LIMIT: usize = 100;
@@ -248,9 +248,9 @@ fn execute_auto_maintain(
             tranches.clone(),
             current_round_id,
         )?;
-
+        let lock_ids: Vec<u64> = hydro_lock_ids.iter().cloned().collect();
         let refresh_duration_msg = RefreshLockDuration {
-            lock_ids: hydro_lock_ids.iter().cloned().collect(),
+            lock_ids: lock_ids.clone(),
             lock_duration: hydro_period,
         };
 
@@ -259,7 +259,10 @@ fn execute_auto_maintain(
             msg: to_json_binary(&refresh_duration_msg)?,
             funds: vec![],
         };
-        //TODO we should use SubMsg instead of Message, because we have to handle reply on success and update all time weighted shares
+        //Use SubMsg instead of Message, because we have to handle reply on success and update all time weighted shares
+        let sub_msg =
+            SubMsg::reply_on_success(execute_refresh_msg, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID)
+                .with_payload(to_json_binary(&lock_ids)?);
         response = response
             .add_attribute("Action", "Refresh lock duration")
             .add_attribute(
@@ -270,7 +273,7 @@ fn execute_auto_maintain(
                     .collect::<Vec<_>>()
                     .join(","),
             );
-        response = response.add_message(execute_refresh_msg);
+        response = response.add_submessage(sub_msg);
     }
 
     if response.messages.is_empty() {
@@ -330,9 +333,11 @@ fn execute_update_vessels_class(
         funds: info.funds.clone(),
     };
 
-    let refresh_sub_message =
-        SubMsg::reply_on_success(execute_refresh_duration_msg, REFRESH_DURATION_REPLY_ID)
-            .with_payload(to_json_binary(&hydro_lock_ids)?);
+    let refresh_sub_message = SubMsg::reply_on_success(
+        execute_refresh_duration_msg,
+        REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID,
+    )
+    .with_payload(to_json_binary(&hydro_lock_ids)?);
 
     Ok(Response::new().add_submessage(refresh_sub_message))
 }
@@ -819,7 +824,8 @@ fn execute_claim(
 }
 
 fn execute_change_hydromancer(
-    deps: DepsMut,
+    mut deps: DepsMut,
+    env: Env,
     info: MessageInfo,
     tranche_id: u64,
     hydromancer_id: u64,
@@ -836,6 +842,19 @@ fn execute_change_hydromancer(
     let current_round_id = query_hydro_current_round(
         deps.as_ref(),
         constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
+    let tranches: TranchesResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::Tranches {},
+    )?;
+
+    substract_time_weighted_shares_to_hydromancers_and_proposals(
+        &mut deps,
+        env,
+        &hydro_lock_ids,
+        &constants.hydro_config.clone(),
+        tranches,
+        current_round_id,
     )?;
 
     for hydro_lock_id in hydro_lock_ids.iter() {
@@ -858,8 +877,12 @@ fn execute_change_hydromancer(
         funds: vec![],
     };
 
+    let sub_msg =
+        SubMsg::reply_on_success(execute_unvote_msg, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID)
+            .with_payload(to_json_binary(&hydro_lock_ids)?);
+
     Ok(Response::new()
-        .add_message(execute_unvote_msg)
+        .add_submessage(sub_msg)
         .add_attribute("action", "change_hydromancer")
         .add_attribute("new_hydromancer_id", hydromancer_id.to_string())
         .add_attribute(
@@ -1006,7 +1029,9 @@ pub fn execute(
             tranche_id,
             hydromancer_id,
             hydro_lock_ids,
-        } => execute_change_hydromancer(deps, info, tranche_id, hydromancer_id, hydro_lock_ids),
+        } => {
+            execute_change_hydromancer(deps, env, info, tranche_id, hydromancer_id, hydro_lock_ids)
+        }
         ExecuteMsg::Claim {
             tranche_id,
             round_ids,
@@ -1351,10 +1376,13 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
             handle_vote_reply(deps, env, payload, skipped_locks)
         }
         CLAIM_REPLY_ID => handle_claim_reply(deps, env, reply),
+        REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID => {
+            handle_refresh_time_weighted_shares_reply(deps, env, reply)
+        }
+
         _ => Err(ContractError::CustomError {
             msg: "Unknown reply id".to_string(),
         }),
-        REFRESH_DURATION_REPLY_ID => handle_refresh_duration_reply(deps, env, reply),
     }
 }
 
@@ -1363,7 +1391,8 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, 
     Ok(Response::default())
 }
 
-fn handle_refresh_duration_reply(
+// Add shares from hydro action that modifies time weighted shares to the proposals,hydromancers or users
+fn handle_refresh_time_weighted_shares_reply(
     deps: DepsMut,
     env: Env,
     reply: Reply,
@@ -3609,6 +3638,7 @@ mod test {
         assert_eq!(
             super::execute_change_hydromancer(
                 deps.as_mut(),
+                mock_env(),
                 MessageInfo {
                     sender: make_valid_addr("alice"),
                     funds: vec![]
@@ -3651,6 +3681,7 @@ mod test {
         assert_eq!(
             super::execute_change_hydromancer(
                 deps.as_mut(),
+                mock_env(),
                 MessageInfo {
                     sender: make_valid_addr("bob"),
                     funds: vec![]
@@ -3710,6 +3741,7 @@ mod test {
         assert_eq!(
             super::execute_change_hydromancer(
                 deps.as_mut(),
+                mock_env(),
                 MessageInfo {
                     sender: bob_address.clone(),
                     funds: vec![]
@@ -3762,6 +3794,7 @@ mod test {
 
         let res = super::execute_change_hydromancer(
             deps.as_mut(),
+            mock_env(),
             MessageInfo {
                 sender: alice_address.clone(),
                 funds: vec![],
@@ -3856,6 +3889,7 @@ mod test {
 
         let res = super::execute_change_hydromancer(
             deps.as_mut(),
+            mock_env(),
             MessageInfo {
                 sender: alice_address.clone(),
                 funds: vec![],
@@ -3947,6 +3981,7 @@ mod test {
 
         let res = super::execute_change_hydromancer(
             deps.as_mut(),
+            mock_env(),
             MessageInfo {
                 sender: alice_address.clone(),
                 funds: vec![],

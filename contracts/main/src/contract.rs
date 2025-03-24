@@ -1391,7 +1391,7 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, 
     Ok(Response::default())
 }
 
-// Add shares from hydro action that modifies time weighted shares to the proposals,hydromancers or users
+// Reply of actions that remove time weighted shares from states for a list of lock_ids that, this handle re-add shares queried from hydro
 fn handle_refresh_time_weighted_shares_reply(
     deps: DepsMut,
     env: Env,

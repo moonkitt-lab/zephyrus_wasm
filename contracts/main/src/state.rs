@@ -112,11 +112,9 @@ pub fn is_user_steerer_tribute_claimed(
     user_id: UserId,
     tribute_id: TributeId,
 ) -> bool {
-    let result = CLAIMED_USER_STEERER_TRIBUTE.load(storage, (round_id, user_id, tribute_id));
-    match result {
-        Ok(value) => value,
-        Err(_) => false,
-    }
+    CLAIMED_USER_STEERER_TRIBUTE
+        .load(storage, (round_id, user_id, tribute_id))
+        .unwrap_or(false)
 }
 
 pub fn hydromancer_tribute_claimed(
@@ -135,11 +133,9 @@ pub fn is_hydromancer_tribute_claimed(
     user_id: UserId,
     tribute_id: TributeId,
 ) -> bool {
-    let result = CLAIMED_HYDROMANCER_TRIBUTE.load(storage, (round_id, user_id, tribute_id));
-    match result {
-        Ok(value) => value,
-        Err(_) => false,
-    }
+    CLAIMED_HYDROMANCER_TRIBUTE
+        .load(storage, (round_id, user_id, tribute_id))
+        .unwrap_or(false)
 }
 
 pub fn voting_power_initialized(
@@ -156,11 +152,9 @@ pub fn is_voting_power_initialized(
     tranche_id: TrancheId,
     round_id: RoundId,
 ) -> bool {
-    let result = VOTING_POWER_INITIALIZED.load(storage, (tranche_id, round_id));
-    match result {
-        Ok(value) => value,
-        Err(_) => false,
-    }
+    VOTING_POWER_INITIALIZED
+        .load(storage, (tranche_id, round_id))
+        .unwrap_or(false)
 }
 
 pub fn get_hydromancer_tribute(

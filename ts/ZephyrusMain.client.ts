@@ -168,6 +168,13 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     hydromancerId: number;
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  claim: ({
+    roundIds,
+    trancheId
+  }: {
+    roundIds: number[];
+    trancheId: number;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
   client: SigningCosmWasmClient;
@@ -188,6 +195,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.hydromancerVote = this.hydromancerVote.bind(this);
     this.userVote = this.userVote.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
+    this.claim = this.claim.bind(this);
   }
   buildVessel = async ({
     receiver,
@@ -298,6 +306,20 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
       change_hydromancer: {
         hydro_lock_ids: hydroLockIds,
         hydromancer_id: hydromancerId,
+        tranche_id: trancheId
+      }
+    }, fee, memo, _funds);
+  };
+  claim = async ({
+    roundIds,
+    trancheId
+  }: {
+    roundIds: number[];
+    trancheId: number;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      claim: {
+        round_ids: roundIds,
         tranche_id: trancheId
       }
     }, fee, memo, _funds);

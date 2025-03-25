@@ -54,6 +54,11 @@ export type ExecuteMsg = {
     hydromancer_id: number;
     tranche_id: number;
   };
+} | {
+  claim: {
+    round_ids: number[];
+    tranche_id: number;
+  };
 };
 export interface BuildVesselParams {
   auto_maintenance: boolean;

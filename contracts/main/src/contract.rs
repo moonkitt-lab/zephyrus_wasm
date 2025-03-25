@@ -243,7 +243,7 @@ fn execute_auto_maintain(
         substract_time_weighted_shares_to_hydromancers_and_proposals(
             &mut deps,
             env.clone(),
-            &hydro_lock_ids.iter().copied().collect(),
+            &hydro_lock_ids.iter().copied().collect::<Vec<u64>>(),
             &hydro_config,
             tranches.clone(),
             current_round_id,
@@ -346,7 +346,7 @@ fn execute_update_vessels_class(
 fn substract_time_weighted_shares_to_hydromancers_and_proposals(
     deps: &mut DepsMut,
     env: Env,
-    hydro_lock_ids: &Vec<u64>,
+    hydro_lock_ids: &[u64],
     hydro_config: &HydroConfig,
     tranches: TranchesResponse,
     current_round_id: u64,
@@ -733,90 +733,82 @@ fn execute_claim(
         }
 
         //now we need to distribute to the sender tributes already claimed on hydro
-        match user_id {
-            Some(user_id) => {
-                let all_hydromancers_tributes =
-                    state::get_tributes_by_hydromancers(deps.storage, tranche_id, *round_id)?;
-                for (hydromancer_id, tribute_id, amount) in all_hydromancers_tributes.iter() {
-                    //check if tribute is already claimed
-                    if !state::is_hydromancer_tribute_claimed(
-                        deps.storage,
-                        *round_id,
-                        user_id,
-                        *tribute_id,
-                    ) {
-                        let user_hydromancer_vp = state::get_user_voting_power_by_hydromancer(
-                            deps.storage,
-                            tranche_id,
-                            *round_id,
-                            user_id,
-                            *hydromancer_id,
-                        );
-                        match user_hydromancer_vp {
-                            Some(user_hydromancer_vp) => {
-                                let hydromancer_tranche_round_vp: Option<u128> =
-                                    state::get_hydromancer_tranche_round_voting_power(
-                                        deps.storage,
-                                        tranche_id,
-                                        *round_id,
-                                        *hydromancer_id,
-                                    );
-                                if hydromancer_tranche_round_vp.is_none() {
-                                    continue;
-                                }
-                                let hydromancer_tranche_round_vp =
-                                    hydromancer_tranche_round_vp.unwrap();
-                                let user_amount =
-                                    Decimal::from_ratio(amount.amount, Uint128::one())
-                                        * Decimal::from_ratio(
-                                            user_hydromancer_vp,
-                                            hydromancer_tranche_round_vp,
-                                        );
-                                let send_msg = CosmosMsg::Bank(BankMsg::Send {
-                                    to_address: info.sender.to_string(),
-                                    amount: vec![Coin {
-                                        denom: amount.denom.clone(),
-                                        amount: user_amount.to_uint_floor(),
-                                    }],
-                                });
-                                response = response.add_message(send_msg);
-                                state::hydromancer_tribute_claimed(
-                                    deps.storage,
-                                    *round_id,
-                                    user_id,
-                                    *tribute_id,
-                                )?;
-                            }
-                            None => {}
-                        }
-                    }
-                }
-                let tributes_user_under_control = state::get_tributes_under_user_control_by_user(
+        if let Some(user_id) = user_id {
+            let all_hydromancers_tributes =
+                state::get_tributes_by_hydromancers(deps.storage, tranche_id, *round_id)?;
+            for (hydromancer_id, tribute_id, amount) in all_hydromancers_tributes.iter() {
+                //check if tribute is already claimed
+                if !state::is_hydromancer_tribute_claimed(
                     deps.storage,
-                    tranche_id,
                     *round_id,
                     user_id,
-                )?;
-                for (tribute_id, amount) in tributes_user_under_control.iter() {
-                    if !state::is_user_steerer_tribute_claimed(
+                    *tribute_id,
+                ) {
+                    let user_hydromancer_vp = state::get_user_voting_power_by_hydromancer(
                         deps.storage,
+                        tranche_id,
                         *round_id,
                         user_id,
-                        *tribute_id,
-                    ) {
+                        *hydromancer_id,
+                    );
+                    if let Some(user_hydromancer_vp) = user_hydromancer_vp {
+                        let hydromancer_tranche_round_vp: Option<u128> =
+                            state::get_hydromancer_tranche_round_voting_power(
+                                deps.storage,
+                                tranche_id,
+                                *round_id,
+                                *hydromancer_id,
+                            );
+                        if hydromancer_tranche_round_vp.is_none() {
+                            continue;
+                        }
+                        let hydromancer_tranche_round_vp = hydromancer_tranche_round_vp.unwrap();
+                        let user_amount = Decimal::from_ratio(amount.amount, Uint128::one())
+                            * Decimal::from_ratio(
+                                user_hydromancer_vp,
+                                hydromancer_tranche_round_vp,
+                            );
                         let send_msg = CosmosMsg::Bank(BankMsg::Send {
                             to_address: info.sender.to_string(),
                             amount: vec![Coin {
                                 denom: amount.denom.clone(),
-                                amount: amount.amount,
+                                amount: user_amount.to_uint_floor(),
                             }],
                         });
                         response = response.add_message(send_msg);
-                        state::user_tribute_claimed(deps.storage, *round_id, user_id, *tribute_id)?;
+                        state::hydromancer_tribute_claimed(
+                            deps.storage,
+                            *round_id,
+                            user_id,
+                            *tribute_id,
+                        )?;
                     }
                 }
             }
-            None => {}
+            let tributes_user_under_control = state::get_tributes_under_user_control_by_user(
+                deps.storage,
+                tranche_id,
+                *round_id,
+                user_id,
+            )?;
+            for (tribute_id, amount) in tributes_user_under_control.iter() {
+                if !state::is_user_steerer_tribute_claimed(
+                    deps.storage,
+                    *round_id,
+                    user_id,
+                    *tribute_id,
+                ) {
+                    let send_msg = CosmosMsg::Bank(BankMsg::Send {
+                        to_address: info.sender.to_string(),
+                        amount: vec![Coin {
+                            denom: amount.denom.clone(),
+                            amount: amount.amount,
+                        }],
+                    });
+                    response = response.add_message(send_msg);
+                    state::user_tribute_claimed(deps.storage, *round_id, user_id, *tribute_id)?;
+                }
+            }
         }
     }
 
@@ -935,16 +927,16 @@ fn execute_user_vote(
                 tranche_id,
                 current_round_id,
                 *vessel_id,
-            ) {
-                if let Some(_) = state::get_harbor_of_vessel(
-                    deps.storage,
-                    tranche_id,
-                    current_round_id,
-                    *vessel_id,
-                )? {
-                    //vessel used by hydromancer should be unvoted
-                    unvote_ids.push(vessel_id.clone());
-                }
+            ) && state::get_harbor_of_vessel(
+                deps.storage,
+                tranche_id,
+                current_round_id,
+                *vessel_id,
+            )?
+            .is_some()
+            {
+                //vessel used by hydromancer should be unvoted
+                unvote_ids.push(*vessel_id);
             }
         }
 
@@ -1062,8 +1054,8 @@ fn query_hydro_outstanding_tribute_claims(
             tribute_address_contract,
             &TributeQueryMsg::OutstandingTributeClaims {
                 user_address: env.contract.address.to_string(),
-                round_id: round_id,
-                tranche_id: tranche_id,
+                round_id,
+                tranche_id,
                 start_from: 0,
                 limit: 1000, //probably never reaches this limit, if it does, next user claim will process the rest
             },
@@ -1148,12 +1140,10 @@ fn initialize_time_weighted_shares_for_hydromancer_and_current_round(
                     lock_time_weighted_share.time_weighted_share,
                 )
                 .expect("Failed to insert time weighted shares");
-                let vessel = state::get_vessels_by_ids(
-                    deps.storage,
-                    &vec![lock_time_weighted_share.lock_id],
-                )?
-                .pop()
-                .expect("Vessel should exist");
+                let vessel =
+                    state::get_vessels_by_ids(deps.storage, &[lock_time_weighted_share.lock_id])?
+                        .pop()
+                        .expect("Vessel should exist");
                 state::add_weighted_shares_to_user_hydromancer(
                     deps.storage,
                     tranche_id,
@@ -1279,7 +1269,7 @@ fn initialize_user_voting_power_and_deleguated_to_hydromancers_by_trancheid_roun
             constants.hydro_config.hydro_contract_address.to_string(),
             &HydroQueryMsg::ValidatorPowerRatio {
                 validator: validator.clone(),
-                round_id: round_id,
+                round_id,
             },
         )?;
         let validator_power_ratio = val_info_response.ratio;
@@ -1569,7 +1559,7 @@ fn handle_claim_reply(deps: DepsMut, reply: Reply) -> Result<Response, ContractE
             * Decimal::from_ratio(*value, zephyrus_voting_power);
         let hydromancer = state::get_hydromancer(deps.storage, *hydromancer_id)?;
         let hydromancer_fee = amount * hydromancer.commission_rate;
-        amount = amount - hydromancer_fee;
+        amount -= hydromancer_fee;
         let amount = amount.to_uint_floor();
         total_coin_distributed += amount;
         state::add_tribute_to_hydromancer(
@@ -1652,7 +1642,7 @@ fn handle_claim_reply(deps: DepsMut, reply: Reply) -> Result<Response, ContractE
                 to_address: payload.sender.clone(),
                 amount: vec![Coin {
                     denom: payload.claim.amount.denom.clone(),
-                    amount: amount,
+                    amount,
                 }],
             });
             response = response.add_message(send_msg);
@@ -1856,19 +1846,17 @@ fn handle_vote_reply(
                             &lock_current_weighted_shares.validator,
                             lock_current_weighted_shares.time_weighted_share,
                         )?;
-                    } else {
-                        if is_hydromancer_shares_initialized {
-                            //vessel was controled by hydromancer and now it is controlled by user
-                            //hydromancer shares are intialized we can substract them
-                            //add weighted shares to new proposal id
-                            state::add_weighted_shares_to_proposal_hydromancer(
-                                deps.storage,
-                                payload.steerer_id,
-                                vessels_to_harbor.harbor_id,
-                                &lock_current_weighted_shares.validator,
-                                lock_current_weighted_shares.time_weighted_share,
-                            )?;
-                        }
+                    } else if is_hydromancer_shares_initialized {
+                        //vessel was controled by hydromancer and now it is controlled by user
+                        //hydromancer shares are intialized we can substract them
+                        //add weighted shares to new proposal id
+                        state::add_weighted_shares_to_proposal_hydromancer(
+                            deps.storage,
+                            payload.steerer_id,
+                            vessels_to_harbor.harbor_id,
+                            &lock_current_weighted_shares.validator,
+                            lock_current_weighted_shares.time_weighted_share,
+                        )?;
                     }
                     state::add_vessel_to_harbor(
                         deps.storage,

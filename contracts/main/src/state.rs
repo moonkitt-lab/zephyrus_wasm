@@ -304,7 +304,7 @@ pub fn get_users_hydromancer_shares_by_user_tranche_round(
     let mut result = Vec::new();
 
     let prefix_iter = USER_HYDROMANCER_SHARES
-        .sub_prefix(((tranche_id, round_id)))
+        .sub_prefix((tranche_id, round_id))
         .range(storage, None, None, Order::Ascending);
 
     for item in prefix_iter {

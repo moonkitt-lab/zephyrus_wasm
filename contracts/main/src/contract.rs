@@ -897,7 +897,6 @@ fn execute_change_hydromancer(
 
 fn execute_user_vote(
     deps: DepsMut,
-    env: Env,
     info: MessageInfo,
     tranche_id: u64,
     vessels_harbors: Vec<VesselsToHarbor>,
@@ -1024,7 +1023,7 @@ pub fn execute(
         ExecuteMsg::UserVote {
             tranche_id,
             vessels_harbors,
-        } => execute_user_vote(deps, env, info, tranche_id, vessels_harbors),
+        } => execute_user_vote(deps, info, tranche_id, vessels_harbors),
         ExecuteMsg::ChangeHydromancer {
             tranche_id,
             hydromancer_id,
@@ -1375,7 +1374,7 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
                 from_json(reply.payload).expect("Vote parameters always attached");
             handle_vote_reply(deps, env, payload, skipped_locks)
         }
-        CLAIM_REPLY_ID => handle_claim_reply(deps, env, reply),
+        CLAIM_REPLY_ID => handle_claim_reply(deps, reply),
         REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID => {
             handle_refresh_time_weighted_shares_reply(deps, env, reply)
         }
@@ -1483,7 +1482,7 @@ fn handle_refresh_time_weighted_shares_reply(
 }
 //Handle a claim reply from hydro tribute contract
 // it will create tributes for each hydromancer and user steerer who voted on the proposal, send fees to hydromancers and send its shares to the "sender user"
-fn handle_claim_reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, ContractError> {
+fn handle_claim_reply(deps: DepsMut, reply: Reply) -> Result<Response, ContractError> {
     let payload: ClaimReplyPayload = from_json(reply.payload)?;
     let constants = state::get_constants(deps.storage)?;
     let hydromancer_validator_shares =
@@ -3259,7 +3258,6 @@ mod test {
         assert_eq!(
             super::execute_user_vote(
                 deps.as_mut(),
-                mock_env(),
                 MessageInfo {
                     sender: alice_address.clone(),
                     funds: vec![]
@@ -3367,7 +3365,6 @@ mod test {
 
         let res = super::execute_user_vote(
             deps.as_mut(),
-            mock_env(),
             MessageInfo {
                 sender: alice_address.clone(),
                 funds: vec![],
@@ -3481,7 +3478,6 @@ mod test {
 
         let res = super::execute_user_vote(
             deps.as_mut(),
-            mock_env(),
             MessageInfo {
                 sender: alice_address.clone(),
                 funds: vec![],
@@ -3568,7 +3564,6 @@ mod test {
         assert_eq!(
             super::execute_user_vote(
                 deps.as_mut(),
-                mock_env(),
                 MessageInfo {
                     sender: make_valid_addr("zephyrus"),
                     funds: vec![]
@@ -3603,7 +3598,6 @@ mod test {
         assert_eq!(
             super::execute_user_vote(
                 deps.as_mut(),
-                mock_env(),
                 MessageInfo {
                     sender: make_valid_addr("zephyrus"),
                     funds: vec![]

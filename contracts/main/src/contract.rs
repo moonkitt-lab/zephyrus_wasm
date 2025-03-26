@@ -402,9 +402,9 @@ fn substract_time_weighted_shares_to_hydromancers_and_proposals(
                         )?;
                         state::sub_weighted_shares_to_user_hydromancer(
                             deps.storage,
+                            vessel_harbor.steerer_id,
                             tranche.id,
                             vessel.owner_id,
-                            vessel_harbor.steerer_id,
                             current_round_id,
                             &new_time_weighted_share.validator,
                             new_time_weighted_share.time_weighted_share,
@@ -1355,7 +1355,7 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
     match reply.id {
         // Cas : retour du premier message
         HYDRO_LOCK_TOKENS_REPLY_ID => parse_lock_tokens_reply(reply)
-            .and_then(|(id, payload)| handle_lock_tokens_reply(deps, id, payload)),
+            .and_then(|(id, payload)| handle_lock_tokens_reply(deps, env, id, payload)),
 
         DECOMMISSION_REPLY_ID => handle_unlock_tokens_reply(deps, env, reply),
         VOTE_REPLY_ID => {
@@ -1366,7 +1366,9 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
         }
         CLAIM_REPLY_ID => handle_claim_reply(deps, reply),
         REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID => {
-            handle_refresh_time_weighted_shares_reply(deps, env, reply)
+            let payload: Vec<u64> =
+                from_json(reply.payload).expect("lock ids parameters always attached");
+            handle_refresh_time_weighted_shares_reply(deps, env, payload)
         }
 
         _ => Err(ContractError::CustomError {
@@ -1384,9 +1386,8 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, 
 fn handle_refresh_time_weighted_shares_reply(
     deps: DepsMut,
     env: Env,
-    reply: Reply,
+    payload: Vec<u64>,
 ) -> Result<Response, ContractError> {
-    let payload: Vec<u64> = from_json(reply.payload)?;
     let constants = state::get_constants(deps.storage)?;
     let current_round_id = query_hydro_current_round(
         deps.as_ref(),
@@ -1557,8 +1558,10 @@ fn handle_claim_reply(deps: DepsMut, reply: Reply) -> Result<Response, ContractE
     for (hydromancer_id, value) in hydromancer_voting_power.iter() {
         let mut amount = Decimal::from_ratio(payload.claim.amount.amount, Uint128::one())
             * Decimal::from_ratio(*value, zephyrus_voting_power);
+
         let hydromancer = state::get_hydromancer(deps.storage, *hydromancer_id)?;
         let hydromancer_fee = amount * hydromancer.commission_rate;
+
         amount -= hydromancer_fee;
         let amount = amount.to_uint_floor();
         total_coin_distributed += amount;
@@ -1652,6 +1655,27 @@ fn handle_claim_reply(deps: DepsMut, reply: Reply) -> Result<Response, ContractE
                 *user_id,
                 payload.claim.tribute_id,
             )?;
+        }
+    }
+    let rest = payload
+        .claim
+        .amount
+        .amount
+        .checked_sub(total_coin_distributed)
+        .ok();
+    //if there is a rest, send it to default hydromancer
+    if let Some(rest) = rest {
+        let zephyrus_addr =
+            state::get_hydromancer(deps.storage, constants.default_hydromancer_id)?.address;
+        if rest > Uint128::zero() {
+            let send_msg = CosmosMsg::Bank(BankMsg::Send {
+                to_address: zephyrus_addr.to_string(),
+                amount: vec![Coin {
+                    denom: payload.claim.amount.denom.clone(),
+                    amount: rest,
+                }],
+            });
+            response = response.add_message(send_msg);
         }
     }
     Ok(response)
@@ -1887,6 +1911,7 @@ fn handle_vote_reply(
 
 fn handle_lock_tokens_reply(
     deps: DepsMut,
+    env: Env,
     hydro_lock_id: u64,
     LockTokensReplyPayload {
         params:
@@ -1910,6 +1935,45 @@ fn handle_lock_tokens_reply(
     };
 
     state::add_vessel(deps.storage, &vessel, &owner)?;
+    let constants = state::get_constants(deps.storage)?;
+    let current_round_id = query_hydro_current_round(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
+    let tranches: TranchesResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::Tranches {},
+    )?;
+    let new_time_weighted_shares: CurrentRoundTimeWeightedSharesResponse =
+        deps.querier.query_wasm_smart(
+            constants.hydro_config.hydro_contract_address.to_string(),
+            &HydroQueryMsg::CurrentRoundTimeWeightedShares {
+                owner: env.contract.address.to_string(),
+                lock_ids: vec![hydro_lock_id],
+            },
+        )?;
+    let new_time_weighted_share = &new_time_weighted_shares.lock_time_weighted_shares[0];
+
+    for tranche in tranches.tranches.iter() {
+        //Add time weighted shares to hydromancer and user hydromancer
+        state::add_weighted_shares_to_hydromancer(
+            deps.storage,
+            vessel.hydromancer_id,
+            tranche.id,
+            current_round_id,
+            &new_time_weighted_share.validator,
+            new_time_weighted_share.time_weighted_share,
+        )?;
+        state::add_weighted_shares_to_user_hydromancer(
+            deps.storage,
+            tranche.id,
+            vessel.owner_id,
+            vessel.hydromancer_id,
+            current_round_id,
+            &new_time_weighted_share.validator,
+            new_time_weighted_share.time_weighted_share,
+        )?;
+    }
 
     Ok(Response::new()
         .add_attribute("action", "build_vessel")
@@ -2608,6 +2672,26 @@ mod test {
         )
         .expect("Should add vessel");
 
+        state::add_weighted_shares_to_hydromancer(
+            deps.as_mut().storage,
+            default_hydromancer_id,
+            1,
+            1,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to hydromancer");
+        state::add_weighted_shares_to_user_hydromancer(
+            deps.as_mut().storage,
+            1,
+            user_id,
+            default_hydromancer_id,
+            1,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to user hydromancer");
+
         let res = super::execute_hydromancer_vote(
             deps.as_mut(),
             mock_env(),
@@ -2675,6 +2759,17 @@ mod test {
 
         let _ = super::handle_vote_reply(deps.as_mut(), mock_env(), payload, vec![]).unwrap();
 
+        let proposal_hydromancer_share =
+            state::get_proposal_time_weigthed_shares_by_hydromancer_validators(
+                deps.as_mut().storage,
+                1,
+            )
+            .expect("Should get weighted shares to proposal hydromancer");
+        assert_eq!(proposal_hydromancer_share.len(), 1);
+        assert_eq!(proposal_hydromancer_share[0].0, default_hydromancer_id);
+        assert_eq!(proposal_hydromancer_share[0].1, "crosnest");
+        assert_eq!(proposal_hydromancer_share[0].2, 1_000_000);
+
         let vessels_to_harbor =
             state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
                 .expect("Vessel to harbor should exist");
@@ -2709,6 +2804,27 @@ mod test {
         )
         .expect("Should add vessel");
 
+        //Add time weighted shares to hydromancer and user hydromancer
+        state::add_weighted_shares_to_hydromancer(
+            deps.as_mut().storage,
+            default_hydromancer_id,
+            1,
+            1,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to hydromancer");
+        state::add_weighted_shares_to_user_hydromancer(
+            deps.as_mut().storage,
+            1,
+            user_id,
+            default_hydromancer_id,
+            1,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to user hydromancer");
+
         state::add_vessel_to_harbor(
             deps.as_mut().storage,
             1,
@@ -2721,6 +2837,15 @@ mod test {
             },
         )
         .expect("Should add vessel to harbor");
+
+        state::add_weighted_shares_to_proposal_hydromancer(
+            deps.as_mut().storage,
+            default_hydromancer_id,
+            2,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to proposal hydromancer");
 
         let res = super::execute_hydromancer_vote(
             deps.as_mut(),
@@ -2795,6 +2920,55 @@ mod test {
         assert_eq!(vessels_to_harbor1.len(), 1);
         assert_eq!(vessels_to_harbor1[0].1.hydro_lock_id, 0);
         assert_eq!(vessels_to_harbor1[0].1.steerer_id, default_hydromancer_id);
+
+        let hydromancer_weighted_shares = state::get_hydromancer_shares_by_round(
+            deps.as_mut().storage,
+            default_hydromancer_id,
+            1,
+            1,
+        )
+        .expect("Hydromancer shares should exist");
+        assert_eq!(hydromancer_weighted_shares.len(), 1);
+        assert_eq!(hydromancer_weighted_shares[0].1, 1_000_000);
+        assert_eq!(hydromancer_weighted_shares[0].0, "crosnest");
+
+        let user_hydromancer_weighted_shares =
+            state::get_user_hydromancer_shares_by_user_tranche_round(
+                deps.as_mut().storage,
+                1,
+                1,
+                user_id,
+            )
+            .expect("Hydromancer shares should exist");
+        assert_eq!(user_hydromancer_weighted_shares.len(), 1);
+        assert_eq!(user_hydromancer_weighted_shares[0].1, "crosnest");
+        assert_eq!(
+            user_hydromancer_weighted_shares[0].0,
+            default_hydromancer_id
+        );
+        assert_eq!(user_hydromancer_weighted_shares[0].2, 1_000_000);
+
+        let hydromancer_porposal2_shares =
+            state::get_proposal_time_weigthed_shares_by_hydromancer_validators(
+                deps.as_mut().storage,
+                2,
+            )
+            .expect("Proposal shares should load");
+        assert_eq!(hydromancer_porposal2_shares.len(), 1);
+        assert_eq!(hydromancer_porposal2_shares[0].0, default_hydromancer_id);
+        assert_eq!(hydromancer_porposal2_shares[0].1, "crosnest");
+        assert_eq!(hydromancer_porposal2_shares[0].2, 0);
+
+        let hydromancer_porposal1_shares =
+            state::get_proposal_time_weigthed_shares_by_hydromancer_validators(
+                deps.as_mut().storage,
+                1,
+            )
+            .expect("Proposal shares should load");
+        assert_eq!(hydromancer_porposal1_shares.len(), 1);
+        assert_eq!(hydromancer_porposal1_shares[0].0, default_hydromancer_id);
+        assert_eq!(hydromancer_porposal1_shares[0].1, "crosnest");
+        assert_eq!(hydromancer_porposal1_shares[0].2, 1_000_000);
 
         let vessels_to_harbor2 =
             state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 2)
@@ -3135,6 +3309,7 @@ mod test {
 
         super::handle_lock_tokens_reply(
             deps.as_mut(),
+            mock_env(),
             0,
             LockTokensReplyPayload {
                 params: BuildVesselParams {
@@ -3153,6 +3328,14 @@ mod test {
             super::state::get_vessel(&deps.storage, 0).unwrap(),
             expected_vessel
         );
+
+        let hydromancer_shares =
+            state::get_hydromancer_shares_by_round(deps.as_mut().storage, 0, 1, 1)
+                .expect("Hydromancer shares should exist");
+
+        assert_eq!(hydromancer_shares.len(), 1);
+        assert_eq!(hydromancer_shares[0].0, "crosnest");
+        assert_eq!(hydromancer_shares[0].1, 1_000_000);
 
         assert_eq!(
             super::state::get_vessels_by_owner(&deps.storage, expected_owner.clone(), 0, 100)
@@ -3187,6 +3370,7 @@ mod test {
             .expect("Should add user");
         super::handle_lock_tokens_reply(
             deps.as_mut(),
+            mock_env(),
             0,
             LockTokensReplyPayload {
                 params: BuildVesselParams {
@@ -3847,6 +4031,27 @@ mod test {
         )
         .expect("Should add vessel");
 
+        state::add_weighted_shares_to_hydromancer(
+            deps.as_mut().storage,
+            default_hydromancer_id,
+            1,
+            1,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to hydromancer");
+
+        state::add_weighted_shares_to_user_hydromancer(
+            deps.as_mut().storage,
+            1,
+            user_id,
+            default_hydromancer_id,
+            1,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to user hydromancer");
+
         state::add_vessel_to_harbor(
             deps.as_mut().storage,
             1,
@@ -3859,6 +4064,15 @@ mod test {
             },
         )
         .expect("Should add vessel to harbor");
+
+        state::add_weighted_shares_to_proposal_hydromancer(
+            deps.as_mut().storage,
+            default_hydromancer_id,
+            1,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to proposal hydromancer");
 
         let bob_address = make_valid_addr("bob");
         let new_hydromancer_id = state::insert_new_hydromancer(
@@ -3909,9 +4123,60 @@ mod test {
         } else {
             panic!("Message is not message that it should be !");
         }
+        let first_hydromancer_shares = state::get_hydromancer_shares_by_round(
+            deps.as_mut().storage,
+            default_hydromancer_id,
+            1,
+            1,
+        )
+        .expect("Should return shares");
+        assert_eq!(first_hydromancer_shares.len(), 1);
+        assert_eq!(first_hydromancer_shares[0].0, "crosnest");
+        assert_eq!(first_hydromancer_shares[0].1, 0); //change_hydromancer make an unvote and remove shares from previous hydromancer
 
+        let user_hydromancer_shares = state::get_user_hydromancer_shares_by_user_tranche_round(
+            deps.as_mut().storage,
+            1,
+            1,
+            user_id,
+        )
+        .expect("Should return shares");
+        assert_eq!(user_hydromancer_shares.len(), 1);
+        assert_eq!(user_hydromancer_shares[0].0, default_hydromancer_id);
+        assert_eq!(user_hydromancer_shares[0].1, "crosnest");
+        assert_eq!(user_hydromancer_shares[0].2, 0); //change_hydromancer make an unvote and remove shares from previous hydromancer
         let vessel = state::get_vessel(deps.as_ref().storage, 0).expect("Vessel should exist !");
         assert_eq!(vessel.hydromancer_id, new_hydromancer_id);
+
+        super::handle_refresh_time_weighted_shares_reply(deps.as_mut(), mock_env(), vec![0])
+            .unwrap();
+
+        let second_hydromancer_shares =
+            state::get_hydromancer_shares_by_round(deps.as_mut().storage, new_hydromancer_id, 1, 1)
+                .expect("Should return shares");
+        assert_eq!(second_hydromancer_shares.len(), 1);
+        assert_eq!(second_hydromancer_shares[0].0, "crosnest");
+        assert_eq!(second_hydromancer_shares[0].1, 1_000_000);
+
+        let user_second_hydromancer_shares =
+            state::get_user_hydromancer_shares_by_user_tranche_round(
+                deps.as_mut().storage,
+                1,
+                1,
+                user_id,
+            )
+            .expect("Should return shares");
+        assert_eq!(user_second_hydromancer_shares.len(), 2);
+        for shares in user_second_hydromancer_shares.iter() {
+            if shares.0 == default_hydromancer_id {
+                assert_eq!(shares.1, "crosnest");
+                assert_eq!(shares.2, 0);
+            }
+            if shares.0 == new_hydromancer_id {
+                assert_eq!(shares.1, "crosnest");
+                assert_eq!(shares.2, 1_000_000);
+            }
+        }
 
         assert!(
             state::get_vessel_to_harbor_by_harbor_id(deps.as_ref().storage, 1, 1, 1)
@@ -3960,6 +4225,16 @@ mod test {
             },
         )
         .expect("Should add vessel to harbor");
+
+        //Add time weighted shares to hydromancer and user hydromancer
+        state::add_weighted_shares_under_user_control_for_proposal(
+            deps.as_mut().storage,
+            user_id,
+            1,
+            "crosnest",
+            1_000_000,
+        )
+        .expect("Should add weighted shares to hydromancer");
 
         let res = super::execute_change_hydromancer(
             deps.as_mut(),

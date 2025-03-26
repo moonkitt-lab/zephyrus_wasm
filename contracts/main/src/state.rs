@@ -309,6 +309,26 @@ pub fn get_users_hydromancer_shares_by_user_tranche_round(
     Ok(result)
 }
 
+pub fn get_user_hydromancer_shares_by_user_tranche_round(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    user_id: UserId,
+) -> Result<Vec<(HydromancerId, String, u128)>, StdError> {
+    let mut result = Vec::new();
+
+    let prefix_iter = USER_HYDROMANCER_SHARES
+        .prefix(((tranche_id, round_id), user_id))
+        .range(storage, None, None, Order::Ascending);
+
+    for item in prefix_iter {
+        let ((hydromancer_id, validator), value) = item?;
+        result.push((hydromancer_id, validator.to_string(), value));
+    }
+
+    Ok(result)
+}
+
 pub fn has_at_least_one_tribute_for_tranche_round(
     storage: &dyn Storage,
 
@@ -423,8 +443,8 @@ pub fn sub_weighted_shares_to_user_hydromancer(
         .unwrap_or_default();
     if current_shares < shares {
         return Err(StdError::generic_err(format!(
-            "Not enough shares to remove {} from user {} and validator {}",
-            shares, user_id, validator
+            "Not enough shares to remove {} from user {}, hydrmoancer {} and validator {}",
+            shares, user_id, hydromancer_id, validator
         )));
     }
     USER_HYDROMANCER_SHARES.save(

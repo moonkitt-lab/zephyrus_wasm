@@ -2170,8 +2170,8 @@ mod test {
     };
     use hydro_interface::msgs::{
         CurrentRoundResponse, CurrentRoundTimeWeightedSharesResponse, HydroExecuteMsg,
-        HydroQueryMsg, LockTimeWeightedShare, Tranche, TranchesResponse,
-        ValidatorPowerRatioResponse,
+        HydroQueryMsg, LockTimeWeightedShare, OutstandingTributeClaimsResponse, Tranche,
+        TranchesResponse, TributeQueryMsg, ValidatorPowerRatioResponse,
     };
     use neutron_std::types::ibc::applications::transfer::v1::{
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
@@ -2193,6 +2193,7 @@ mod test {
 
     fn mock_wasm_query_handler(contract_addr: &str, msg: &Binary) -> QuerierResult {
         let hydro_addr: String = make_valid_addr("hydro").into_string();
+        let tribute_addr: String = make_valid_addr("tribute").into_string();
         if contract_addr == hydro_addr {
             let query: HydroQueryMsg = match from_json(msg) {
                 Ok(q) => q,
@@ -2262,6 +2263,25 @@ mod test {
                         }], // Provide appropriate mock data here
                     })
                     .unwrap();
+                    QuerierResult::Ok(ContractResult::Ok(response))
+                }
+            }
+        } else if contract_addr == tribute_addr {
+            let query: TributeQueryMsg = match from_json(msg) {
+                Ok(q) => q,
+                Err(_) => return QuerierResult::Err(cosmwasm_std::SystemError::Unknown {}),
+            };
+            match query {
+                TributeQueryMsg::OutstandingTributeClaims {
+                    user_address,
+                    round_id,
+                    tranche_id,
+                    start_from,
+                    limit,
+                } => {
+                    let response =
+                        to_json_binary(&OutstandingTributeClaimsResponse { claims: vec![] })
+                            .unwrap();
                     QuerierResult::Ok(ContractResult::Ok(response))
                 }
             }

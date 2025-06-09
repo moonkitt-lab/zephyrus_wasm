@@ -1,6 +1,6 @@
 use crate::state::{Constants, Vessel};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Decimal;
+use cosmwasm_std::{Binary, Decimal};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -16,6 +16,12 @@ pub struct InstantiateMsg {
 #[cw_serde]
 pub struct BuildVesselParams {
     pub lock_duration: u64,
+    pub auto_maintenance: bool,
+    pub hydromancer_id: u64,
+}
+
+#[cw_serde]
+pub struct NftInfo {
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,
 }
@@ -41,6 +47,11 @@ pub enum ExecuteMsg {
     DecommissionVessels {
         hydro_lock_ids: Vec<u64>,
     },
+    Cw721ReceiveMsg {
+        sender: String,
+        token_id: String,
+        msg: Binary,
+    }
 }
 
 #[cw_serde]
@@ -81,6 +92,7 @@ pub enum QueryMsg {
     },
     #[returns(ConstantsResponse)]
     Constants {},
+
 }
 
 #[cw_serde]

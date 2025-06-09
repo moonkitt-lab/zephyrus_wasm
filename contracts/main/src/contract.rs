@@ -8,8 +8,7 @@ use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
-    VesselsResponse, VotingPowerResponse,
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, NftInfo, QueryMsg, VesselsResponse, VotingPowerResponse
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
@@ -88,6 +87,26 @@ fn extract_tokenized_share_record_id(denom_trace: &DenomTrace) -> Option<u64> {
         .base_denom
         .rsplit_once('/')
         .and_then(|(_, id_str)| id_str.parse().ok())
+}
+
+fn execute_cw721_receive_msg(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    sender: String,
+    token_id: String,
+    msg: Binary,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    let nft_info: NftInfo = from _json(&msg)?;
+
+    
+    let sender_addr = deps.api.addr_validate(&sender)?;
+    let token_id = deps.api.addr_validate(&token_id)?;
+
+    Ok(Response::default())
 }
 
 fn execute_build_vessel(
@@ -404,6 +423,9 @@ pub fn execute(
         ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
             execute_decommission_vessels(deps, env, info, hydro_lock_ids)
         }
+        ExecuteMsg::Cw721ReceiveMsg { sender, token_id, msg } => {
+            execute_cw721_receive_msg(deps, env, info, sender, token_id, msg)
+        }
     }
 }
 
@@ -541,7 +563,7 @@ fn handle_lock_tokens_reply(
     let vessel = Vessel {
         hydro_lock_id,
         class_period: lock_duration,
-        tokenized_share_record_id,
+        tokenized_share_record_id: Some(tokenized_share_record_id),
         hydromancer_id,
         auto_maintenance,
     };
@@ -1077,7 +1099,7 @@ mod test {
 
         let expected_vessel = Vessel {
             hydro_lock_id: 0,
-            tokenized_share_record_id: 10,
+            tokenized_share_record_id: Some(10),
             class_period: 3,
             auto_maintenance: false,
             hydromancer_id: 0,

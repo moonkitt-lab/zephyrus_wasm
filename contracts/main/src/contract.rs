@@ -123,8 +123,6 @@ fn execute_cw721_receive_msg(
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
-    let c : ConstantsResponse = from_json(&msg)?;
-
     //. Check if NFT come from Hydro
     if info.sender.to_string() != constants.hydro_config.hydro_contract_address.to_string() {
         return Err(ContractError::NftNotAccepted);

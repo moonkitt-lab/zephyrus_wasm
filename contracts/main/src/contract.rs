@@ -4,11 +4,13 @@ use cosmwasm_std::{
     StdResult, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens};
+use hydro_interface::msgs::{HydroConstantsResponse, RoundLockPowerSchedule, SpecificUserLockupsResponse};
+use hydro_interface::msgs::QueryMsg as HydroQueryMsg;
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, NftInfo, QueryMsg, VesselsResponse, VotingPowerResponse
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, VesselInfo, QueryMsg, VesselsResponse, VotingPowerResponse
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
@@ -89,22 +91,83 @@ fn extract_tokenized_share_record_id(denom_trace: &DenomTrace) -> Option<u64> {
         .and_then(|(_, id_str)| id_str.parse().ok())
 }
 
+fn validate_lock_duration(
+    round_lock_power_schedule: &RoundLockPowerSchedule,
+    lock_epoch_length: u64,
+    lock_duration: u64,
+) -> Result<(), ContractError> {
+    let lock_times = round_lock_power_schedule
+        .round_lock_power_schedule
+        .iter()
+        .map(|entry| entry.locked_rounds * lock_epoch_length)
+        .collect::<Vec<u64>>();
+
+    if !lock_times.contains(&lock_duration) {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Lock duration must be one of: {:?}; but was: {}",
+            lock_times, lock_duration
+        ))));
+    }
+
+    Ok(())
+}
+/// Receive Lockup as NFT and create a Vessel with some params from "msg"
 fn execute_cw721_receive_msg(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
-    sender: String,
+    _sender: String,
     token_id: String,
     msg: Binary,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
-    let nft_info: NftInfo = from _json(&msg)?;
+    let c : ConstantsResponse = from_json(&msg)?;
 
-    
-    let sender_addr = deps.api.addr_validate(&sender)?;
-    let token_id = deps.api.addr_validate(&token_id)?;
+    //. Check if NFT come from Hydro
+    if info.sender.to_string() != constants.hydro_config.hydro_contract_address.to_string() {
+        return Err(ContractError::NftNotAccepted);
+    }
+    let vessel_info: VesselInfo = from_json(&msg)?;
+    let hydro_lock_id: u64 = token_id.parse().unwrap();
+    // Check if hydromancer exists
+    if !state::hydromancer_exists(deps.storage, vessel_info.hydromancer_id) {
+        return Err(ContractError::HydromancerNotFound {
+            hydromancer_id: vessel_info.hydromancer_id,
+        });
+    }
+
+
+    let constant_response: HydroConstantsResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::Constants {  },
+    )?;
+
+    validate_lock_duration(&constant_response.constants.round_lock_power_schedule, constant_response.constants.lock_epoch_length, vessel_info.class_period)?;
+
+    let user_specific_lockups: SpecificUserLockupsResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::SpecificUserLockups{address: vessel_info.owner.to_string(), lock_ids: vec![hydro_lock_id.clone()]},
+    )?;
+    if user_specific_lockups.lockups.is_empty() {
+        return Err(ContractError::NoLockupsFoundForUser {
+            ids: token_id.to_string(),
+            user: vessel_info.owner.to_string(),
+        });
+    }
+    let lockup = user_specific_lockups.lockups[0].clone();
+
+    let vessel = Vessel {
+        hydro_lock_id,
+        class_period: vessel_info.class_period,
+        tokenized_share_record_id: None,
+        hydromancer_id: vessel_info.hydromancer_id,
+        auto_maintenance: vessel_info.auto_maintenance,
+    };
+
+    state::add_vessel(deps.storage, &vessel, &lockup.lock_entry.owner)?;
+
 
     Ok(Response::default())
 }

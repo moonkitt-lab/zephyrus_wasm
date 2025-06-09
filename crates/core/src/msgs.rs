@@ -21,9 +21,11 @@ pub struct BuildVesselParams {
 }
 
 #[cw_serde]
-pub struct NftInfo {
+pub struct VesselInfo {
+    pub owner: String,
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,
+    pub class_period: u64,
 }
 
 #[cw_serde]

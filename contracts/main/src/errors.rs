@@ -39,7 +39,7 @@ pub enum ContractError {
     #[error("Tokenized shares record with id {0} is already in use")]
     TokenizedShareRecordAlreadyInUse(u64),
 
-    #[error("Lockups {ids} notfound for user {user}")]
+    #[error("Lockups {ids} not found for user {user}")]
     NoLockupsFoundForUser { ids:String,user: String },
 
     #[error("NFT not accepted")]

@@ -8,7 +8,7 @@ import { Coin } from "@cosmjs/amino";
 import { MsgExecuteContractEncodeObject } from "@cosmjs/cosmwasm-stargate";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
@@ -41,6 +41,15 @@ export interface ZephyrusMainMsg {
   }: {
     hydroLockIds: number[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  cw721ReceiveMsg: ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   sender: string;
@@ -55,6 +64,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.pauseContract = this.pauseContract.bind(this);
     this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
+    this.cw721ReceiveMsg = this.cw721ReceiveMsg.bind(this);
   }
   buildVessel = ({
     receiver,
@@ -174,6 +184,31 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
         msg: toUtf8(JSON.stringify({
           decommission_vessels: {
             hydro_lock_ids: hydroLockIds
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  cw721ReceiveMsg = ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          cw721_receive_msg: {
+            msg,
+            sender,
+            token_id: tokenId
           }
         })),
         funds: _funds

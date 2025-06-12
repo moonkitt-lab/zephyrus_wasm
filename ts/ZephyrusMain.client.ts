@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -118,6 +118,15 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   }: {
     hydroLockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  cw721ReceiveMsg: ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
   client: SigningCosmWasmClient;
@@ -135,6 +144,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.pauseContract = this.pauseContract.bind(this);
     this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
+    this.cw721ReceiveMsg = this.cw721ReceiveMsg.bind(this);
   }
   buildVessel = async ({
     receiver,
@@ -201,6 +211,23 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     return await this.client.execute(this.sender, this.contractAddress, {
       decommission_vessels: {
         hydro_lock_ids: hydroLockIds
+      }
+    }, fee, memo, _funds);
+  };
+  cw721ReceiveMsg = async ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      cw721_receive_msg: {
+        msg,
+        sender,
+        token_id: tokenId
       }
     }, fee, memo, _funds);
   };

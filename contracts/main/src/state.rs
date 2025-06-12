@@ -155,7 +155,11 @@ pub fn add_vessel(
     }
 
     if vessel.tokenized_share_record_id.is_some() {
-        TOKENIZED_SHARE_RECORDS.save(storage, vessel.tokenized_share_record_id.unwrap(), &vessel_id)?;
+        TOKENIZED_SHARE_RECORDS.save(
+            storage,
+            vessel.tokenized_share_record_id.unwrap(),
+            &vessel_id,
+        )?;
     }
 
     Ok(())

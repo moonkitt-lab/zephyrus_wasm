@@ -18,7 +18,7 @@ pub enum ExecuteMsg {
 #[cw_serde]
 pub enum QueryMsg {
     SpecificUserLockups { address: String, lock_ids: Vec<u64> },
-    Constants{},
+    Constants {},
 }
 
 #[cw_serde]

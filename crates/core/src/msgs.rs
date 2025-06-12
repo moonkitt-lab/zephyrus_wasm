@@ -53,7 +53,7 @@ pub enum ExecuteMsg {
         sender: String,
         token_id: String,
         msg: Binary,
-    }
+    },
 }
 
 #[cw_serde]
@@ -94,7 +94,6 @@ pub enum QueryMsg {
     },
     #[returns(ConstantsResponse)]
     Constants {},
-
 }
 
 #[cw_serde]

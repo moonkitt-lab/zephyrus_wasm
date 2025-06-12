@@ -4,13 +4,16 @@ use cosmwasm_std::{
     StdResult, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens};
-use hydro_interface::msgs::{HydroConstantsResponse, RoundLockPowerSchedule, SpecificUserLockupsResponse};
 use hydro_interface::msgs::QueryMsg as HydroQueryMsg;
+use hydro_interface::msgs::{
+    HydroConstantsResponse, RoundLockPowerSchedule, SpecificUserLockupsResponse,
+};
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, VesselInfo, QueryMsg, VesselsResponse, VotingPowerResponse
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
+    VesselInfo, VesselsResponse, VotingPowerResponse,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
@@ -135,18 +138,22 @@ fn execute_cw721_receive_msg(
             hydromancer_id: vessel_info.hydromancer_id,
         });
     }
-
-
     let constant_response: HydroConstantsResponse = deps.querier.query_wasm_smart(
         constants.hydro_config.hydro_contract_address.to_string(),
-        &HydroQueryMsg::Constants {  },
+        &HydroQueryMsg::Constants {},
     )?;
-
-    validate_lock_duration(&constant_response.constants.round_lock_power_schedule, constant_response.constants.lock_epoch_length, vessel_info.class_period)?;
+    validate_lock_duration(
+        &constant_response.constants.round_lock_power_schedule,
+        constant_response.constants.lock_epoch_length,
+        vessel_info.class_period,
+    )?;
 
     let user_specific_lockups: SpecificUserLockupsResponse = deps.querier.query_wasm_smart(
         constants.hydro_config.hydro_contract_address.to_string(),
-        &HydroQueryMsg::SpecificUserLockups{address: vessel_info.owner.to_string(), lock_ids: vec![hydro_lock_id]},
+        &HydroQueryMsg::SpecificUserLockups {
+            address: vessel_info.owner.to_string(),
+            lock_ids: vec![hydro_lock_id],
+        },
     )?;
     if user_specific_lockups.lockups.is_empty() {
         return Err(ContractError::NoLockupsFoundForUser {
@@ -163,10 +170,7 @@ fn execute_cw721_receive_msg(
         hydromancer_id: vessel_info.hydromancer_id,
         auto_maintenance: vessel_info.auto_maintenance,
     };
-
     state::add_vessel(deps.storage, &vessel, &lockup.lock_entry.owner)?;
-
-
     Ok(Response::default())
 }
 
@@ -484,9 +488,11 @@ pub fn execute(
         ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
             execute_decommission_vessels(deps, env, info, hydro_lock_ids)
         }
-        ExecuteMsg::Cw721ReceiveMsg { sender, token_id, msg } => {
-            execute_cw721_receive_msg(deps, env, info, sender, token_id, msg)
-        }
+        ExecuteMsg::Cw721ReceiveMsg {
+            sender,
+            token_id,
+            msg,
+        } => execute_cw721_receive_msg(deps, env, info, sender, token_id, msg),
     }
 }
 

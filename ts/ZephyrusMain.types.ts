@@ -38,7 +38,14 @@ export type ExecuteMsg = {
   decommission_vessels: {
     hydro_lock_ids: number[];
   };
+} | {
+  cw721_receive_msg: {
+    msg: Binary;
+    sender: string;
+    token_id: string;
+  };
 };
+export type Binary = string;
 export interface BuildVesselParams {
   auto_maintenance: boolean;
   hydromancer_id: number;
@@ -85,7 +92,7 @@ export interface Vessel {
   class_period: number;
   hydro_lock_id: number;
   hydromancer_id: number;
-  tokenized_share_record_id: number;
+  tokenized_share_record_id?: number | null;
 }
 export interface VotingPowerResponse {
   voting_power: number;

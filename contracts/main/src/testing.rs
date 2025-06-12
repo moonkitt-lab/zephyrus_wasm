@@ -1,16 +1,16 @@
 #[cfg(test)]
 mod tests {
-
-    use cosmwasm_std::{
-        testing::{message_info, mock_dependencies, mock_env, MockApi, MockQuerier}, to_json_binary, Addr, Binary, Coin, ContractResult, Decimal, Empty, MemoryStorage, MessageInfo, OwnedDeps, SystemError, SystemResult, WasmQuery
-    };
-    use zephyrus_core::msgs::{BuildVesselParams, ExecuteMsg, InstantiateMsg, VesselInfo};
-    use serde_json;
-
     use crate::{
         contract::{execute, instantiate},
         errors::ContractError,
     };
+    use cosmwasm_std::{
+        testing::{message_info, mock_dependencies, mock_env, MockApi, MockQuerier},
+        to_json_binary, Addr, Binary, Coin, ContractResult, Decimal, Empty, MemoryStorage,
+        MessageInfo, OwnedDeps, SystemError, SystemResult, WasmQuery,
+    };
+    use serde_json;
+    use zephyrus_core::msgs::{BuildVesselParams, ExecuteMsg, InstantiateMsg, VesselInfo};
 
     pub const IBC_DENOM_1: &str =
         "ibc/0EA38305D72BE22FD87E7C0D1002D36D59B59BC3C863078A54550F8E50C50EEE";
@@ -18,8 +18,6 @@ mod tests {
     pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
         mock_api.addr_make(addr).to_string()
     }
-
-
 
     #[test]
     fn instantiate_test() {
@@ -192,7 +190,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_cw721_receive_nft_fail_collection_not_accepted() {
         let (mut deps, env) = (mock_dependencies(), mock_env());
@@ -203,21 +200,22 @@ mod tests {
         let sender = deps.api.addr_make("sender");
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
-        let info = MessageInfo{
+        let info = MessageInfo {
             sender: fake_nft_contract_address.clone(),
             funds: vec![],
         };
-        let msg = ExecuteMsg::Cw721ReceiveMsg{
+        let msg = ExecuteMsg::Cw721ReceiveMsg {
             sender: sender.to_string(),
             token_id: "1".to_string(),
             msg: Binary::from("{}".as_bytes()),
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_err());
-        assert_eq!(res.unwrap_err().to_string(), ContractError::NftNotAccepted.to_string());
-
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            ContractError::NftNotAccepted.to_string()
+        );
     }
-
 
     #[test]
     fn test_cw721_receive_nft_fail_bad_period() {
@@ -230,28 +228,29 @@ mod tests {
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
-        mock_hydro_contract(&mut deps,false);
-        let info = MessageInfo{
+        mock_hydro_contract(&mut deps, false);
+        let info = MessageInfo {
             sender: hydro_contract.clone(),
             funds: vec![],
         };
-        let vessel_info = VesselInfo{
+        let vessel_info = VesselInfo {
             owner: sender.to_string(),
             auto_maintenance: true,
             hydromancer_id: 0,
             class_period: 31,
         };
-        let msg = ExecuteMsg::Cw721ReceiveMsg{
+        let msg = ExecuteMsg::Cw721ReceiveMsg {
             sender: sender.to_string(),
             token_id: "1".to_string(),
             msg: to_json_binary(&vessel_info).unwrap(),
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("Lock duration must be one of: [10, 20, 30]; but was: 31"));
-
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("Lock duration must be one of: [10, 20, 30]; but was: 31"));
     }
-
 
     #[test]
     fn test_cw721_receive_nft_fail_not_owner() {
@@ -264,29 +263,29 @@ mod tests {
 
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
-        mock_hydro_contract(&mut deps,true);
-        let info = MessageInfo{
+        mock_hydro_contract(&mut deps, true);
+        let info = MessageInfo {
             sender: hydro_contract.clone(),
             funds: vec![],
         };
-        let vessel_info = VesselInfo{
+        let vessel_info = VesselInfo {
             owner: sender.to_string(),
             auto_maintenance: true,
             hydromancer_id: 0,
             class_period: 30,
         };
-        let msg = ExecuteMsg::Cw721ReceiveMsg{
+        let msg = ExecuteMsg::Cw721ReceiveMsg {
             sender: sender.to_string(),
             token_id: "2".to_string(),
             msg: to_json_binary(&vessel_info).unwrap(),
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("Lockups 2 not found for user"));
-
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("Lockups 2 not found for user"));
     }
-
-
 
     #[test]
     fn test_cw721_receive_nft_fail_succeed() {
@@ -300,33 +299,30 @@ mod tests {
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         assert!(res.is_ok());
         mock_hydro_contract(&mut deps, false);
-        let info = MessageInfo{
+        let info = MessageInfo {
             sender: hydro_contract.clone(),
             funds: vec![],
         };
-        let vessel_info = VesselInfo{
+        let vessel_info = VesselInfo {
             owner: sender.to_string(),
             auto_maintenance: true,
             hydromancer_id: 0,
             class_period: 30,
         };
-        let msg = ExecuteMsg::Cw721ReceiveMsg{
+        let msg = ExecuteMsg::Cw721ReceiveMsg {
             sender: sender.to_string(),
             token_id: "1".to_string(),
             msg: to_json_binary(&vessel_info).unwrap(),
         };
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_ok());
-
     }
-
 
     fn mock_hydro_contract(
         deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier<Empty>>,
         error_specific_user_lockups: bool,
     ) {
         let hydro_constants_response = r#"{"constants":{"round_length":10,"lock_epoch_length":10,"first_round_start":"1000000000000000000","max_locked_tokens":10,"known_users_cap":10,"paused":false,"max_deployment_duration":10,"round_lock_power_schedule":{"round_lock_power_schedule":[{"locked_rounds":1,"power_scaling_factor":"1"},{"locked_rounds":2,"power_scaling_factor":"1.25"},{"locked_rounds":3,"power_scaling_factor":"1.5"}]},"cw721_collection_info":{"name":"hydro","symbol":"test"}}}"#;
-        
         // Mock the Hydro contract responses
         deps.querier.update_wasm(
             move |msg| {
@@ -336,7 +332,6 @@ mod tests {
                     WasmQuery::ContractInfo { .. } => "".to_string(),
                     _ => "".to_string(),
                 };
-                
                 if msg_str.contains("constants") {
                     let response = serde_json::from_str::<hydro_interface::msgs::HydroConstantsResponse>(hydro_constants_response).unwrap();
                     SystemResult::Ok(ContractResult::Ok(to_json_binary(&response).unwrap()))
@@ -355,5 +350,4 @@ mod tests {
                 }
             });
     }
-
 }

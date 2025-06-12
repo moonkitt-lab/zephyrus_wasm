@@ -146,7 +146,7 @@ fn execute_cw721_receive_msg(
 
     let user_specific_lockups: SpecificUserLockupsResponse = deps.querier.query_wasm_smart(
         constants.hydro_config.hydro_contract_address.to_string(),
-        &HydroQueryMsg::SpecificUserLockups{address: vessel_info.owner.to_string(), lock_ids: vec![hydro_lock_id.clone()]},
+        &HydroQueryMsg::SpecificUserLockups{address: vessel_info.owner.to_string(), lock_ids: vec![hydro_lock_id]},
     )?;
     if user_specific_lockups.lockups.is_empty() {
         return Err(ContractError::NoLockupsFoundForUser {

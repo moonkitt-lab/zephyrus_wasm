@@ -2,8 +2,7 @@
 mod tests {
 
     use cosmwasm_std::{
-        testing::{message_info, mock_dependencies, mock_env, MockApi},
-        Addr, Coin, Decimal,
+        testing::{message_info, mock_dependencies, mock_env, MockApi}, Addr, Binary, Coin, Decimal, MessageInfo
     };
     use zephyrus_core::msgs::{BuildVesselParams, ExecuteMsg, InstantiateMsg};
 
@@ -18,6 +17,8 @@ mod tests {
     pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
         mock_api.addr_make(addr).to_string()
     }
+
+
 
     #[test]
     fn instantiate_test() {
@@ -189,4 +190,58 @@ mod tests {
             "Generic error: Cannot unpause: Contract not paused"
         );
     }
+
+
+    #[test]
+    fn test_cw721_receive_nft_fail_collection_not_accepted() {
+        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let admin_address = get_address_as_str(&deps.api, "addr0000");
+        let info = message_info(&Addr::unchecked("sender"), &[]);
+        let msg = get_default_instantiate_msg(&deps, admin_address.to_string());
+        let fake_nft_contract_address = deps.api.addr_make("fake_nft_contract_address");
+        let sender = deps.api.addr_make("sender");
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        let info = MessageInfo{
+            sender: fake_nft_contract_address.clone(),
+            funds: vec![],
+        };
+        let msg = ExecuteMsg::Cw721ReceiveMsg{
+            sender: sender.to_string(),
+            token_id: "1".to_string(),
+            msg: Binary::from("{}".as_bytes()),
+        };
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), ContractError::NftNotAccepted.to_string());
+
+    }
+
+
+    #[test]
+    fn test_cw721_receive_nft() {
+        let (mut deps, env) = (mock_dependencies(), mock_env());
+        let admin_address = get_address_as_str(&deps.api, "addr0000");
+        let info = message_info(&Addr::unchecked("sender"), &[]);
+        let msg = get_default_instantiate_msg(&deps, admin_address.to_string());
+        let fake_nft_contract_address = deps.api.addr_make("fake_nft_contract_address");
+        let sender = deps.api.addr_make("sender");
+
+        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        let info = MessageInfo{
+            sender: fake_nft_contract_address.clone(),
+            funds: vec![],
+        };
+        let msg = ExecuteMsg::Cw721ReceiveMsg{
+            sender: sender.to_string(),
+            token_id: "1".to_string(),
+            msg: Binary::from("{}".as_bytes()),
+        };
+        let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), ContractError::NftNotAccepted.to_string());
+
+    }
+
+
 }

@@ -199,7 +199,7 @@ mod tests {
         let fake_nft_contract_address = deps.api.addr_make("fake_nft_contract_address");
         let sender = deps.api.addr_make("sender");
 
-        let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+        let _res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
         let info = MessageInfo {
             sender: fake_nft_contract_address.clone(),
             funds: vec![],

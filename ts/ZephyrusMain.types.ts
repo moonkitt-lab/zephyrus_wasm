@@ -39,17 +39,18 @@ export type ExecuteMsg = {
     hydro_lock_ids: number[];
   };
 } | {
-  cw721_receive_msg: {
-    msg: Binary;
-    sender: string;
-    token_id: string;
-  };
+  receive_nft: Cw721ReceiveMsg;
 };
 export type Binary = string;
 export interface BuildVesselParams {
   auto_maintenance: boolean;
   hydromancer_id: number;
   lock_duration: number;
+}
+export interface Cw721ReceiveMsg {
+  msg: Binary;
+  sender: string;
+  token_id: string;
 }
 export type QueryMsg = {
   voting_power: {};

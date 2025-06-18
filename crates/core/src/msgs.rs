@@ -29,6 +29,13 @@ pub struct VesselInfo {
 }
 
 #[cw_serde]
+pub struct Cw721ReceiveMsg {
+    pub sender: String,
+    pub token_id: String,
+    pub msg: Binary,
+}
+
+#[cw_serde]
 pub enum ExecuteMsg {
     // TODO: Determine message variants
     BuildVessel {
@@ -49,11 +56,7 @@ pub enum ExecuteMsg {
     DecommissionVessels {
         hydro_lock_ids: Vec<u64>,
     },
-    Cw721ReceiveMsg {
-        sender: String,
-        token_id: String,
-        msg: Binary,
-    },
+    ReceiveNft(Cw721ReceiveMsg),
 }
 
 #[cw_serde]

@@ -10,7 +10,9 @@ mod tests {
         MessageInfo, OwnedDeps, SystemError, SystemResult, WasmQuery,
     };
     use serde_json;
-    use zephyrus_core::msgs::{BuildVesselParams, ExecuteMsg, InstantiateMsg, VesselInfo};
+    use zephyrus_core::msgs::{
+        BuildVesselParams, Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg, VesselInfo,
+    };
 
     pub const IBC_DENOM_1: &str =
         "ibc/0EA38305D72BE22FD87E7C0D1002D36D59B59BC3C863078A54550F8E50C50EEE";
@@ -204,11 +206,12 @@ mod tests {
             sender: fake_nft_contract_address.clone(),
             funds: vec![],
         };
-        let msg = ExecuteMsg::Cw721ReceiveMsg {
+        let receive_msg = Cw721ReceiveMsg {
             sender: sender.to_string(),
             token_id: "1".to_string(),
             msg: Binary::from("{}".as_bytes()),
         };
+        let msg = ExecuteMsg::ReceiveNft(receive_msg);
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_err());
         assert_eq!(
@@ -239,11 +242,12 @@ mod tests {
             hydromancer_id: 0,
             class_period: 31,
         };
-        let msg = ExecuteMsg::Cw721ReceiveMsg {
+        let receive_msg = Cw721ReceiveMsg {
             sender: sender.to_string(),
             token_id: "1".to_string(),
             msg: to_json_binary(&vessel_info).unwrap(),
         };
+        let msg = ExecuteMsg::ReceiveNft(receive_msg);
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_err());
         assert!(res
@@ -274,21 +278,24 @@ mod tests {
             hydromancer_id: 0,
             class_period: 30,
         };
-        let msg = ExecuteMsg::Cw721ReceiveMsg {
+
+        let receive_msg = Cw721ReceiveMsg {
             sender: sender.to_string(),
             token_id: "2".to_string(),
             msg: to_json_binary(&vessel_info).unwrap(),
         };
+        let msg = ExecuteMsg::ReceiveNft(receive_msg);
+
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_err());
         assert!(res
             .unwrap_err()
             .to_string()
-            .contains("Lockups 2 not found for user"));
+            .contains("Lockup 2 not owned by Zephyrus"));
     }
 
     #[test]
-    fn test_cw721_receive_nft_fail_succeed() {
+    fn test_cw721_receive_nft_succeed() {
         let (mut deps, env) = (mock_dependencies(), mock_env());
         let admin_address = get_address_as_str(&deps.api, "addr0000");
         let info = message_info(&Addr::unchecked("sender"), &[]);
@@ -309,11 +316,13 @@ mod tests {
             hydromancer_id: 0,
             class_period: 30,
         };
-        let msg = ExecuteMsg::Cw721ReceiveMsg {
+        let receive_msg = Cw721ReceiveMsg {
             sender: sender.to_string(),
             token_id: "1".to_string(),
             msg: to_json_binary(&vessel_info).unwrap(),
         };
+        let msg = ExecuteMsg::ReceiveNft(receive_msg);
+
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
         assert!(res.is_ok());
     }

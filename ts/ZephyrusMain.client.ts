@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -118,7 +118,7 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   }: {
     hydroLockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  cw721ReceiveMsg: ({
+  receiveNft: ({
     msg,
     sender,
     tokenId
@@ -144,7 +144,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.pauseContract = this.pauseContract.bind(this);
     this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
-    this.cw721ReceiveMsg = this.cw721ReceiveMsg.bind(this);
+    this.receiveNft = this.receiveNft.bind(this);
   }
   buildVessel = async ({
     receiver,
@@ -214,7 +214,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
       }
     }, fee, memo, _funds);
   };
-  cw721ReceiveMsg = async ({
+  receiveNft = async ({
     msg,
     sender,
     tokenId
@@ -224,7 +224,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     tokenId: string;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      cw721_receive_msg: {
+      receive_nft: {
         msg,
         sender,
         token_id: tokenId

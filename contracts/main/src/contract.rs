@@ -115,9 +115,9 @@ fn validate_lock_duration(
     Ok(())
 }
 /// Receive Lockup as NFT and create a Vessel with some params from "msg"
-fn execute_cw721_receive_msg(
+fn execute_receive_nft(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     _sender: String,
     token_id: String,
@@ -126,18 +126,30 @@ fn execute_cw721_receive_msg(
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
-    //. Check if NFT come from Hydro
+    // We don't use `sender` to determine who the owner should be, because
+    // sender can be any operator or approved person on the NFT,
+    // and we let that sender fill whatever they want as `owner` in `VesselInfo`
+    // By checking that the NFT comes from Hydro, it is enough to ensure that the sender has permissions
+
+    // 1. Check that NFT comes from Hydro
     if info.sender.to_string() != constants.hydro_config.hydro_contract_address.to_string() {
         return Err(ContractError::NftNotAccepted);
     }
+
     let vessel_info: VesselInfo = from_json(&msg)?;
     let hydro_lock_id: u64 = token_id.parse().unwrap();
-    // Check if hydromancer exists
+
+    // 2. Check that owner is a valid address
+    let owner_addr = deps.api.addr_validate(&vessel_info.owner)?;
+
+    // 3. Check that Hydromancer exists
     if !state::hydromancer_exists(deps.storage, vessel_info.hydromancer_id) {
         return Err(ContractError::HydromancerNotFound {
             hydromancer_id: vessel_info.hydromancer_id,
         });
     }
+
+    // 4. Check that class_period represents a valid lock duration
     let constant_response: HydroConstantsResponse = deps.querier.query_wasm_smart(
         constants.hydro_config.hydro_contract_address.to_string(),
         &HydroQueryMsg::Constants {},
@@ -148,21 +160,21 @@ fn execute_cw721_receive_msg(
         vessel_info.class_period,
     )?;
 
+    // 5. Check that we are owner of the lockup (as transfer happens before calling Zephyrus' Cw721ReceiveMsg)
     let user_specific_lockups: SpecificUserLockupsResponse = deps.querier.query_wasm_smart(
         constants.hydro_config.hydro_contract_address.to_string(),
         &HydroQueryMsg::SpecificUserLockups {
-            address: vessel_info.owner.to_string(),
+            address: env.contract.address.to_string(),
             lock_ids: vec![hydro_lock_id],
         },
     )?;
     if user_specific_lockups.lockups.is_empty() {
-        return Err(ContractError::NoLockupsFoundForUser {
-            ids: token_id.to_string(),
-            user: vessel_info.owner.to_string(),
+        return Err(ContractError::LockupNotOwned {
+            id: token_id.to_string(),
         });
     }
-    let lockup = user_specific_lockups.lockups[0].clone();
 
+    // 6. Store the vessel in state
     let vessel = Vessel {
         hydro_lock_id,
         class_period: vessel_info.class_period,
@@ -170,7 +182,8 @@ fn execute_cw721_receive_msg(
         hydromancer_id: vessel_info.hydromancer_id,
         auto_maintenance: vessel_info.auto_maintenance,
     };
-    state::add_vessel(deps.storage, &vessel, &lockup.lock_entry.owner)?;
+    state::add_vessel(deps.storage, &vessel, &owner_addr)?;
+
     Ok(Response::default())
 }
 
@@ -488,11 +501,14 @@ pub fn execute(
         ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
             execute_decommission_vessels(deps, env, info, hydro_lock_ids)
         }
-        ExecuteMsg::Cw721ReceiveMsg {
-            sender,
-            token_id,
-            msg,
-        } => execute_cw721_receive_msg(deps, env, info, sender, token_id, msg),
+        ExecuteMsg::ReceiveNft(receive_msg) => execute_receive_nft(
+            deps,
+            env,
+            info,
+            receive_msg.sender,
+            receive_msg.token_id,
+            receive_msg.msg,
+        ),
     }
 }
 

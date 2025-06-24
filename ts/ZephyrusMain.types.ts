@@ -48,7 +48,10 @@ export type ExecuteMsg = {
     tranche_id: number;
     vessels_harbors: VesselsToHarbor[];
   };
+} | {
+  receive_nft: Cw721ReceiveMsg;
 };
+export type Binary = string;
 export interface BuildVesselParams {
   auto_maintenance: boolean;
   hydromancer_id: number;
@@ -57,6 +60,11 @@ export interface BuildVesselParams {
 export interface VesselsToHarbor {
   harbor_id: number;
   vessel_ids: number[];
+}
+export interface Cw721ReceiveMsg {
+  msg: Binary;
+  sender: string;
+  token_id: string;
 }
 export type QueryMsg = {
   voting_power: {};
@@ -106,7 +114,7 @@ export interface Vessel {
   hydro_lock_id: number;
   hydromancer_id: number;
   owner_id: number;
-  tokenized_share_record_id: number;
+  tokenized_share_record_id?: number | null;
 }
 export interface VesselHarborResponse {
   vessels_harbor_info: VesselHarborInfo[];

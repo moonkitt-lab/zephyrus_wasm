@@ -60,6 +60,12 @@ pub enum ContractError {
     #[error("Tokenized shares record with id {0} is already in use")]
     TokenizedShareRecordAlreadyInUse(u64),
 
+    #[error("Lockup {id} not owned by Zephyrus")]
+    LockupNotOwned { id: String },
+
+    #[error("NFT not accepted")]
+    NftNotAccepted,
+
     #[error("Duplicate Harbor ID: {harbor_id}")]
     VoteDuplicatedHarborId { harbor_id: u64 },
 

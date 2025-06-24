@@ -5,17 +5,18 @@ use cosmwasm_std::{
     Coin, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse, StdError,
     StdResult, SubMsg, WasmMsg,
 };
+
 use hydro_interface::msgs::ExecuteMsg::{
     LockTokens, RefreshLockDuration, UnlockTokens, Unvote, Vote,
 };
-use hydro_interface::msgs::{CurrentRoundResponse, HydroQueryMsg, ProposalToLockups};
+use hydro_interface::msgs::{CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, ProposalToLockups, RoundLockPowerSchedule, SpecificUserLockupsResponse};
+
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg,
-    QueryMsg, RoundId, VesselHarborInfo, VesselHarborResponse, VesselsResponse, VesselsToHarbor,
-    VotingPowerResponse,
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg, QueryMsg, RoundId, VesselHarborInfo, VesselHarborResponse, VesselInfo, VesselsResponse, VesselsToHarbor, VotingPowerResponse
+
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
@@ -105,6 +106,102 @@ fn extract_tokenized_share_record_id(denom_trace: &DenomTrace) -> Option<u64> {
         .base_denom
         .rsplit_once('/')
         .and_then(|(_, id_str)| id_str.parse().ok())
+}
+
+fn validate_lock_duration(
+    round_lock_power_schedule: &RoundLockPowerSchedule,
+    lock_epoch_length: u64,
+    lock_duration: u64,
+) -> Result<(), ContractError> {
+    let lock_times = round_lock_power_schedule
+        .round_lock_power_schedule
+        .iter()
+        .map(|entry| entry.locked_rounds * lock_epoch_length)
+        .collect::<Vec<u64>>();
+
+    if !lock_times.contains(&lock_duration) {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Lock duration must be one of: {:?}; but was: {}",
+            lock_times, lock_duration
+        ))));
+    }
+
+    Ok(())
+}
+/// Receive Lockup as NFT and create a Vessel with some params from "msg"
+fn execute_receive_nft(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    _sender: String,
+    token_id: String,
+    msg: Binary,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    // We don't use `sender` to determine who the owner should be, because
+    // sender can be any operator or approved person on the NFT,
+    // and we let that sender fill whatever they want as `owner` in `VesselInfo`
+    // By checking that the NFT comes from Hydro, it is enough to ensure that the sender has permissions
+
+    // 1. Check that NFT comes from Hydro
+    if info.sender.to_string() != constants.hydro_config.hydro_contract_address.to_string() {
+        return Err(ContractError::NftNotAccepted);
+    }
+
+    let vessel_info: VesselInfo = from_json(&msg)?;
+    let hydro_lock_id: u64 = token_id.parse().unwrap();
+
+    // 2. Check that owner is a valid address
+    let owner_addr = deps.api.addr_validate(&vessel_info.owner)?;
+
+    // 3. Check that Hydromancer exists
+    if !state::hydromancer_exists(deps.storage, vessel_info.hydromancer_id) {
+        return Err(ContractError::HydromancerNotFound {
+            hydromancer_id: vessel_info.hydromancer_id,
+        });
+    }
+
+    // 4. Check that class_period represents a valid lock duration
+    let constant_response: HydroConstantsResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::Constants{},
+    )?;
+    validate_lock_duration(
+        &constant_response.constants.round_lock_power_schedule,
+        constant_response.constants.lock_epoch_length,
+        vessel_info.class_period,
+    )?;
+
+    // 5. Check that we are owner of the lockup (as transfer happens before calling Zephyrus' Cw721ReceiveMsg)
+    let user_specific_lockups: SpecificUserLockupsResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::SpecificUserLockups {
+            address: env.contract.address.to_string(),
+            lock_ids: vec![hydro_lock_id],
+        },
+    )?;
+    if user_specific_lockups.lockups.is_empty() {
+        return Err(ContractError::LockupNotOwned {
+            id: token_id.to_string(),
+        });
+    }
+
+    let owner_id = state::get_user_id_by_address(deps.storage, owner_addr.clone())?;
+
+    // 6. Store the vessel in state
+    let vessel = Vessel {
+        hydro_lock_id,
+        class_period: vessel_info.class_period,
+        tokenized_share_record_id: None,
+        hydromancer_id: vessel_info.hydromancer_id,
+        auto_maintenance: vessel_info.auto_maintenance,
+        owner_id,
+    };
+    state::add_vessel(deps.storage, &vessel, &owner_addr)?;
+
+    Ok(Response::default())
 }
 
 fn execute_build_vessel(
@@ -619,6 +716,7 @@ pub fn execute(
         ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
             execute_decommission_vessels(deps, env, info, hydro_lock_ids)
         }
+
         ExecuteMsg::HydromancerVote {
             tranche_id,
             vessels_harbors,
@@ -627,6 +725,15 @@ pub fn execute(
             tranche_id,
             vessels_harbors,
         } => execute_user_vote(deps, info, tranche_id, vessels_harbors),
+
+        ExecuteMsg::ReceiveNft(receive_msg) => execute_receive_nft(
+            deps,
+            env,
+            info,
+            receive_msg.sender,
+            receive_msg.token_id,
+            receive_msg.msg,
+        ),
     }
 }
 
@@ -925,7 +1032,7 @@ fn handle_lock_tokens_reply(
     let vessel = Vessel {
         hydro_lock_id,
         class_period: lock_duration,
-        tokenized_share_record_id,
+        tokenized_share_record_id: Some(tokenized_share_record_id),
         hydromancer_id,
         auto_maintenance,
         owner_id,
@@ -1127,7 +1234,7 @@ mod test {
         WasmMsg, WasmQuery,
     };
     use hydro_interface::msgs::{
-        CurrentRoundResponse, ExecuteMsg as HydroExecuteMsg, HydroQueryMsg,
+        CurrentRoundResponse, ExecuteMsg as HydroExecuteMsg, HydroQueryMsg
     };
     use neutron_std::types::ibc::applications::transfer::v1::{
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
@@ -1167,6 +1274,12 @@ mod test {
                     })
                     .unwrap();
                     QuerierResult::Ok(ContractResult::Ok(response))
+                }
+                HydroQueryMsg::Constants {} => {
+                    QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
+                }
+                HydroQueryMsg::SpecificUserLockups { .. } => {
+                    QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
                 }
             }
         } else {
@@ -1343,7 +1456,7 @@ mod test {
             deps.as_mut().storage,
             &Vessel {
                 hydro_lock_id: 0,
-                tokenized_share_record_id: 0,
+                tokenized_share_record_id: Some(0),
                 class_period: 12,
                 auto_maintenance: true,
                 hydromancer_id: alice_hydromancer_id,
@@ -1391,7 +1504,7 @@ mod test {
             deps.as_mut().storage,
             &Vessel {
                 hydro_lock_id: 0,
-                tokenized_share_record_id: 0,
+                tokenized_share_record_id: Some(0),
                 class_period: 12,
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
@@ -1446,7 +1559,7 @@ mod test {
             deps.as_mut().storage,
             &Vessel {
                 hydro_lock_id: 0,
-                tokenized_share_record_id: 0,
+                tokenized_share_record_id: Some(0),
                 class_period: 12,
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
@@ -1564,7 +1677,7 @@ mod test {
             deps.as_mut().storage,
             &Vessel {
                 hydro_lock_id: 0,
-                tokenized_share_record_id: 0,
+                tokenized_share_record_id: Some(0),
                 class_period: 12,
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
@@ -1664,7 +1777,7 @@ mod test {
             deps.as_mut().storage,
             &Vessel {
                 hydro_lock_id: 0,
-                tokenized_share_record_id: 0,
+                tokenized_share_record_id: Some(0),
                 class_period: 12,
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
@@ -2088,7 +2201,7 @@ mod test {
             .expect("Should add user");
         let expected_vessel = Vessel {
             hydro_lock_id: 0,
-            tokenized_share_record_id: 10,
+            tokenized_share_record_id: Some(10),
             class_period: 3,
             auto_maintenance: false,
             hydromancer_id: 0,
@@ -2255,7 +2368,7 @@ mod test {
             deps.as_mut().storage,
             &Vessel {
                 hydro_lock_id: 0,
-                tokenized_share_record_id: 0,
+                tokenized_share_record_id: Some(0),
                 class_period: 12,
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
@@ -2303,7 +2416,7 @@ mod test {
             deps.as_mut().storage,
             &Vessel {
                 hydro_lock_id: 0,
-                tokenized_share_record_id: 0,
+                tokenized_share_record_id: Some(0),
                 class_period: 12,
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
@@ -2403,7 +2516,7 @@ mod test {
             deps.as_mut().storage,
             &Vessel {
                 hydro_lock_id: 0,
-                tokenized_share_record_id: 0,
+                tokenized_share_record_id: Some(0),
                 class_period: 12,
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,

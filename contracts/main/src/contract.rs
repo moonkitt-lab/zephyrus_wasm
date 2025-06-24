@@ -187,10 +187,14 @@ fn execute_receive_nft(
             id: token_id.to_string(),
         });
     }
+    // 6. Owner could be a new user, so we need to insert it in state
+    let mut owner_id = state::get_user_id_by_address(deps.storage, owner_addr.clone());
+    if owner_id.is_err() {
+        owner_id = state::insert_new_user(deps.storage, owner_addr.clone());
+    }
+    let owner_id = owner_id.expect("Owner id should be present");
 
-    let owner_id = state::get_user_id_by_address(deps.storage, owner_addr.clone())?;
-
-    // 6. Store the vessel in state
+    // 7. Store the vessel in state
     let vessel = Vessel {
         hydro_lock_id,
         class_period: vessel_info.class_period,

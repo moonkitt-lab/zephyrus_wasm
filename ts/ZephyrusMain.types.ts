@@ -50,6 +50,12 @@ export type ExecuteMsg = {
   };
 } | {
   receive_nft: Cw721ReceiveMsg;
+} | {
+  change_hydromancer: {
+    hydro_lock_ids: number[];
+    hydromancer_id: number;
+    tranche_id: number;
+  };
 };
 export type Binary = string;
 export interface BuildVesselParams {

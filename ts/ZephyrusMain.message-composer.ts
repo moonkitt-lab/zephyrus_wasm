@@ -64,6 +64,15 @@ export interface ZephyrusMainMsg {
     sender: string;
     tokenId: string;
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  changeHydromancer: ({
+    hydroLockIds,
+    hydromancerId,
+    trancheId
+  }: {
+    hydroLockIds: number[];
+    hydromancerId: number;
+    trancheId: number;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   sender: string;
@@ -81,6 +90,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.hydromancerVote = this.hydromancerVote.bind(this);
     this.userVote = this.userVote.bind(this);
     this.receiveNft = this.receiveNft.bind(this);
+    this.changeHydromancer = this.changeHydromancer.bind(this);
   }
   buildVessel = ({
     receiver,
@@ -269,6 +279,31 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
             msg,
             sender,
             token_id: tokenId
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  changeHydromancer = ({
+    hydroLockIds,
+    hydromancerId,
+    trancheId
+  }: {
+    hydroLockIds: number[];
+    hydromancerId: number;
+    trancheId: number;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          change_hydromancer: {
+            hydro_lock_ids: hydroLockIds,
+            hydromancer_id: hydromancerId,
+            tranche_id: trancheId
           }
         })),
         funds: _funds

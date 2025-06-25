@@ -79,6 +79,11 @@ pub enum ExecuteMsg {
         vessels_harbors: Vec<VesselsToHarbor>,
     },
     ReceiveNft(Cw721ReceiveMsg),
+    ChangeHydromancer {
+        tranche_id: TrancheId,
+        hydromancer_id: HydromancerId,
+        hydro_lock_ids: Vec<u64>,
+    },
 }
 
 #[cw_serde]

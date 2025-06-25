@@ -599,6 +599,60 @@ fn execute_hydromancer_vote(
     Ok(response)
 }
 
+fn execute_change_hydromancer(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche_id: u64,
+    hydromancer_id: u64,
+    hydro_lock_ids: Vec<u64>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    state::get_hydromancer(deps.storage, hydromancer_id)?;
+    let current_round_id = query_hydro_current_round(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
+
+    for hydro_lock_id in hydro_lock_ids.iter() {
+        state::change_vessel_hydromancer(
+            deps.storage,
+            tranche_id,
+            *hydro_lock_id,
+            current_round_id,
+            hydromancer_id,
+        )?;
+    }
+    let unvote_msg = Unvote {
+        tranche_id,
+        lock_ids: hydro_lock_ids.clone(),
+    };
+
+    let execute_unvote_msg = WasmMsg::Execute {
+        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&unvote_msg)?,
+        funds: vec![],
+    };
+
+    Ok(Response::new()
+        .add_message(execute_unvote_msg)
+        .add_attribute("action", "change_hydromancer")
+        .add_attribute("new_hydromancer_id", hydromancer_id.to_string())
+        .add_attribute(
+            "hydro_lock_id",
+            hydro_lock_ids
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ))
+}
+
 fn execute_user_vote(
     deps: DepsMut,
     info: MessageInfo,
@@ -738,6 +792,11 @@ pub fn execute(
             receive_msg.token_id,
             receive_msg.msg,
         ),
+        ExecuteMsg::ChangeHydromancer {
+            tranche_id,
+            hydromancer_id,
+            hydro_lock_ids,
+        } => execute_change_hydromancer(deps, info, tranche_id, hydromancer_id, hydro_lock_ids),
     }
 }
 
@@ -2688,5 +2747,406 @@ mod test {
             .unwrap_err(),
             ContractError::VoteDuplicatedHarborId { harbor_id: 1 }
         );
+    }
+
+    #[test]
+    fn change_hydromancer_for_unexisting_vessel_fail() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        assert_eq!(
+            super::execute_change_hydromancer(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("alice"),
+                    funds: vec![]
+                },
+                1,
+                1,
+                vec![0]
+            )
+            .unwrap_err(),
+            ContractError::Unauthorized {}
+        );
+    }
+
+    #[test]
+    fn change_hydromancer_fail_bad_user() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        assert_eq!(
+            super::execute_change_hydromancer(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("bob"),
+                    funds: vec![]
+                },
+                1,
+                1,
+                vec![0]
+            )
+            .unwrap_err(),
+            ContractError::Unauthorized {}
+        );
+    }
+
+    #[test]
+    fn change_hydromancer_2_vessels_with_1_fail_bad_user() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        let bob_address = make_valid_addr("bob");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let bob_id = state::insert_new_user(deps.as_mut().storage, bob_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 1,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: bob_id,
+            },
+            &bob_address,
+        )
+        .expect("Should add vessel");
+
+        assert_eq!(
+            super::execute_change_hydromancer(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: bob_address.clone(),
+                    funds: vec![]
+                },
+                1,
+                1,
+                vec![0, 1]
+            )
+            .unwrap_err(),
+            ContractError::Unauthorized {}
+        );
+    }
+
+    #[test]
+    fn change_hydromancer_1_vessels_hydromancer_success() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        let bob_address = make_valid_addr("bob");
+        let new_hydromancer_id = state::insert_new_hydromancer(
+            deps.as_mut().storage,
+            bob_address.clone(),
+            "BOB".to_string(),
+            Decimal::zero(),
+        )
+        .expect("Hydromance should be added !");
+
+        let res = super::execute_change_hydromancer(
+            deps.as_mut(),
+            MessageInfo {
+                sender: alice_address.clone(),
+                funds: vec![],
+            },
+            1,
+            new_hydromancer_id,
+            vec![0],
+        )
+        .unwrap();
+
+        //test if messages is correct and type Unvote
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Unvote {
+            tranche_id,
+            lock_ids,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(lock_ids.len(), 1);
+            assert_eq!(lock_ids[0], 0);
+        } else {
+            panic!("Message is not message that it should be !");
+        }
+
+        let vessel = state::get_vessel(deps.as_ref().storage, 0).expect("Vessel should exist !");
+        assert_eq!(vessel.hydromancer_id, new_hydromancer_id);
+    }
+
+    #[test]
+    fn change_hydromancer_1_vessels_already_vote_success() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            1,
+            &VesselHarbor {
+                user_control: false,
+                steerer_id: default_hydromancer_id,
+                hydro_lock_id: 0,
+            },
+        )
+        .expect("Should add vessel to harbor");
+
+        let bob_address = make_valid_addr("bob");
+        let new_hydromancer_id = state::insert_new_hydromancer(
+            deps.as_mut().storage,
+            bob_address.clone(),
+            "BOB".to_string(),
+            Decimal::zero(),
+        )
+        .expect("Hydromance should be added !");
+
+        let res = super::execute_change_hydromancer(
+            deps.as_mut(),
+            MessageInfo {
+                sender: alice_address.clone(),
+                funds: vec![],
+            },
+            1,
+            new_hydromancer_id,
+            vec![0],
+        )
+        .unwrap();
+
+        //test if messages is correct and type Unvote
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Unvote {
+            tranche_id,
+            lock_ids,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(lock_ids.len(), 1);
+            assert_eq!(lock_ids[0], 0);
+        } else {
+            panic!("Message is not message that it should be !");
+        }
+
+        let vessel = state::get_vessel(deps.as_ref().storage, 0).expect("Vessel should exist !");
+        assert_eq!(vessel.hydromancer_id, new_hydromancer_id);
+
+        assert!(
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_ref().storage, 1, 1, 1)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn change_hydromancer_vessel_already_vote_under_user_control_success() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            1,
+            &VesselHarbor {
+                user_control: true,
+                steerer_id: user_id,
+                hydro_lock_id: 0,
+            },
+        )
+        .expect("Should add vessel to harbor");
+
+        let res = super::execute_change_hydromancer(
+            deps.as_mut(),
+            MessageInfo {
+                sender: alice_address.clone(),
+                funds: vec![],
+            },
+            1,
+            default_hydromancer_id,
+            vec![0],
+        )
+        .unwrap();
+
+        //test if messages is correct and type Unvote
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Unvote {
+            tranche_id,
+            lock_ids,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(lock_ids.len(), 1);
+            assert_eq!(lock_ids[0], 0);
+        } else {
+            panic!("Message is not message that it should be !");
+        }
+
+        let vessel = state::get_vessel(deps.as_ref().storage, 0).expect("Vessel should exist !");
+        assert_eq!(vessel.hydromancer_id, default_hydromancer_id);
+
+        assert!(
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_ref().storage, 1, 1, 1)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!state::is_vessel_under_user_control(
+            deps.as_ref().storage,
+            1,
+            1,
+            0
+        ))
     }
 }

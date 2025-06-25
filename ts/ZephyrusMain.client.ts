@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -29,6 +29,15 @@ export interface ZephyrusMainReadOnlyInterface {
     startIndex?: number;
   }) => Promise<VesselsResponse>;
   constants: () => Promise<ConstantsResponse>;
+  vesselsHarbor: ({
+    lockIds,
+    roundId,
+    trancheId
+  }: {
+    lockIds: number[];
+    roundId: number;
+    trancheId: number;
+  }) => Promise<VesselHarborResponse>;
 }
 export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   client: CosmWasmClient;
@@ -40,6 +49,7 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
     this.vesselsByOwner = this.vesselsByOwner.bind(this);
     this.vesselsByHydromancer = this.vesselsByHydromancer.bind(this);
     this.constants = this.constants.bind(this);
+    this.vesselsHarbor = this.vesselsHarbor.bind(this);
   }
   votingPower = async (): Promise<VotingPowerResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -85,6 +95,23 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
       constants: {}
     });
   };
+  vesselsHarbor = async ({
+    lockIds,
+    roundId,
+    trancheId
+  }: {
+    lockIds: number[];
+    roundId: number;
+    trancheId: number;
+  }): Promise<VesselHarborResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      vessels_harbor: {
+        lock_ids: lockIds,
+        round_id: roundId,
+        tranche_id: trancheId
+      }
+    });
+  };
 }
 export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   contractAddress: string;
@@ -118,6 +145,29 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   }: {
     hydroLockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  hydromancerVote: ({
+    trancheId,
+    vesselsHarbors
+  }: {
+    trancheId: number;
+    vesselsHarbors: VesselsToHarbor[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  userVote: ({
+    trancheId,
+    vesselsHarbors
+  }: {
+    trancheId: number;
+    vesselsHarbors: VesselsToHarbor[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  receiveNft: ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
   client: SigningCosmWasmClient;
@@ -135,6 +185,9 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.pauseContract = this.pauseContract.bind(this);
     this.unpauseContract = this.unpauseContract.bind(this);
     this.decommissionVessels = this.decommissionVessels.bind(this);
+    this.hydromancerVote = this.hydromancerVote.bind(this);
+    this.userVote = this.userVote.bind(this);
+    this.receiveNft = this.receiveNft.bind(this);
   }
   buildVessel = async ({
     receiver,
@@ -201,6 +254,51 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     return await this.client.execute(this.sender, this.contractAddress, {
       decommission_vessels: {
         hydro_lock_ids: hydroLockIds
+      }
+    }, fee, memo, _funds);
+  };
+  hydromancerVote = async ({
+    trancheId,
+    vesselsHarbors
+  }: {
+    trancheId: number;
+    vesselsHarbors: VesselsToHarbor[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      hydromancer_vote: {
+        tranche_id: trancheId,
+        vessels_harbors: vesselsHarbors
+      }
+    }, fee, memo, _funds);
+  };
+  userVote = async ({
+    trancheId,
+    vesselsHarbors
+  }: {
+    trancheId: number;
+    vesselsHarbors: VesselsToHarbor[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      user_vote: {
+        tranche_id: trancheId,
+        vessels_harbors: vesselsHarbors
+      }
+    }, fee, memo, _funds);
+  };
+  receiveNft = async ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      receive_nft: {
+        msg,
+        sender,
+        token_id: tokenId
       }
     }, fee, memo, _funds);
   };

@@ -1,8 +1,11 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Decimal, StdError, Storage};
+use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
-use zephyrus_core::state::{Constants, HydroLockId, HydromancerId, UserId, Vessel};
+use zephyrus_core::{
+    msgs::{HydroProposalId, RoundId, TrancheId, UserId},
+    state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor},
+};
 
 use crate::errors::ContractError;
 
@@ -12,6 +15,13 @@ pub struct Hydromancer {
     pub address: Addr,
     pub name: String,
     pub commission_rate: Decimal,
+}
+
+#[cw_serde]
+pub struct User {
+    pub user_id: UserId,
+    pub address: Addr,
+    pub claimable_rewards: Vec<Coin>,
 }
 
 pub type TokenizedShareRecordId = u64;
@@ -24,6 +34,9 @@ const CONSTANTS: Item<Constants> = Item::new("constants");
 
 // Every address in this list is an admin
 const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");
+
+const USERS: Map<UserId, User> = Map::new("users");
+const USERID_BY_ADDR: Map<&str, UserId> = Map::new("userid_address");
 
 const HYDROMANCERS: Map<HydromancerId, Hydromancer> = Map::new("hydromancers");
 const HYDROMANCERID_BY_ADDR: Map<&str, HydromancerId> = Map::new("hydromancerid_address");
@@ -40,6 +53,13 @@ const HYDROMANCER_VESSELS: Map<HydromancerId, BTreeSet<HydroLockId>> =
 
 const AUTO_MAINTAINED_VESSELS_BY_CLASS: Map<u64, BTreeSet<HydroLockId>> =
     Map::new("auto_maintained_vessels_by_class");
+
+const VESSEL_TO_HARBOR: Map<((TrancheId, RoundId), HydroProposalId, HydroLockId), VesselHarbor> =
+    Map::new("vessel_to_harbor");
+const HARBOR_OF_VESSEL: Map<((TrancheId, RoundId), HydroLockId), HydroProposalId> =
+    Map::new("harbor_of_vessel");
+const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
+    Map::new("vessels_under_user_control");
 
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
@@ -62,6 +82,57 @@ pub fn update_whitelist_admins(
 ) -> Result<(), StdError> {
     WHITELIST_ADMINS.save(storage, &whitelist_admins)?;
     Ok(())
+}
+
+pub fn get_vessel_harbor(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> Result<(VesselHarbor, HydroProposalId), StdError> {
+    let proposal_id = HARBOR_OF_VESSEL.load(storage, ((tranche_id, round_id), hydro_lock_id))?;
+    let vessel_harbor = VESSEL_TO_HARBOR.load(
+        storage,
+        ((tranche_id, round_id), proposal_id, hydro_lock_id),
+    )?;
+    Ok((vessel_harbor, proposal_id))
+}
+
+pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> Result<UserId, StdError> {
+    let user_id = get_user_id_by_address(storage, user_address.clone());
+    match user_id {
+        Ok(user_id) => Err(StdError::generic_err(format!(
+            "User {} already exists with id {}",
+            user_address, user_id
+        ))),
+        Err(_) => {
+            //user id was not found, so we can create a new user
+            let user_id = USER_NEXT_ID.may_load(storage)?.unwrap_or_default();
+
+            let user = User {
+                user_id,
+                address: user_address.clone(),
+                claimable_rewards: vec![],
+            };
+            USERS.save(storage, user_id, &user)?;
+
+            USERID_BY_ADDR.save(storage, user_address.as_str(), &user_id)?;
+
+            USER_NEXT_ID.save(storage, &(user_id + 1))?;
+
+            Ok(user_id)
+        }
+    }
+}
+
+pub fn get_user_id_by_address(storage: &dyn Storage, user_addr: Addr) -> Result<UserId, StdError> {
+    match USERID_BY_ADDR.load(storage, user_addr.as_str()) {
+        Ok(user_id) => Ok(user_id),
+        Err(_) => Err(StdError::generic_err(format!(
+            "User {} not found",
+            user_addr
+        ))),
+    }
 }
 
 pub fn insert_new_hydromancer(
@@ -110,13 +181,6 @@ pub fn get_hydromancer_id_by_address(
     }
 }
 
-pub fn add_hydromancer(
-    storage: &mut dyn Storage,
-    hydromancer: &Hydromancer,
-) -> Result<(), StdError> {
-    HYDROMANCERS.save(storage, hydromancer.hydromancer_id, hydromancer)
-}
-
 pub fn hydromancer_exists(storage: &dyn Storage, hydromancer_id: HydromancerId) -> bool {
     HYDROMANCERS.has(storage, hydromancer_id)
 }
@@ -154,7 +218,13 @@ pub fn add_vessel(
         AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
     }
 
-    TOKENIZED_SHARE_RECORDS.save(storage, vessel.tokenized_share_record_id, &vessel_id)?;
+    if vessel.tokenized_share_record_id.is_some() {
+        TOKENIZED_SHARE_RECORDS.save(
+            storage,
+            vessel.tokenized_share_record_id.unwrap(),
+            &vessel_id,
+        )?;
+    }
 
     Ok(())
 }
@@ -166,8 +236,127 @@ pub fn is_tokenized_share_record_used(
     TOKENIZED_SHARE_RECORDS.has(storage, tokenized_share_record_id)
 }
 
+pub fn add_vessel_to_harbor(
+    storage: &mut dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    proposal_id: HydroProposalId,
+    vessel_harbor: &VesselHarbor,
+) -> Result<(), StdError> {
+    VESSEL_TO_HARBOR.save(
+        storage,
+        (
+            (tranche_id, round_id),
+            proposal_id,
+            vessel_harbor.hydro_lock_id,
+        ),
+        vessel_harbor,
+    )?;
+    HARBOR_OF_VESSEL.save(
+        storage,
+        ((tranche_id, round_id), vessel_harbor.hydro_lock_id),
+        &proposal_id,
+    )?;
+    if vessel_harbor.user_control {
+        let vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
+            .may_load(storage, (tranche_id, round_id))
+            .unwrap_or_default();
+        match vessels_under_user_control {
+            Some(mut vessel_ids) => {
+                vessel_ids.insert(vessel_harbor.hydro_lock_id);
+                VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &vessel_ids)?;
+            }
+            None => {
+                let mut vessel_ids = BTreeSet::new();
+                vessel_ids.insert(vessel_harbor.hydro_lock_id);
+                VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &vessel_ids)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn get_vessel_to_harbor_by_harbor_id(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_proposal_id: HydroProposalId,
+) -> Result<Vec<(HydroLockId, VesselHarbor)>, StdError> {
+    VESSEL_TO_HARBOR
+        .prefix(((tranche_id, round_id), hydro_proposal_id))
+        .range(storage, None, None, Order::Ascending)
+        .collect()
+}
+
+pub fn get_harbor_of_vessel(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> Result<Option<HydroProposalId>, StdError> {
+    HARBOR_OF_VESSEL.may_load(storage, ((tranche_id, round_id), hydro_lock_id))
+}
+
+pub fn remove_vessel_harbor(
+    storage: &mut dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_proposal_id: HydroLockId,
+    hydro_lock_id: HydroLockId,
+) -> Result<(), StdError> {
+    let vessel_to_harbor = VESSEL_TO_HARBOR.load(
+        storage,
+        ((tranche_id, round_id), hydro_proposal_id, hydro_lock_id),
+    )?;
+
+    VESSEL_TO_HARBOR.remove(
+        storage,
+        ((tranche_id, round_id), hydro_proposal_id, hydro_lock_id),
+    );
+    HARBOR_OF_VESSEL.remove(storage, ((tranche_id, round_id), hydro_lock_id));
+    if vessel_to_harbor.user_control {
+        let mut vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
+            .may_load(storage, (tranche_id, round_id))?
+            .unwrap_or_default();
+        vessels_under_user_control.remove(&hydro_lock_id);
+        VESSELS_UNDER_USER_CONTROL.save(
+            storage,
+            (tranche_id, round_id),
+            &vessels_under_user_control,
+        )?;
+    }
+    Ok(())
+}
+
+pub fn is_vessel_under_user_control(
+    storage: &dyn Storage,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> bool {
+    let vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
+        .may_load(storage, (tranche_id, round_id))
+        .unwrap_or_default();
+
+    match vessels_under_user_control {
+        Some(vessel_ids) => vessel_ids.contains(&hydro_lock_id),
+        None => false,
+    }
+}
+
 pub fn get_vessel(storage: &dyn Storage, hydro_lock_id: HydroLockId) -> Result<Vessel, StdError> {
     VESSELS.load(storage, hydro_lock_id)
+}
+
+pub fn get_vessels_by_ids(
+    storage: &dyn Storage,
+    hydro_lock_ids: &[HydroLockId],
+) -> Result<Vec<Vessel>, StdError> {
+    hydro_lock_ids
+        .iter()
+        .map(|id| VESSELS.load(storage, *id))
+        .collect()
 }
 
 pub fn get_vessels_by_owner(
@@ -290,7 +479,9 @@ pub fn remove_vessel(
         AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
     }
 
-    TOKENIZED_SHARE_RECORDS.remove(storage, vessel.tokenized_share_record_id);
+    if vessel.tokenized_share_record_id.is_some() {
+        TOKENIZED_SHARE_RECORDS.remove(storage, vessel.tokenized_share_record_id.unwrap());
+    }
 
     Ok(())
 }

@@ -1,6 +1,14 @@
-use crate::state::{Constants, Vessel};
+use crate::state::{Constants, Vessel, VesselHarbor};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Decimal;
+use cosmwasm_std::{Binary, Decimal};
+
+pub type UserId = u64;
+pub type HydromancerId = u64;
+pub type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
+pub type HydroProposalId = u64;
+pub type TrancheId = u64;
+pub type RoundId = u64;
+pub type UserControl = bool;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -18,6 +26,27 @@ pub struct BuildVesselParams {
     pub lock_duration: u64,
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,
+}
+
+#[cw_serde]
+pub struct VesselsToHarbor {
+    pub vessel_ids: Vec<HydroLockId>,
+    pub harbor_id: HydroProposalId,
+}
+
+#[cw_serde]
+pub struct VesselInfo {
+    pub owner: String,
+    pub auto_maintenance: bool,
+    pub hydromancer_id: u64,
+    pub class_period: u64,
+}
+
+#[cw_serde]
+pub struct Cw721ReceiveMsg {
+    pub sender: String,
+    pub token_id: String,
+    pub msg: Binary,
 }
 
 #[cw_serde]
@@ -41,11 +70,32 @@ pub enum ExecuteMsg {
     DecommissionVessels {
         hydro_lock_ids: Vec<u64>,
     },
+    HydromancerVote {
+        tranche_id: TrancheId,
+        vessels_harbors: Vec<VesselsToHarbor>,
+    },
+    UserVote {
+        tranche_id: TrancheId,
+        vessels_harbors: Vec<VesselsToHarbor>,
+    },
+    ReceiveNft(Cw721ReceiveMsg),
 }
 
 #[cw_serde]
 pub struct VotingPowerResponse {
     pub voting_power: u64,
+}
+
+#[cw_serde]
+pub struct VesselHarborInfo {
+    pub vessel_to_harbor: Option<VesselHarbor>,
+    pub vessel_id: u64,
+    pub harbor_id: Option<u64>,
+}
+
+#[cw_serde]
+pub struct VesselHarborResponse {
+    pub vessels_harbor_info: Vec<VesselHarborInfo>,
 }
 
 #[cw_serde]
@@ -81,6 +131,12 @@ pub enum QueryMsg {
     },
     #[returns(ConstantsResponse)]
     Constants {},
+    #[returns(VesselHarborResponse)]
+    VesselsHarbor {
+        tranche_id: u64,
+        round_id: u64,
+        lock_ids: Vec<u64>,
+    },
 }
 
 #[cw_serde]

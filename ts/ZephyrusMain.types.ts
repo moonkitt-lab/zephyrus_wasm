@@ -38,11 +38,33 @@ export type ExecuteMsg = {
   decommission_vessels: {
     hydro_lock_ids: number[];
   };
+} | {
+  hydromancer_vote: {
+    tranche_id: number;
+    vessels_harbors: VesselsToHarbor[];
+  };
+} | {
+  user_vote: {
+    tranche_id: number;
+    vessels_harbors: VesselsToHarbor[];
+  };
+} | {
+  receive_nft: Cw721ReceiveMsg;
 };
+export type Binary = string;
 export interface BuildVesselParams {
   auto_maintenance: boolean;
   hydromancer_id: number;
   lock_duration: number;
+}
+export interface VesselsToHarbor {
+  harbor_id: number;
+  vessel_ids: number[];
+}
+export interface Cw721ReceiveMsg {
+  msg: Binary;
+  sender: string;
+  token_id: string;
 }
 export type QueryMsg = {
   voting_power: {};
@@ -60,6 +82,12 @@ export type QueryMsg = {
   };
 } | {
   constants: {};
+} | {
+  vessels_harbor: {
+    lock_ids: number[];
+    round_id: number;
+    tranche_id: number;
+  };
 };
 export type Addr = string;
 export interface ConstantsResponse {
@@ -85,7 +113,21 @@ export interface Vessel {
   class_period: number;
   hydro_lock_id: number;
   hydromancer_id: number;
-  tokenized_share_record_id: number;
+  owner_id: number;
+  tokenized_share_record_id?: number | null;
+}
+export interface VesselHarborResponse {
+  vessels_harbor_info: VesselHarborInfo[];
+}
+export interface VesselHarborInfo {
+  harbor_id?: number | null;
+  vessel_id: number;
+  vessel_to_harbor?: VesselHarbor | null;
+}
+export interface VesselHarbor {
+  hydro_lock_id: number;
+  steerer_id: number;
+  user_control: boolean;
 }
 export interface VotingPowerResponse {
   voting_power: number;

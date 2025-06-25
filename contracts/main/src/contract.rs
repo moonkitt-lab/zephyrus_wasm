@@ -1,17 +1,24 @@
+use std::collections::BTreeSet;
+
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
     Coin, Deps, DepsMut, Env, MessageInfo, QueryRequest, Reply, Response as CwResponse, StdError,
     StdResult, SubMsg, WasmMsg,
 };
-use hydro_interface::msgs::ExecuteMsg::{LockTokens, RefreshLockDuration, UnlockTokens};
+
+use hydro_interface::msgs::ExecuteMsg::{
+    LockTokens, RefreshLockDuration, UnlockTokens, Unvote, Vote,
+};
+use hydro_interface::msgs::{CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, ProposalToLockups, RoundLockPowerSchedule, SpecificUserLockupsResponse};
+
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
-    VesselsResponse, VotingPowerResponse,
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg, QueryMsg, RoundId, VesselHarborInfo, VesselHarborResponse, VesselInfo, VesselsResponse, VesselsToHarbor, VotingPowerResponse
+
 };
-use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
+use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
 use crate::{
     errors::ContractError,
@@ -24,6 +31,7 @@ type Response = CwResponse<NeutronMsg>;
 
 const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
 const DECOMMISSION_REPLY_ID: u64 = 2;
+const VOTE_REPLY_ID: u64 = 3;
 
 const MAX_PAGINATION_LIMIT: usize = 1000;
 const DEFAULT_PAGINATION_LIMIT: usize = 100;
@@ -33,6 +41,16 @@ struct LockTokensReplyPayload {
     params: BuildVesselParams,
     tokenized_share_record_id: u64,
     owner: Addr,
+    owner_id: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct VoteReplyPayload {
+    tranche_id: u64,
+    vessels_harbors: Vec<VesselsToHarbor>,
+    steerer_id: u64,
+    round_id: u64,
+    user_vote: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -90,6 +108,106 @@ fn extract_tokenized_share_record_id(denom_trace: &DenomTrace) -> Option<u64> {
         .and_then(|(_, id_str)| id_str.parse().ok())
 }
 
+fn validate_lock_duration(
+    round_lock_power_schedule: &RoundLockPowerSchedule,
+    lock_epoch_length: u64,
+    lock_duration: u64,
+) -> Result<(), ContractError> {
+    let lock_times = round_lock_power_schedule
+        .round_lock_power_schedule
+        .iter()
+        .map(|entry| entry.locked_rounds * lock_epoch_length)
+        .collect::<Vec<u64>>();
+
+    if !lock_times.contains(&lock_duration) {
+        return Err(ContractError::Std(StdError::generic_err(format!(
+            "Lock duration must be one of: {:?}; but was: {}",
+            lock_times, lock_duration
+        ))));
+    }
+
+    Ok(())
+}
+/// Receive Lockup as NFT and create a Vessel with some params from "msg"
+fn execute_receive_nft(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    _sender: String,
+    token_id: String,
+    msg: Binary,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    // We don't use `sender` to determine who the owner should be, because
+    // sender can be any operator or approved person on the NFT,
+    // and we let that sender fill whatever they want as `owner` in `VesselInfo`
+    // By checking that the NFT comes from Hydro, it is enough to ensure that the sender has permissions
+
+    // 1. Check that NFT comes from Hydro
+    if info.sender.to_string() != constants.hydro_config.hydro_contract_address.to_string() {
+        return Err(ContractError::NftNotAccepted);
+    }
+
+    let vessel_info: VesselInfo = from_json(&msg)?;
+    let hydro_lock_id: u64 = token_id.parse().unwrap();
+
+    // 2. Check that owner is a valid address
+    let owner_addr = deps.api.addr_validate(&vessel_info.owner)?;
+
+    // 3. Check that Hydromancer exists
+    if !state::hydromancer_exists(deps.storage, vessel_info.hydromancer_id) {
+        return Err(ContractError::HydromancerNotFound {
+            hydromancer_id: vessel_info.hydromancer_id,
+        });
+    }
+
+    // 4. Check that class_period represents a valid lock duration
+    let constant_response: HydroConstantsResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::Constants{},
+    )?;
+    validate_lock_duration(
+        &constant_response.constants.round_lock_power_schedule,
+        constant_response.constants.lock_epoch_length,
+        vessel_info.class_period,
+    )?;
+
+    // 5. Check that we are owner of the lockup (as transfer happens before calling Zephyrus' Cw721ReceiveMsg)
+    let user_specific_lockups: SpecificUserLockupsResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::SpecificUserLockups {
+            address: env.contract.address.to_string(),
+            lock_ids: vec![hydro_lock_id],
+        },
+    )?;
+    if user_specific_lockups.lockups.is_empty() {
+        return Err(ContractError::LockupNotOwned {
+            id: token_id.to_string(),
+        });
+    }
+    // 6. Owner could be a new user, so we need to insert it in state
+    let mut owner_id = state::get_user_id_by_address(deps.storage, owner_addr.clone());
+    if owner_id.is_err() {
+        owner_id = state::insert_new_user(deps.storage, owner_addr.clone());
+    }
+    let owner_id = owner_id.expect("Owner id should be present");
+
+    // 7. Store the vessel in state
+    let vessel = Vessel {
+        hydro_lock_id,
+        class_period: vessel_info.class_period,
+        tokenized_share_record_id: None,
+        hydromancer_id: vessel_info.hydromancer_id,
+        auto_maintenance: vessel_info.auto_maintenance,
+        owner_id,
+    };
+    state::add_vessel(deps.storage, &vessel, &owner_addr)?;
+
+    Ok(Response::default())
+}
+
 fn execute_build_vessel(
     deps: DepsMut,
     info: MessageInfo,
@@ -115,6 +233,11 @@ fn execute_build_vessel(
         .transpose()?
         .unwrap_or(info.sender);
 
+    let mut owner_id = state::get_user_id_by_address(deps.storage, owner.clone());
+    if owner_id.is_err() {
+        owner_id = state::insert_new_user(deps.storage, owner.clone());
+    }
+    let owner_id = owner_id.expect("Owner id should be present");
     let mut hydro_lock_msgs = vec![];
 
     // Note: Check again when IBC v2 is out, because the order of tokens may not be deterministic
@@ -142,6 +265,7 @@ fn execute_build_vessel(
             params,
             tokenized_share_record_id,
             owner: owner.clone(),
+            owner_id,
         })?;
 
         let contract_addr = constants
@@ -379,6 +503,198 @@ fn execute_decommission_vessels(
     Ok(Response::new().add_submessage(execute_hydro_unlock_msg))
 }
 
+pub fn has_duplicate_harbor_id_in_vote(
+    vessels_harbors: Vec<VesselsToHarbor>,
+) -> (bool, Option<HydroProposalId>) {
+    let mut seen = BTreeSet::new();
+    for item in vessels_harbors.iter() {
+        if !seen.insert(item.harbor_id) {
+            return (true, Some(item.harbor_id));
+        }
+    }
+    (false, None)
+}
+
+pub fn has_duplicate_vessel_id(vessel_ids: Vec<HydroLockId>) -> (bool, Option<HydroLockId>) {
+    let mut seen = BTreeSet::new();
+    for item in vessel_ids.iter() {
+        if !seen.insert(item) {
+            return (true, Some(*item));
+        }
+    }
+    (false, None)
+}
+
+pub fn has_duplicate_vessel_id_in_vote(
+    vessels_harbors: Vec<VesselsToHarbor>,
+) -> (bool, Option<HydroLockId>) {
+    let mut seen = BTreeSet::new();
+    for item in vessels_harbors.iter() {
+        for vessel_id in item.vessel_ids.iter() {
+            if !seen.insert(*vessel_id) {
+                return (true, Some(*vessel_id));
+            }
+        }
+    }
+    (false, None)
+}
+
+fn execute_hydromancer_vote(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche_id: u64,
+    vessels_harbors: Vec<VesselsToHarbor>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    let (has_duplicated_harbor, harbor_id) =
+        has_duplicate_harbor_id_in_vote(vessels_harbors.clone());
+    if has_duplicated_harbor {
+        let harbor_id = harbor_id.expect("If there is duplicated harbor, id should be present");
+        return Err(ContractError::VoteDuplicatedHarborId { harbor_id });
+    }
+
+    let (has_duplicated_vessel_id, vessel_id) =
+        has_duplicate_vessel_id_in_vote(vessels_harbors.clone());
+    if has_duplicated_vessel_id {
+        let vessel_id = vessel_id.expect("If there is duplicated vessel, id should be present");
+        return Err(ContractError::VoteDuplicatedVesselId { vessel_id });
+    }
+
+    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, info.sender)
+        .map_err(|err: StdError| ContractError::from(err))?;
+    let current_round_id = query_hydro_current_round(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
+    let mut proposal_votes = vec![];
+    for vessels_to_harbor in vessels_harbors.clone() {
+        let proposal_to_lockups = ProposalToLockups {
+            proposal_id: vessels_to_harbor.harbor_id,
+            lock_ids: vessels_to_harbor.vessel_ids.clone(),
+        };
+        proposal_votes.push(proposal_to_lockups);
+    }
+
+    let vote_message = Vote {
+        tranche_id,
+        proposals_votes: proposal_votes,
+    };
+    let execute_hydro_vote_msg = WasmMsg::Execute {
+        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&vote_message)?,
+        funds: vec![],
+    };
+    let payload = to_json_binary(&VoteReplyPayload {
+        tranche_id,
+        vessels_harbors,
+        steerer_id: hydromancer_id,
+        round_id: current_round_id,
+        user_vote: false,
+    })?;
+    let execute_hydro_vote_msg: SubMsg<NeutronMsg> =
+        SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID).with_payload(payload);
+    let response = Response::new().add_submessage(execute_hydro_vote_msg);
+    Ok(response)
+}
+
+fn execute_user_vote(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche_id: u64,
+    vessels_harbors: Vec<VesselsToHarbor>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    let (has_duplicated_harbor, harbor_id) =
+        has_duplicate_harbor_id_in_vote(vessels_harbors.clone());
+    if has_duplicated_harbor {
+        let harbor_id = harbor_id.expect("If there is duplicated harbor, id should be present");
+        return Err(ContractError::VoteDuplicatedHarborId { harbor_id });
+    }
+
+    let (has_duplicated_vessel_id, vessel_id) =
+        has_duplicate_vessel_id_in_vote(vessels_harbors.clone());
+    if has_duplicated_vessel_id {
+        let vessel_id = vessel_id.expect("If there is duplicated vessel, id should be present");
+        return Err(ContractError::VoteDuplicatedVesselId { vessel_id });
+    }
+
+    let user_id = state::get_user_id_by_address(deps.storage, info.sender)
+        .map_err(|err: StdError| ContractError::from(err))?;
+    let current_round_id = query_hydro_current_round(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
+    let mut proposal_votes = vec![];
+    let mut unvote_ids = vec![];
+
+    for vessels_to_harbor in vessels_harbors.clone() {
+        for vessel_id in vessels_to_harbor.vessel_ids.iter() {
+            //if not under user control and already voted by hydromancer, lock_id should be unvote, otherwise if user vote the same proposal as hydromancer it will be skipped by hydro than zephyrus and still under hydromancer control
+            if !state::is_vessel_under_user_control(
+                deps.storage,
+                tranche_id,
+                current_round_id,
+                *vessel_id,
+            ) {
+                if let Some(_) = state::get_harbor_of_vessel(
+                    deps.storage,
+                    tranche_id,
+                    current_round_id,
+                    *vessel_id,
+                )? {
+                    //vessel used by hydromancer should be unvoted
+                    unvote_ids.push(vessel_id.clone());
+                }
+            }
+        }
+
+        let proposal_to_lockups = ProposalToLockups {
+            proposal_id: vessels_to_harbor.harbor_id,
+            lock_ids: vessels_to_harbor.vessel_ids.clone(),
+        };
+        proposal_votes.push(proposal_to_lockups);
+    }
+    let mut response = Response::new();
+    if !unvote_ids.is_empty() {
+        let unvote_msg = Unvote {
+            tranche_id,
+            lock_ids: unvote_ids.clone(),
+        };
+
+        let execute_unvote_msg = WasmMsg::Execute {
+            contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+            msg: to_json_binary(&unvote_msg)?,
+            funds: vec![],
+        };
+        response = response.add_message(execute_unvote_msg);
+    }
+
+    let payload = to_json_binary(&VoteReplyPayload {
+        tranche_id,
+        vessels_harbors,
+        steerer_id: user_id,
+        round_id: current_round_id,
+        user_vote: true,
+    })?;
+
+    let vote_message = Vote {
+        tranche_id,
+        proposals_votes: proposal_votes,
+    };
+    let execute_hydro_vote_msg = WasmMsg::Execute {
+        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&vote_message)?,
+        funds: vec![],
+    };
+    let execute_hydro_vote_msg: SubMsg<NeutronMsg> =
+        SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID).with_payload(payload);
+    Ok(response.add_submessage(execute_hydro_vote_msg))
+}
+
 #[entry_point]
 pub fn execute(
     deps: DepsMut,
@@ -404,11 +720,37 @@ pub fn execute(
         ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
             execute_decommission_vessels(deps, env, info, hydro_lock_ids)
         }
+
+        ExecuteMsg::HydromancerVote {
+            tranche_id,
+            vessels_harbors,
+        } => execute_hydromancer_vote(deps, info, tranche_id, vessels_harbors),
+        ExecuteMsg::UserVote {
+            tranche_id,
+            vessels_harbors,
+        } => execute_user_vote(deps, info, tranche_id, vessels_harbors),
+
+        ExecuteMsg::ReceiveNft(receive_msg) => execute_receive_nft(
+            deps,
+            env,
+            info,
+            receive_msg.sender,
+            receive_msg.token_id,
+            receive_msg.msg,
+        ),
     }
 }
 
 fn query_voting_power(_deps: Deps, _env: Env) -> Result<VotingPowerResponse, StdError> {
     todo!()
+}
+
+fn query_hydro_current_round(deps: Deps, hydro_contract_addr: String) -> Result<RoundId, StdError> {
+    let current_round_resp: CurrentRoundResponse = deps
+        .querier
+        .query_wasm_smart(hydro_contract_addr, &HydroQueryMsg::CurrentRound {})
+        .expect("Failed to query hydro contract, hydro should be able to return the current round");
+    Ok(current_round_resp.round_id)
 }
 
 fn query_vessels_by_owner(
@@ -467,6 +809,43 @@ fn query_constants(deps: Deps) -> StdResult<ConstantsResponse> {
     Ok(ConstantsResponse { constants })
 }
 
+fn query_vessels_harbor(
+    deps: Deps,
+    tranche_id: u64,
+    round_id: u64,
+    vessel_ids: Vec<u64>,
+) -> StdResult<VesselHarborResponse> {
+    let (has_duplicated_vessel_id, vessel_id) = has_duplicate_vessel_id(vessel_ids.clone());
+    if has_duplicated_vessel_id {
+        let vessel_id = vessel_id.expect("If there is duplicated vessel, id should be present");
+        return Err(StdError::generic_err(format!(
+            "Duplicated vessel id: {}",
+            vessel_id
+        )));
+    }
+    let mut vessels_harbor_info = vec![];
+    for vessel_id in vessel_ids {
+        let _ = state::get_vessel(deps.storage, vessel_id)?; //return error if there is one vessel that does not exist
+        let vessel_harbor = state::get_vessel_harbor(deps.storage, tranche_id, round_id, vessel_id);
+        match vessel_harbor {
+            Err(_) => vessels_harbor_info.push(VesselHarborInfo {
+                vessel_to_harbor: None,
+                vessel_id,
+                harbor_id: None,
+            }),
+            Ok(vessel_harbor) => vessels_harbor_info.push(VesselHarborInfo {
+                vessel_to_harbor: Some(vessel_harbor.0),
+                vessel_id,
+                harbor_id: Some(vessel_harbor.1),
+            }),
+        }
+    }
+
+    Ok(VesselHarborResponse {
+        vessels_harbor_info,
+    })
+}
+
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
     match msg {
@@ -487,6 +866,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             limit,
         )?),
         QueryMsg::Constants {} => to_json_binary(&query_constants(deps)?),
+        QueryMsg::VesselsHarbor {
+            tranche_id,
+            round_id,
+            lock_ids,
+        } => to_json_binary(&query_vessels_harbor(deps, tranche_id, round_id, lock_ids)?),
     }
 }
 
@@ -512,7 +896,12 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
             .and_then(|(id, payload)| handle_lock_tokens_reply(deps, id, payload)),
 
         DECOMMISSION_REPLY_ID => handle_unlock_tokens_reply(deps, env, reply),
-
+        VOTE_REPLY_ID => {
+            let skipped_locks = parse_locks_skipped_reply(reply.clone())?;
+            let payload: VoteReplyPayload =
+                from_json(reply.payload).expect("Vote parameters always attached");
+            handle_vote_reply(deps, payload, skipped_locks)
+        }
         _ => Err(ContractError::CustomError {
             msg: "Unknown reply id".to_string(),
         }),
@@ -522,6 +911,111 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
 #[entry_point]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, StdError> {
     Ok(Response::default())
+}
+
+//Handle vote reply, used after both user and hydromancer vote
+fn handle_vote_reply(
+    deps: DepsMut,
+    payload: VoteReplyPayload,
+    skipped_locks: Vec<u64>,
+) -> Result<Response, ContractError> {
+    for vessels_to_harbor in payload.vessels_harbors.clone() {
+        let mut lock_ids = vec![];
+
+        for vessel_id in vessels_to_harbor.vessel_ids.iter() {
+            //if vessel is skipped, it means that hydro was not able to vote for it, zephyrus skips it too
+            if skipped_locks.contains(vessel_id) {
+                continue;
+            }
+            let vessel = state::get_vessel(deps.storage, *vessel_id)?;
+            if payload.user_vote {
+                //control that vessel is owned by user who wants to vote
+                if vessel.owner_id != payload.steerer_id {
+                    return Err(ContractError::InvalidUserId {
+                        vessel_id: vessel.hydro_lock_id,
+                        user_id: payload.steerer_id,
+                        vessel_user_id: vessel.owner_id,
+                    });
+                }
+            } else {
+                //control that vessel is delegated to hydromancer who wants to vote
+                if vessel.hydromancer_id != payload.steerer_id {
+                    return Err(ContractError::InvalidHydromancerId {
+                        vessel_id: vessel.hydro_lock_id,
+                        hydromancer_id: payload.steerer_id,
+                        vessel_hydromancer_id: vessel.hydromancer_id,
+                    });
+                }
+                //hydromancer can't vote with a vessel under user control
+                if state::is_vessel_under_user_control(
+                    deps.storage,
+                    payload.tranche_id,
+                    payload.round_id,
+                    vessel.hydro_lock_id,
+                ) {
+                    return Err(ContractError::VesselUnderUserControl {
+                        vessel_id: vessel.hydro_lock_id,
+                    });
+                }
+            }
+
+            let previous_harbor_id = state::get_harbor_of_vessel(
+                deps.storage,
+                payload.tranche_id,
+                payload.round_id,
+                vessel.hydro_lock_id,
+            )?;
+            match previous_harbor_id {
+                Some(previous_harbor_id) => {
+                    if previous_harbor_id != vessels_to_harbor.harbor_id {
+                        //vote has changed
+                        state::remove_vessel_harbor(
+                            deps.storage,
+                            payload.tranche_id,
+                            payload.round_id,
+                            previous_harbor_id,
+                            vessel.hydro_lock_id,
+                        )?;
+                        //save could be done after the match statement, but it will be done also when previous harbor id is the same as the new one
+                        state::add_vessel_to_harbor(
+                            deps.storage,
+                            payload.tranche_id,
+                            payload.round_id,
+                            vessels_to_harbor.harbor_id,
+                            &VesselHarbor {
+                                user_control: payload.user_vote,
+                                hydro_lock_id: vessel.hydro_lock_id,
+                                steerer_id: payload.steerer_id,
+                            },
+                        )?;
+                    }
+                }
+                None => {
+                    state::add_vessel_to_harbor(
+                        deps.storage,
+                        payload.tranche_id,
+                        payload.round_id,
+                        vessels_to_harbor.harbor_id,
+                        &VesselHarbor {
+                            user_control: payload.user_vote,
+                            hydro_lock_id: vessel.hydro_lock_id,
+                            steerer_id: payload.steerer_id,
+                        },
+                    )?;
+                }
+            }
+
+            lock_ids.push(vessel.hydro_lock_id);
+        }
+    }
+    Ok(Response::new().add_attribute(
+        "skipped_locks",
+        skipped_locks
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    ))
 }
 
 fn handle_lock_tokens_reply(
@@ -536,14 +1030,16 @@ fn handle_lock_tokens_reply(
             },
         tokenized_share_record_id,
         owner,
+        owner_id,
     }: LockTokensReplyPayload,
 ) -> Result<Response, ContractError> {
     let vessel = Vessel {
         hydro_lock_id,
         class_period: lock_duration,
-        tokenized_share_record_id,
+        tokenized_share_record_id: Some(tokenized_share_record_id),
         hydromancer_id,
         auto_maintenance,
+        owner_id,
     };
 
     state::add_vessel(deps.storage, &vessel, &owner)?;
@@ -573,6 +1069,29 @@ fn parse_lock_tokens_reply(
     let payload = from_json(reply.payload).expect("build vessel parameters always attached");
 
     Ok((lock_id, payload))
+}
+
+fn parse_locks_skipped_reply(reply: Reply) -> Result<Vec<u64>, ContractError> {
+    let response = reply
+        .result
+        .into_result()
+        .expect("always issued on_success");
+
+    let skipped_locks = response
+        .events
+        .into_iter()
+        .flat_map(|e| e.attributes)
+        .find_map(|attr| (attr.key == "locks_skipped").then_some(attr.value))
+        .expect("Vote reply always contains locks_skipped attribute");
+
+    Ok(if skipped_locks.is_empty() {
+        vec![]
+    } else {
+        skipped_locks
+            .split(',')
+            .map(|s| s.parse().unwrap()) // Attention: `unwrap` peut toujours paniquer ici !
+            .collect()
+    })
 }
 
 fn handle_unlock_tokens_reply(
@@ -706,26 +1225,71 @@ fn handle_unlock_tokens_reply(
 
 #[cfg(test)]
 mod test {
+    use std::time::SystemTime;
+
     use cosmwasm_std::{
         coin, coins, from_json,
         testing::{
             mock_dependencies as std_mock_dependencies, mock_env, MockApi,
             MockQuerier as StdMockQuerier, MockStorage,
         },
-        Addr, Binary, ContractResult, CosmosMsg, DepsMut, Empty, GrpcQuery, MessageInfo, OwnedDeps,
-        Querier, QuerierResult, QueryRequest, ReplyOn, WasmMsg,
+        to_json_binary, Addr, Binary, ContractResult, CosmosMsg, Decimal, DepsMut, Empty,
+        GrpcQuery, MessageInfo, OwnedDeps, Querier, QuerierResult, QueryRequest, ReplyOn, StdError,
+        WasmMsg, WasmQuery,
     };
-    use hydro_interface::msgs::ExecuteMsg as HydroExecuteMsg;
+    use hydro_interface::msgs::{
+        CurrentRoundResponse, ExecuteMsg as HydroExecuteMsg, HydroQueryMsg
+    };
     use neutron_std::types::ibc::applications::transfer::v1::{
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
     };
     use prost::Message;
-    use zephyrus_core::msgs::{BuildVesselParams, InstantiateMsg};
     use zephyrus_core::state::Vessel;
+    use zephyrus_core::{
+        msgs::{BuildVesselParams, InstantiateMsg, VesselsToHarbor},
+        state::VesselHarbor,
+    };
 
-    use crate::{contract::LockTokensReplyPayload, errors::ContractError};
+    use crate::{
+        contract::{LockTokensReplyPayload, VoteReplyPayload},
+        errors::ContractError,
+        state::{self},
+    };
 
     struct MockQuerier(StdMockQuerier);
+
+    fn mock_wasm_query_handler(contract_addr: &str, msg: &Binary) -> QuerierResult {
+        let hydro_addr: String = make_valid_addr("hydro").into_string();
+        if contract_addr == hydro_addr {
+            let query: HydroQueryMsg = match from_json(msg) {
+                Ok(q) => q,
+                Err(_) => return QuerierResult::Err(cosmwasm_std::SystemError::Unknown {}),
+            };
+            match query {
+                HydroQueryMsg::CurrentRound {} => {
+                    let response = to_json_binary(&CurrentRoundResponse {
+                        round_id: 1,
+                        round_end: cosmwasm_std::Timestamp::from_seconds(
+                            SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs(),
+                        ),
+                    })
+                    .unwrap();
+                    QuerierResult::Ok(ContractResult::Ok(response))
+                }
+                HydroQueryMsg::Constants {} => {
+                    QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
+                }
+                HydroQueryMsg::SpecificUserLockups { .. } => {
+                    QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
+                }
+            }
+        } else {
+            QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
+        }
+    }
 
     fn mock_grpc_query_handler(path: &str, data: &[u8]) -> QuerierResult {
         let contract_result: ContractResult<Binary> = match path {
@@ -774,13 +1338,27 @@ mod test {
 
     impl Querier for MockQuerier {
         fn raw_query(&self, bin_request: &[u8]) -> QuerierResult {
-            let Some(QueryRequest::<Empty>::Grpc(GrpcQuery { path, data })) =
-                from_json(bin_request).ok()
-            else {
-                return self.0.raw_query(bin_request);
-            };
+            println!("MockQuerier!");
+            let request: QueryRequest<Empty> = from_json(bin_request).ok().unwrap();
 
-            mock_grpc_query_handler(&path, &data)
+            match request {
+                QueryRequest::<Empty>::Grpc(GrpcQuery { path, data }) => {
+                    mock_grpc_query_handler(&path, &data)
+                }
+                QueryRequest::Wasm(WasmQuery::Smart { contract_addr, msg }) => {
+                    println!("WasmQuery::Smart {}", contract_addr);
+
+                    mock_wasm_query_handler(&contract_addr, &msg)
+                }
+                _ => self.0.raw_query(bin_request),
+            }
+            // let Some(QueryRequest::<Empty>::Grpc(GrpcQuery { path, data })) =
+            //     from_json(bin_request).ok()
+            // else {
+            //     return self.0.raw_query(bin_request);
+            // };
+
+            // mock_grpc_query_handler(&path, &data)
         }
     }
 
@@ -822,6 +1400,555 @@ mod test {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn hydromancer_vote_fails_not_hydromancer() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+        let alice_address = make_valid_addr("alice");
+        assert_eq!(
+            super::execute_hydromancer_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: alice_address.clone(),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 2,
+                            vessel_ids: vec![3, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::from(StdError::generic_err(format!(
+                "Hydromancer {} not found",
+                alice_address.to_string()
+            )))
+        );
+    }
+
+    #[test]
+    fn hydromancer_vote_with_other_vessels_fail() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+        let constant = state::get_constants(deps.as_ref().storage).unwrap();
+
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let alice_hydromancer_id = state::insert_new_hydromancer(
+            deps.as_mut().storage,
+            alice_address.clone(),
+            "alice".to_string(),
+            Decimal::percent(10),
+        )
+        .expect("Should add hydromancer");
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: alice_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+        println!("Execute vote hydromancer");
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: constant.default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        assert_eq!(
+            super::handle_vote_reply(deps.as_mut(), payload, vec![]).unwrap_err(),
+            ContractError::InvalidHydromancerId {
+                vessel_id: 0,
+                hydromancer_id: 0,
+                vessel_hydromancer_id: 1
+            }
+        );
+    }
+
+    #[test]
+    fn hydromancer_vote_with_vessels_under_user_control_fail() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            1,
+            &VesselHarbor {
+                user_control: true,
+                hydro_lock_id: 0,
+                steerer_id: 0,
+            },
+        )
+        .expect("Should add vessel to harbor");
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        assert_eq!(
+            super::handle_vote_reply(deps.as_mut(), payload, vec![]).unwrap_err(),
+            ContractError::VesselUnderUserControl { vessel_id: 0 }
+        );
+    }
+
+    #[test]
+    fn hydromancer_vote_succeed_without_change_because_vote_skipped_by_hydro() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            2,
+            &VesselHarbor {
+                user_control: false,
+                hydro_lock_id: 0,
+                steerer_id: default_hydromancer_id,
+            },
+        )
+        .expect("Should add vessel to harbor");
+
+        let res = super::execute_hydromancer_vote(
+            deps.as_mut(),
+            MessageInfo {
+                sender: make_valid_addr("zephyrus"),
+                funds: vec![],
+            },
+            1,
+            vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                assert_eq!(
+                    submsg.reply_on,
+                    ReplyOn::Success,
+                    "all lock messages should be reply_on_success"
+                );
+
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(proposals_votes.len(), 1);
+            assert_eq!(proposals_votes[0].proposal_id, 1);
+            assert_eq!(proposals_votes[0].lock_ids, vec![0]);
+        } else {
+            panic!("Le message ne correspond pas au pattern attendu !");
+        }
+
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        let skipped_ids = vec![0];
+        let _ = super::handle_vote_reply(deps.as_mut(), payload, skipped_ids).unwrap();
+
+        let vessels_to_harbor2 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 2)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor2.len(), 1);
+        assert_eq!(vessels_to_harbor2[0].1.hydro_lock_id, 0);
+        assert_eq!(vessels_to_harbor2[0].1.steerer_id, default_hydromancer_id);
+        //vote shoulb be skipped so harbor1 should not have vessels
+        let vessels_to_harbor1 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor1.len(), 0);
+    }
+
+    #[test]
+    fn hydromancer_new_vote_succeed() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        let res = super::execute_hydromancer_vote(
+            deps.as_mut(),
+            MessageInfo {
+                sender: make_valid_addr("zephyrus"),
+                funds: vec![],
+            },
+            1,
+            vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                assert_eq!(
+                    submsg.reply_on,
+                    ReplyOn::Success,
+                    "all lock messages should be reply_on_success"
+                );
+
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(proposals_votes.len(), 1);
+            assert_eq!(proposals_votes[0].proposal_id, 1);
+            assert_eq!(proposals_votes[0].lock_ids, vec![0]);
+        } else {
+            panic!("Le message ne correspond pas au pattern attendu !");
+        }
+
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+
+        let _ = super::handle_vote_reply(deps.as_mut(), payload, vec![]).unwrap();
+
+        let vessels_to_harbor =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor.len(), 1);
+        assert_eq!(vessels_to_harbor[0].1.hydro_lock_id, 0);
+        assert_eq!(vessels_to_harbor[0].1.steerer_id, default_hydromancer_id);
+    }
+
+    #[test]
+    fn hydromancer_change_existing_vote_succeed() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            2,
+            &VesselHarbor {
+                user_control: false,
+                hydro_lock_id: 0,
+                steerer_id: default_hydromancer_id,
+            },
+        )
+        .expect("Should add vessel to harbor");
+
+        let res = super::execute_hydromancer_vote(
+            deps.as_mut(),
+            MessageInfo {
+                sender: make_valid_addr("zephyrus"),
+                funds: vec![],
+            },
+            1,
+            vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                assert_eq!(
+                    submsg.reply_on,
+                    ReplyOn::Success,
+                    "all lock messages should be reply_on_success"
+                );
+
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(proposals_votes.len(), 1);
+            assert_eq!(proposals_votes[0].proposal_id, 1);
+            assert_eq!(proposals_votes[0].lock_ids, vec![0]);
+        } else {
+            panic!("Le message ne correspond pas au pattern attendu !");
+        }
+
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: false,
+            steerer_id: default_hydromancer_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+
+        let _ = super::handle_vote_reply(deps.as_mut(), payload, vec![]).unwrap();
+
+        let vessels_to_harbor1 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor1.len(), 1);
+        assert_eq!(vessels_to_harbor1[0].1.hydro_lock_id, 0);
+        assert_eq!(vessels_to_harbor1[0].1.steerer_id, default_hydromancer_id);
+
+        let vessels_to_harbor2 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 2)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor2.len(), 0);
+    }
+
+    #[test]
+    fn hydromancer_vote_fails_if_duplicate_vessel_id() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        assert_eq!(
+            super::execute_hydromancer_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("zephyrus"),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 2,
+                            vessel_ids: vec![2, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::VoteDuplicatedVesselId { vessel_id: 2 }
+        );
+    }
+
+    #[test]
+    fn hydromancer_vote_fails_if_duplicate_harbor() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        assert_eq!(
+            super::execute_hydromancer_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("zephyrus"),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![3, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::VoteDuplicatedHarborId { harbor_id: 1 }
+        );
     }
 
     #[test]
@@ -1074,13 +2201,15 @@ mod test {
         init_contract(deps.as_mut());
 
         let expected_owner = make_valid_addr("alice");
-
+        let owner_id = state::insert_new_user(deps.as_mut().storage, expected_owner.clone())
+            .expect("Should add user");
         let expected_vessel = Vessel {
             hydro_lock_id: 0,
-            tokenized_share_record_id: 10,
+            tokenized_share_record_id: Some(10),
             class_period: 3,
             auto_maintenance: false,
             hydromancer_id: 0,
+            owner_id,
         };
 
         super::handle_lock_tokens_reply(
@@ -1094,6 +2223,7 @@ mod test {
                 },
                 tokenized_share_record_id: 10,
                 owner: expected_owner.clone(),
+                owner_id,
             },
         )
         .unwrap();
@@ -1131,7 +2261,9 @@ mod test {
         let mut deps = mock_dependencies();
 
         init_contract(deps.as_mut());
-
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
         super::handle_lock_tokens_reply(
             deps.as_mut(),
             0,
@@ -1142,7 +2274,8 @@ mod test {
                     hydromancer_id: 0,
                 },
                 tokenized_share_record_id: 10,
-                owner: make_valid_addr("alice"),
+                owner: alice_address.clone(),
+                owner_id: user_id,
             },
         )
         .unwrap();
@@ -1179,6 +2312,381 @@ mod test {
             )
             .unwrap_err(),
             ContractError::TokenizedShareRecordAlreadyInUse(10)
+        );
+    }
+
+    //TESTS USER VOTE
+    #[test]
+    fn user_vote_fails_not_zephyrus_user() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+        let alice_address = make_valid_addr("alice");
+        assert_eq!(
+            super::execute_user_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: alice_address.clone(),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 2,
+                            vessel_ids: vec![3, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::from(StdError::generic_err(format!(
+                "User {} not found",
+                alice_address.to_string()
+            )))
+        );
+    }
+
+    #[test]
+    fn user_vote_with_other_vessels_fail() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        let bob_address = make_valid_addr("bob");
+        let alice_user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let bob_user_id = state::insert_new_user(deps.as_mut().storage, bob_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: alice_user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+        println!("Execute vote hydromancer");
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: true,
+            steerer_id: bob_user_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        assert_eq!(
+            super::handle_vote_reply(deps.as_mut(), payload, vec![]).unwrap_err(),
+            ContractError::InvalidUserId {
+                vessel_id: 0,
+                user_id: bob_user_id,
+                vessel_user_id: alice_user_id
+            }
+        );
+    }
+
+    #[test]
+    fn user_new_vote_succeed() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        let res = super::execute_user_vote(
+            deps.as_mut(),
+            MessageInfo {
+                sender: alice_address.clone(),
+                funds: vec![],
+            },
+            1,
+            vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .map(|submsg| {
+                assert_eq!(
+                    submsg.reply_on,
+                    ReplyOn::Success,
+                    "all lock messages should be reply_on_success"
+                );
+
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(proposals_votes.len(), 1);
+            assert_eq!(proposals_votes[0].proposal_id, 1);
+            assert_eq!(proposals_votes[0].lock_ids, vec![0]);
+        } else {
+            panic!("Le message ne correspond pas au pattern attendu !");
+        }
+
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: true,
+            steerer_id: user_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        let _ = super::handle_vote_reply(deps.as_mut(), payload, vec![]).unwrap();
+
+        let vessels_to_harbor =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor.len(), 1);
+        assert!(vessels_to_harbor[0].1.user_control);
+        assert_eq!(vessels_to_harbor[0].1.hydro_lock_id, 0);
+        assert_eq!(vessels_to_harbor[0].1.steerer_id, user_id);
+    }
+
+    #[test]
+    fn user_change_existing_hydromancer_vote_succeed() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        let alice_address = make_valid_addr("alice");
+        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+            .expect("Should add user");
+        let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+            .unwrap()
+            .default_hydromancer_id;
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 0,
+                tokenized_share_record_id: Some(0),
+                class_period: 12,
+                auto_maintenance: true,
+                hydromancer_id: default_hydromancer_id,
+                owner_id: user_id,
+            },
+            &alice_address,
+        )
+        .expect("Should add vessel");
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            1,
+            1,
+            2,
+            &VesselHarbor {
+                user_control: false,
+                hydro_lock_id: 0,
+                steerer_id: default_hydromancer_id,
+            },
+        )
+        .expect("Should add vessel to harbor");
+
+        let res = super::execute_user_vote(
+            deps.as_mut(),
+            MessageInfo {
+                sender: alice_address.clone(),
+                funds: vec![],
+            },
+            1,
+            vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        )
+        .unwrap();
+        //because vessel was used by hydromancer, there should be 2 messages (unvote, vote)
+        assert_eq!(res.messages.len(), 2);
+
+        let decoded_submessages: Vec<HydroExecuteMsg> = res
+            .messages
+            .iter()
+            .filter(|submsg| submsg.reply_on == ReplyOn::Success)
+            .map(|submsg| {
+                assert_eq!(
+                    submsg.reply_on,
+                    ReplyOn::Success,
+                    "all lock messages should be reply_on_success"
+                );
+
+                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
+                    panic!("unexpected msg: {submsg:?}");
+                };
+
+                assert_eq!(funds.len(), 0, "vote on hydro does not required funds");
+
+                from_json(msg.clone()).unwrap()
+            })
+            .collect();
+
+        if let [HydroExecuteMsg::Vote {
+            tranche_id,
+            proposals_votes,
+        }] = decoded_submessages.as_slice()
+        {
+            assert_eq!(*tranche_id, 1);
+            assert_eq!(proposals_votes.len(), 1);
+            assert_eq!(proposals_votes[0].proposal_id, 1);
+            assert_eq!(proposals_votes[0].lock_ids, vec![0]);
+        } else {
+            panic!("Le message ne correspond pas au pattern attendu !");
+        }
+        let payload = VoteReplyPayload {
+            tranche_id: 1,
+            round_id: 1,
+            user_vote: true,
+            steerer_id: user_id,
+            vessels_harbors: vec![{
+                VesselsToHarbor {
+                    harbor_id: 1,
+                    vessel_ids: vec![0],
+                }
+            }],
+        };
+        let _ = super::handle_vote_reply(deps.as_mut(), payload, vec![]).unwrap();
+
+        let vessels_to_harbor1 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 1)
+                .expect("Vessel to harbor should exist");
+        assert_eq!(vessels_to_harbor1.len(), 1);
+        assert!(vessels_to_harbor1[0].1.user_control);
+        assert_eq!(vessels_to_harbor1[0].1.hydro_lock_id, 0);
+        assert_eq!(vessels_to_harbor1[0].1.steerer_id, user_id);
+
+        let vessels_to_harbor2 =
+            state::get_vessel_to_harbor_by_harbor_id(deps.as_mut().storage, 1, 1, 2)
+                .expect("Should return empty list");
+        assert_eq!(vessels_to_harbor2.len(), 0);
+    }
+
+    #[test]
+    fn user_vote_fails_if_duplicate_vessel_id() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        assert_eq!(
+            super::execute_user_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("zephyrus"),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 2,
+                            vessel_ids: vec![2, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::VoteDuplicatedVesselId { vessel_id: 2 }
+        );
+    }
+
+    #[test]
+    fn user_vote_fails_if_duplicate_harbor() {
+        let mut deps = mock_dependencies();
+
+        init_contract(deps.as_mut());
+
+        assert_eq!(
+            super::execute_user_vote(
+                deps.as_mut(),
+                MessageInfo {
+                    sender: make_valid_addr("zephyrus"),
+                    funds: vec![]
+                },
+                1,
+                vec![
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![1, 2],
+                        }
+                    },
+                    {
+                        VesselsToHarbor {
+                            harbor_id: 1,
+                            vessel_ids: vec![3, 4],
+                        }
+                    }
+                ]
+            )
+            .unwrap_err(),
+            ContractError::VoteDuplicatedHarborId { harbor_id: 1 }
         );
     }
 }

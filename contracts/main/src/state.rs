@@ -218,7 +218,13 @@ pub fn add_vessel(
         AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
     }
 
-    TOKENIZED_SHARE_RECORDS.save(storage, vessel.tokenized_share_record_id, &vessel_id)?;
+    if vessel.tokenized_share_record_id.is_some() {
+        TOKENIZED_SHARE_RECORDS.save(
+            storage,
+            vessel.tokenized_share_record_id.unwrap(),
+            &vessel_id,
+        )?;
+    }
 
     Ok(())
 }
@@ -473,7 +479,9 @@ pub fn remove_vessel(
         AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
     }
 
-    TOKENIZED_SHARE_RECORDS.remove(storage, vessel.tokenized_share_record_id);
+    if vessel.tokenized_share_record_id.is_some() {
+        TOKENIZED_SHARE_RECORDS.remove(storage, vessel.tokenized_share_record_id.unwrap());
+    }
 
     Ok(())
 }

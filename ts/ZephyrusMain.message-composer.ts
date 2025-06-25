@@ -8,7 +8,7 @@ import { Coin } from "@cosmjs/amino";
 import { MsgExecuteContractEncodeObject } from "@cosmjs/cosmwasm-stargate";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, VesselsToHarbor, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
@@ -55,6 +55,15 @@ export interface ZephyrusMainMsg {
     trancheId: number;
     vesselsHarbors: VesselsToHarbor[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  receiveNft: ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   changeHydromancer: ({
     hydroLockIds,
     hydromancerId,
@@ -80,6 +89,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.decommissionVessels = this.decommissionVessels.bind(this);
     this.hydromancerVote = this.hydromancerVote.bind(this);
     this.userVote = this.userVote.bind(this);
+    this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
   }
   buildVessel = ({
@@ -244,6 +254,31 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
           user_vote: {
             tranche_id: trancheId,
             vessels_harbors: vesselsHarbors
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  receiveNft = ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          receive_nft: {
+            msg,
+            sender,
+            token_id: tokenId
           }
         })),
         funds: _funds

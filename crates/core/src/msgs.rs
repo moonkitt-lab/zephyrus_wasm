@@ -1,6 +1,6 @@
 use crate::state::{Constants, Vessel, VesselHarbor};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Decimal;
+use cosmwasm_std::{Binary, Decimal};
 
 pub type UserId = u64;
 pub type HydromancerId = u64;
@@ -35,6 +35,21 @@ pub struct VesselsToHarbor {
 }
 
 #[cw_serde]
+pub struct VesselInfo {
+    pub owner: String,
+    pub auto_maintenance: bool,
+    pub hydromancer_id: u64,
+    pub class_period: u64,
+}
+
+#[cw_serde]
+pub struct Cw721ReceiveMsg {
+    pub sender: String,
+    pub token_id: String,
+    pub msg: Binary,
+}
+
+#[cw_serde]
 pub enum ExecuteMsg {
     // TODO: Determine message variants
     BuildVessel {
@@ -63,6 +78,7 @@ pub enum ExecuteMsg {
         tranche_id: TrancheId,
         vessels_harbors: Vec<VesselsToHarbor>,
     },
+    ReceiveNft(Cw721ReceiveMsg),
     ChangeHydromancer {
         tranche_id: TrancheId,
         hydromancer_id: HydromancerId,

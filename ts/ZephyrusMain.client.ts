@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, BuildVesselParams, VesselsToHarbor, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -159,6 +159,15 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     trancheId: number;
     vesselsHarbors: VesselsToHarbor[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  receiveNft: ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   changeHydromancer: ({
     hydroLockIds,
     hydromancerId,
@@ -187,6 +196,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.decommissionVessels = this.decommissionVessels.bind(this);
     this.hydromancerVote = this.hydromancerVote.bind(this);
     this.userVote = this.userVote.bind(this);
+    this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
   }
   buildVessel = async ({
@@ -282,6 +292,23 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
       user_vote: {
         tranche_id: trancheId,
         vessels_harbors: vesselsHarbors
+      }
+    }, fee, memo, _funds);
+  };
+  receiveNft = async ({
+    msg,
+    sender,
+    tokenId
+  }: {
+    msg: Binary;
+    sender: string;
+    tokenId: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      receive_nft: {
+        msg,
+        sender,
+        token_id: tokenId
       }
     }, fee, memo, _funds);
   };

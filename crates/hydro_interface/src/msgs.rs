@@ -7,7 +7,6 @@ pub struct ProposalToLockups {
     pub lock_ids: Vec<u64>,
 }
 
-
 #[cw_serde]
 pub enum ExecuteMsg {
     LockTokens {
@@ -42,7 +41,6 @@ pub struct CurrentRoundResponse {
     pub round_id: u64,
     pub round_end: Timestamp,
 }
-
 
 #[cw_serde]
 pub struct SpecificUserLockupsResponse {
@@ -105,4 +103,3 @@ pub struct CollectionInfo {
     pub name: String,
     pub symbol: String,
 }
-

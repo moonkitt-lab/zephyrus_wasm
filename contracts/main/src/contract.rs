@@ -9,14 +9,18 @@ use cosmwasm_std::{
 use hydro_interface::msgs::ExecuteMsg::{
     LockTokens, RefreshLockDuration, UnlockTokens, Unvote, Vote,
 };
-use hydro_interface::msgs::{CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, ProposalToLockups, RoundLockPowerSchedule, SpecificUserLockupsResponse};
+use hydro_interface::msgs::{
+    CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, ProposalToLockups,
+    RoundLockPowerSchedule, SpecificUserLockupsResponse,
+};
 
 use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg, QueryMsg, RoundId, VesselHarborInfo, VesselHarborResponse, VesselInfo, VesselsResponse, VesselsToHarbor, VotingPowerResponse
-
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg,
+    QueryMsg, RoundId, VesselHarborInfo, VesselHarborResponse, VesselInfo, VesselsResponse,
+    VesselsToHarbor, VotingPowerResponse,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
@@ -166,7 +170,7 @@ fn execute_receive_nft(
     // 4. Check that class_period represents a valid lock duration
     let constant_response: HydroConstantsResponse = deps.querier.query_wasm_smart(
         constants.hydro_config.hydro_contract_address.to_string(),
-        &HydroQueryMsg::Constants{},
+        &HydroQueryMsg::Constants {},
     )?;
     validate_lock_duration(
         &constant_response.constants.round_lock_power_schedule,
@@ -693,16 +697,16 @@ fn execute_user_vote(
                 tranche_id,
                 current_round_id,
                 *vessel_id,
-            ) {
-                if let Some(_) = state::get_harbor_of_vessel(
-                    deps.storage,
-                    tranche_id,
-                    current_round_id,
-                    *vessel_id,
-                )? {
-                    //vessel used by hydromancer should be unvoted
-                    unvote_ids.push(vessel_id.clone());
-                }
+            ) && state::get_harbor_of_vessel(
+                deps.storage,
+                tranche_id,
+                current_round_id,
+                *vessel_id,
+            )?
+            .is_some()
+            {
+                // vessel used by hydromancer should be unvoted
+                unvote_ids.push(*vessel_id);
             }
         }
 
@@ -774,7 +778,6 @@ pub fn execute(
         ExecuteMsg::DecommissionVessels { hydro_lock_ids } => {
             execute_decommission_vessels(deps, env, info, hydro_lock_ids)
         }
-
         ExecuteMsg::HydromancerVote {
             tranche_id,
             vessels_harbors,
@@ -1297,7 +1300,7 @@ mod test {
         WasmMsg, WasmQuery,
     };
     use hydro_interface::msgs::{
-        CurrentRoundResponse, ExecuteMsg as HydroExecuteMsg, HydroQueryMsg
+        CurrentRoundResponse, ExecuteMsg as HydroExecuteMsg, HydroQueryMsg,
     };
     use neutron_std::types::ibc::applications::transfer::v1::{
         DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,

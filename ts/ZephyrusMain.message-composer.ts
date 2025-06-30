@@ -8,17 +8,10 @@ import { Coin } from "@cosmjs/amino";
 import { MsgExecuteContractEncodeObject } from "@cosmjs/cosmwasm-stargate";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
-  buildVessel: ({
-    receiver,
-    vessels
-  }: {
-    receiver?: string;
-    vessels: BuildVesselParams[];
-  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   updateVesselsClass: ({
     hydroLockDuration,
     hydroLockIds
@@ -80,7 +73,6 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   constructor(sender: string, contractAddress: string) {
     this.sender = sender;
     this.contractAddress = contractAddress;
-    this.buildVessel = this.buildVessel.bind(this);
     this.updateVesselsClass = this.updateVesselsClass.bind(this);
     this.autoMaintain = this.autoMaintain.bind(this);
     this.modifyAutoMaintenance = this.modifyAutoMaintenance.bind(this);
@@ -92,28 +84,6 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
   }
-  buildVessel = ({
-    receiver,
-    vessels
-  }: {
-    receiver?: string;
-    vessels: BuildVesselParams[];
-  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
-    return {
-      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
-      value: MsgExecuteContract.fromPartial({
-        sender: this.sender,
-        contract: this.contractAddress,
-        msg: toUtf8(JSON.stringify({
-          build_vessel: {
-            receiver,
-            vessels
-          }
-        })),
-        funds: _funds
-      })
-    };
-  };
   updateVesselsClass = ({
     hydroLockDuration,
     hydroLockIds

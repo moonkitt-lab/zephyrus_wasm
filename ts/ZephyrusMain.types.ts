@@ -14,11 +14,6 @@ export interface InstantiateMsg {
   whitelist_admins: string[];
 }
 export type ExecuteMsg = {
-  build_vessel: {
-    receiver?: string | null;
-    vessels: BuildVesselParams[];
-  };
-} | {
   update_vessels_class: {
     hydro_lock_duration: number;
     hydro_lock_ids: number[];
@@ -58,11 +53,6 @@ export type ExecuteMsg = {
   };
 };
 export type Binary = string;
-export interface BuildVesselParams {
-  auto_maintenance: boolean;
-  hydromancer_id: number;
-  lock_duration: number;
-}
 export interface VesselsToHarbor {
   harbor_id: number;
   vessel_ids: number[];
@@ -117,9 +107,11 @@ export interface VesselsResponse {
 export interface Vessel {
   auto_maintenance: boolean;
   class_period: number;
+  current_time_weighted_shares: number;
   hydro_lock_id: number;
   hydromancer_id: number;
   owner_id: number;
+  token_group_id: string;
   tokenized_share_record_id?: number | null;
 }
 export interface VesselHarborResponse {

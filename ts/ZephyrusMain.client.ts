@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -116,13 +116,6 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
 export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   sender: string;
-  buildVessel: ({
-    receiver,
-    vessels
-  }: {
-    receiver?: string;
-    vessels: BuildVesselParams[];
-  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateVesselsClass: ({
     hydroLockDuration,
     hydroLockIds
@@ -187,7 +180,6 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.client = client;
     this.sender = sender;
     this.contractAddress = contractAddress;
-    this.buildVessel = this.buildVessel.bind(this);
     this.updateVesselsClass = this.updateVesselsClass.bind(this);
     this.autoMaintain = this.autoMaintain.bind(this);
     this.modifyAutoMaintenance = this.modifyAutoMaintenance.bind(this);
@@ -199,20 +191,6 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
   }
-  buildVessel = async ({
-    receiver,
-    vessels
-  }: {
-    receiver?: string;
-    vessels: BuildVesselParams[];
-  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
-    return await this.client.execute(this.sender, this.contractAddress, {
-      build_vessel: {
-        receiver,
-        vessels
-      }
-    }, fee, memo, _funds);
-  };
   updateVesselsClass = async ({
     hydroLockDuration,
     hydroLockIds

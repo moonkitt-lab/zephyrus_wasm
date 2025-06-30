@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::usize;
 
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
@@ -7,9 +6,7 @@ use cosmwasm_std::{
     StdResult, SubMsg, WasmMsg,
 };
 
-use hydro_interface::msgs::ExecuteMsg::{
-    LockTokens, RefreshLockDuration, UnlockTokens, Unvote, Vote,
-};
+use hydro_interface::msgs::ExecuteMsg::{RefreshLockDuration, UnlockTokens, Unvote, Vote};
 use hydro_interface::msgs::{
     CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, LockupsSharesResponse,
     ProposalToLockups, RoundLockPowerSchedule, SpecificUserLockupsResponse,
@@ -27,7 +24,6 @@ use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHa
 
 use crate::{
     errors::ContractError,
-    helpers::ibc::{DenomTrace, QuerierExt as IbcQuerierExt},
     helpers::vectors::{compare_coin_vectors, compare_u64_vectors},
     state,
 };
@@ -998,27 +994,6 @@ fn handle_vote_reply(
             .collect::<Vec<_>>()
             .join(","),
     ))
-}
-
-fn parse_lock_tokens_reply(
-    reply: Reply,
-) -> Result<(HydroLockId, LockTokensReplyPayload), ContractError> {
-    let response = reply
-        .result
-        .into_result()
-        .expect("always issued on_success");
-
-    let lock_id = response
-        .events
-        .into_iter()
-        .flat_map(|e| e.attributes)
-        .find_map(|attr| (attr.key == "lock_id").then(|| attr.value.parse().ok()))
-        .flatten()
-        .expect("lock tokens reply always contains valid lock_id attribute");
-
-    let payload = from_json(reply.payload).expect("build vessel parameters always attached");
-
-    Ok((lock_id, payload))
 }
 
 fn parse_locks_skipped_reply(reply: Reply) -> Result<Vec<u64>, ContractError> {

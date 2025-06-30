@@ -34,9 +34,8 @@ use crate::{
 
 type Response = CwResponse<NeutronMsg>;
 
-const HYDRO_LOCK_TOKENS_REPLY_ID: u64 = 1;
-const DECOMMISSION_REPLY_ID: u64 = 2;
-const VOTE_REPLY_ID: u64 = 3;
+const DECOMMISSION_REPLY_ID: u64 = 1;
+const VOTE_REPLY_ID: u64 = 2;
 
 const MAX_PAGINATION_LIMIT: usize = 1000;
 const DEFAULT_PAGINATION_LIMIT: usize = 100;
@@ -104,13 +103,6 @@ pub fn instantiate(
     state::update_constants(deps.storage, constant)?;
 
     Ok(Response::default())
-}
-
-fn extract_tokenized_share_record_id(denom_trace: &DenomTrace) -> Option<u64> {
-    denom_trace
-        .base_denom
-        .rsplit_once('/')
-        .and_then(|(_, id_str)| id_str.parse().ok())
 }
 
 fn validate_lock_duration(
@@ -199,6 +191,17 @@ fn execute_receive_nft(
     }
     let owner_id = owner_id.expect("Owner id should be present");
 
+    let lockup_shares_response = query_hydro_lockups_shares(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+        vec![hydro_lock_id],
+    )?;
+    let current_time_weighted_shares =
+        lockup_shares_response.lockups_shares_info[0].time_weighted_shares;
+    let token_group_id = lockup_shares_response.lockups_shares_info[0]
+        .token_group_id
+        .clone();
+
     // 7. Store the vessel in state
     let vessel = Vessel {
         hydro_lock_id,
@@ -207,96 +210,12 @@ fn execute_receive_nft(
         hydromancer_id: vessel_info.hydromancer_id,
         auto_maintenance: vessel_info.auto_maintenance,
         owner_id,
+        current_time_weighted_shares: current_time_weighted_shares.u128(),
+        token_group_id,
     };
     state::add_vessel(deps.storage, &vessel, &owner_addr)?;
 
     Ok(Response::default())
-}
-
-fn execute_build_vessel(
-    deps: DepsMut,
-    info: MessageInfo,
-    vessels: Vec<BuildVesselParams>,
-    receiver: Option<String>,
-) -> Result<Response, ContractError> {
-    let constants = state::get_constants(deps.storage)?;
-    validate_contract_is_not_paused(&constants)?;
-
-    if info.funds.is_empty() {
-        return Err(ContractError::NoTokensReceived);
-    }
-
-    if vessels.len() != info.funds.len() {
-        return Err(ContractError::CreateVesselParamsLengthMismatch {
-            params_len: vessels.len(),
-            funds_len: info.funds.len(),
-        });
-    }
-
-    let owner = receiver
-        .map(|addr| deps.api.addr_validate(&addr))
-        .transpose()?
-        .unwrap_or(info.sender);
-
-    let mut owner_id = state::get_user_id_by_address(deps.storage, owner.clone());
-    if owner_id.is_err() {
-        owner_id = state::insert_new_user(deps.storage, owner.clone());
-    }
-    let owner_id = owner_id.expect("Owner id should be present");
-    let mut hydro_lock_msgs = vec![];
-
-    // Note: Check again when IBC v2 is out, because the order of tokens may not be deterministic
-    // Today with IBC v1, IBC transfers can only send one token at once, so we don't have any issue
-    // And for tokens directly sent to the contract, the order is deterministic
-    for (params, token) in vessels.into_iter().zip(info.funds) {
-        if !state::hydromancer_exists(deps.storage, params.hydromancer_id) {
-            return Err(ContractError::HydromancerNotFound {
-                hydromancer_id: params.hydromancer_id,
-            });
-        }
-
-        let denom_trace = deps.querier.ibc_denom_trace(&token.denom)?;
-
-        let tokenized_share_record_id = extract_tokenized_share_record_id(&denom_trace)
-            .ok_or_else(|| ContractError::InvalidLsmTokenReceived(token.denom.clone()))?;
-
-        if state::is_tokenized_share_record_used(deps.storage, tokenized_share_record_id) {
-            return Err(ContractError::TokenizedShareRecordAlreadyInUse(
-                tokenized_share_record_id,
-            ));
-        }
-
-        let payload = to_json_binary(&LockTokensReplyPayload {
-            params,
-            tokenized_share_record_id,
-            owner: owner.clone(),
-            owner_id,
-        })?;
-
-        let contract_addr = constants
-            .hydro_config
-            .hydro_contract_address
-            .clone()
-            .into_string();
-
-        let msg = to_json_binary(&LockTokens {
-            lock_duration: params.lock_duration,
-        })?;
-
-        let lock_submsg = SubMsg::reply_on_success(
-            WasmMsg::Execute {
-                contract_addr,
-                msg,
-                funds: vec![token],
-            },
-            HYDRO_LOCK_TOKENS_REPLY_ID,
-        )
-        .with_payload(payload);
-
-        hydro_lock_msgs.push(lock_submsg);
-    }
-
-    Ok(Response::new().add_submessages(hydro_lock_msgs))
 }
 
 // This function loops through all the vessels, and filters those who have auto_maintenance true
@@ -770,9 +689,6 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::BuildVessel { vessels, receiver } => {
-            execute_build_vessel(deps, info, vessels, receiver)
-        }
         ExecuteMsg::AutoMaintain {} => execute_auto_maintain(deps, info),
         ExecuteMsg::UpdateVesselsClass {
             hydro_lock_ids,
@@ -962,10 +878,6 @@ fn validate_admin_address(deps: &DepsMut, sender: &Addr) -> Result<(), ContractE
 #[entry_point]
 pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, ContractError> {
     match reply.id {
-        // Cas : retour du premier message
-        HYDRO_LOCK_TOKENS_REPLY_ID => parse_lock_tokens_reply(reply)
-            .and_then(|(id, payload)| handle_lock_tokens_reply(deps, id, payload)),
-
         DECOMMISSION_REPLY_ID => handle_unlock_tokens_reply(deps, env, reply),
         VOTE_REPLY_ID => {
             let skipped_locks = parse_locks_skipped_reply(reply.clone())?;
@@ -992,7 +904,6 @@ fn handle_vote_reply(
 ) -> Result<Response, ContractError> {
     for vessels_to_harbor in payload.vessels_harbors.clone() {
         let mut lock_ids = vec![];
-
         for vessel_id in vessels_to_harbor.vessel_ids.iter() {
             //if vessel is skipped, it means that hydro was not able to vote for it, zephyrus skips it too
             if skipped_locks.contains(vessel_id) {
@@ -1087,38 +998,6 @@ fn handle_vote_reply(
             .collect::<Vec<_>>()
             .join(","),
     ))
-}
-
-fn handle_lock_tokens_reply(
-    deps: DepsMut,
-    hydro_lock_id: u64,
-    LockTokensReplyPayload {
-        params:
-            BuildVesselParams {
-                lock_duration,
-                auto_maintenance,
-                hydromancer_id,
-            },
-        tokenized_share_record_id,
-        owner,
-        owner_id,
-    }: LockTokensReplyPayload,
-) -> Result<Response, ContractError> {
-    let vessel = Vessel {
-        hydro_lock_id,
-        class_period: lock_duration,
-        tokenized_share_record_id: Some(tokenized_share_record_id),
-        hydromancer_id,
-        auto_maintenance,
-        owner_id,
-    };
-
-    state::add_vessel(deps.storage, &vessel, &owner)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "build_vessel")
-        .add_attribute("hydro_lock_id", hydro_lock_id.to_string())
-        .add_attribute("owner", owner))
 }
 
 fn parse_lock_tokens_reply(
@@ -1322,14 +1201,24 @@ fn initialize_hydromancer_time_weighted_shares(
             0,
             usize::MAX,
         )?;
-        let lockups_shares_response = query_hydro_lockups_shares_by_hydromancer(
+        // Load lockup sahres for all hydromancer's vessels
+        let lockups_shares_response = query_hydro_lockups_shares(
             deps.as_ref(),
             hydro_contract_addr,
-            hydromancer_id,
-            vessels,
+            vessels.iter().map(|v| v.hydro_lock_id).collect(),
         )?;
 
         for lockup_shares in lockups_shares_response.lockups_shares_info {
+            let vessel = state::get_vessels_by_ids(deps.storage, &[lockup_shares.lock_id])?
+                .pop()
+                .expect("Vessel should exist");
+
+            state::update_time_weighted_shares_for_vessel(
+                deps.storage,
+                &vessel,
+                lockup_shares.time_weighted_shares.u128(),
+                lockup_shares.token_group_id.clone(),
+            )?;
             let is_vessel_under_user_control = state::is_vessel_under_user_control(
                 deps.storage,
                 tranche_id,
@@ -1346,9 +1235,7 @@ fn initialize_hydromancer_time_weighted_shares(
                     lockup_shares.time_weighted_shares.u128(),
                 )
                 .expect("Failed to insert time weighted shares");
-                let vessel = state::get_vessels_by_ids(deps.storage, &[lockup_shares.lock_id])?
-                    .pop()
-                    .expect("Vessel should exist");
+
                 state::add_weighted_shares_to_user_hydromancer(
                     deps.storage,
                     tranche_id,
@@ -1365,23 +1252,28 @@ fn initialize_hydromancer_time_weighted_shares(
     Ok(())
 }
 
-fn query_hydro_lockups_shares_by_hydromancer(
+fn query_hydro_lockups_shares(
     deps: Deps,
     hydro_contract_addr: String,
-    hydromancer_id: u64,
-    vessels: Vec<Vessel>,
+    vessel_ids: Vec<u64>,
 ) -> Result<LockupsSharesResponse, StdError> {
-    let lock_ids: Vec<u64> = vessels.iter().map(|v| v.hydro_lock_id).collect::<Vec<_>>();
     let lockups_shares: LockupsSharesResponse = deps
         .querier
         .query_wasm_smart(
             hydro_contract_addr,
-            &HydroQueryMsg::LockupsShares { lock_ids },
+            &HydroQueryMsg::LockupsShares {
+                lock_ids: vessel_ids.clone(),
+            },
         )
         .map_err(|e| {
             StdError::generic_err(format!(
-                "Failed to get time weighted shares for hydromancer {} from hydro : {}",
-                hydromancer_id, e
+                "Failed to get time weighted shares for vessels {} from hydro : {}",
+                vessel_ids
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                e
             ))
         })?;
     Ok(lockups_shares)
@@ -1632,6 +1524,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: alice_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -1680,6 +1574,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -1735,6 +1631,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -1853,6 +1751,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -1953,6 +1853,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2118,370 +2020,6 @@ mod test {
         );
     }
 
-    #[test]
-    fn build_vessel_fails_if_funds_sent() {
-        let mut deps = mock_dependencies();
-
-        init_contract(deps.as_mut());
-
-        assert_eq!(
-            super::execute_build_vessel(
-                deps.as_mut(),
-                MessageInfo {
-                    sender: make_valid_addr("alice"),
-                    funds: vec![]
-                },
-                vec![],
-                None
-            )
-            .unwrap_err(),
-            ContractError::NoTokensReceived
-        );
-    }
-
-    #[test]
-    fn build_vessel_fails_if_params_len_not_equal_funds_len() {
-        let mut deps = mock_dependencies();
-
-        init_contract(deps.as_mut());
-
-        assert_eq!(
-            super::execute_build_vessel(
-                deps.as_mut(),
-                MessageInfo {
-                    sender: make_valid_addr("alice"),
-                    funds: coins(
-                        1_000_000,
-                        "ibc/69ED129755461CF93B7E64A277A3552582B47A64F826F05E4F43E22C2D476C02"
-                    )
-                },
-                vec![],
-                None
-            )
-            .unwrap_err(),
-            ContractError::CreateVesselParamsLengthMismatch {
-                params_len: 0,
-                funds_len: 1
-            }
-        );
-
-        assert_eq!(
-            super::execute_build_vessel(
-                deps.as_mut(),
-                MessageInfo {
-                    sender: make_valid_addr("alice"),
-                    funds: coins(
-                        1_000_000,
-                        "ibc/69ED129755461CF93B7E64A277A3552582B47A64F826F05E4F43E22C2D476C02"
-                    )
-                },
-                vec![
-                    BuildVesselParams {
-                        lock_duration: 12,
-                        auto_maintenance: true,
-                        hydromancer_id: 0
-                    },
-                    BuildVesselParams {
-                        lock_duration: 12,
-                        auto_maintenance: true,
-                        hydromancer_id: 0
-                    }
-                ],
-                None
-            )
-            .unwrap_err(),
-            ContractError::CreateVesselParamsLengthMismatch {
-                params_len: 2,
-                funds_len: 1
-            }
-        );
-    }
-
-    #[test]
-    fn build_vessel_fails_if_hydromancer_does_not_exist() {
-        let mut deps = mock_dependencies();
-
-        init_contract(deps.as_mut());
-
-        assert_eq!(
-            super::execute_build_vessel(
-                deps.as_mut(),
-                MessageInfo {
-                    sender: make_valid_addr("alice"),
-                    funds: coins(
-                        1_000_000,
-                        "ibc/69ED129755461CF93B7E64A277A3552582B47A64F826F05E4F43E22C2D476C02"
-                    ),
-                },
-                vec![BuildVesselParams {
-                    lock_duration: 12,
-                    auto_maintenance: true,
-                    hydromancer_id: 1
-                },],
-                None
-            )
-            .unwrap_err(),
-            ContractError::HydromancerNotFound { hydromancer_id: 1 }
-        );
-    }
-
-    #[test]
-    fn build_vessel_fails_if_ibc_coin_denom_trace_is_not_share_record() {
-        let mut deps = mock_dependencies();
-
-        init_contract(deps.as_mut());
-
-        assert_eq!(
-            super::execute_build_vessel(
-                deps.as_mut(),
-                MessageInfo {
-                    sender: make_valid_addr("alice"),
-                    funds: coins(
-                        1_000_000,
-                        "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2"
-                    )
-                },
-                vec![BuildVesselParams {
-                    lock_duration: 12,
-                    auto_maintenance: true,
-                    hydromancer_id: 0
-                },],
-                None
-            )
-            .unwrap_err(),
-            ContractError::InvalidLsmTokenReceived(
-                "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2".to_owned()
-            )
-        );
-    }
-
-    #[test]
-    fn build_vessel_response_contains_lock_submsg_per_lsm_share() {
-        let mut deps = mock_dependencies();
-
-        init_contract(deps.as_mut());
-
-        let res = super::execute_build_vessel(
-            deps.as_mut(),
-            MessageInfo {
-                sender: make_valid_addr("alice"),
-                funds: vec![
-                    coin(
-                        1_000_000,
-                        "ibc/69ED129755461CF93B7E64A277A3552582B47A64F826F05E4F43E22C2D476C02",
-                    ),
-                    coin(
-                        500_000,
-                        "ibc/FB6F9C479D2E47419EAA9C9A48B325F68A032F76AFA04890F1278C47BC0A8BB4",
-                    ),
-                ],
-            },
-            vec![
-                BuildVesselParams {
-                    lock_duration: 12,
-                    auto_maintenance: true,
-                    hydromancer_id: 0,
-                },
-                BuildVesselParams {
-                    lock_duration: 3,
-                    auto_maintenance: false,
-                    hydromancer_id: 0,
-                },
-            ],
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(res.messages.len(), 2);
-
-        let decoded_submessages: Vec<(HydroExecuteMsg, (&str, u128), LockTokensReplyPayload)> = res
-            .messages
-            .iter()
-            .map(|submsg| {
-                assert_eq!(
-                    submsg.reply_on,
-                    ReplyOn::Success,
-                    "all lock messages should be reply_on_success"
-                );
-
-                let CosmosMsg::Wasm(WasmMsg::Execute { msg, funds, .. }) = &submsg.msg else {
-                    panic!("unexpected msg: {submsg:?}");
-                };
-
-                assert_eq!(
-                    funds.len(),
-                    1,
-                    "each lock message should have exactly one coin attached"
-                );
-
-                (
-                    from_json(msg.clone()).unwrap(),
-                    (funds[0].denom.as_str(), funds[0].amount.u128()),
-                    from_json(submsg.payload.clone()).unwrap(),
-                )
-            })
-            .collect();
-
-        assert!(matches!(
-            decoded_submessages.as_slice(),
-            [
-                (
-                    HydroExecuteMsg::LockTokens { lock_duration: 12 },
-                    (
-                        "ibc/69ED129755461CF93B7E64A277A3552582B47A64F826F05E4F43E22C2D476C02",
-                        1_000_000
-                    ),
-                    LockTokensReplyPayload {
-                        params: BuildVesselParams {
-                            lock_duration: 12,
-                            auto_maintenance: true,
-                            hydromancer_id: 0
-                        },
-                        tokenized_share_record_id: 12,
-                        ..
-                    }
-                ),
-                (
-                    HydroExecuteMsg::LockTokens { lock_duration: 3 },
-                    (
-                        "ibc/FB6F9C479D2E47419EAA9C9A48B325F68A032F76AFA04890F1278C47BC0A8BB4",
-                        500_000
-                    ),
-                    LockTokensReplyPayload {
-                        params: BuildVesselParams {
-                            lock_duration: 3,
-                            auto_maintenance: false,
-                            hydromancer_id: 0
-                        },
-                        tokenized_share_record_id: 10,
-                        ..
-                    }
-                )
-            ]
-        ))
-    }
-
-    #[test]
-    fn handle_lock_tokens_reply_updates_state_correctly() {
-        let mut deps = mock_dependencies();
-
-        init_contract(deps.as_mut());
-
-        let expected_owner = make_valid_addr("alice");
-        let owner_id = state::insert_new_user(deps.as_mut().storage, expected_owner.clone())
-            .expect("Should add user");
-        let expected_vessel = Vessel {
-            hydro_lock_id: 0,
-            tokenized_share_record_id: Some(10),
-            class_period: 3,
-            auto_maintenance: false,
-            hydromancer_id: 0,
-            owner_id,
-        };
-
-        super::handle_lock_tokens_reply(
-            deps.as_mut(),
-            0,
-            LockTokensReplyPayload {
-                params: BuildVesselParams {
-                    lock_duration: 3,
-                    auto_maintenance: false,
-                    hydromancer_id: 0,
-                },
-                tokenized_share_record_id: 10,
-                owner: expected_owner.clone(),
-                owner_id,
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            super::state::get_vessel(&deps.storage, 0).unwrap(),
-            expected_vessel
-        );
-
-        assert_eq!(
-            super::state::get_vessels_by_owner(&deps.storage, expected_owner.clone(), 0, 100)
-                .unwrap(),
-            vec![expected_vessel]
-        );
-
-        assert_eq!(
-            super::state::get_vessels_by_hydromancer(
-                &deps.storage,
-                make_valid_addr("zephyrus"),
-                0,
-                100
-            )
-            .unwrap(),
-            vec![expected_vessel]
-        );
-
-        assert!(super::state::is_tokenized_share_record_used(
-            &deps.storage,
-            10
-        ));
-    }
-
-    #[test]
-    fn build_vessel_fails_if_tokenized_share_record_already_in_use() {
-        let mut deps = mock_dependencies();
-
-        init_contract(deps.as_mut());
-        let alice_address = make_valid_addr("alice");
-        let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
-            .expect("Should add user");
-        super::handle_lock_tokens_reply(
-            deps.as_mut(),
-            0,
-            LockTokensReplyPayload {
-                params: BuildVesselParams {
-                    lock_duration: 3,
-                    auto_maintenance: false,
-                    hydromancer_id: 0,
-                },
-                tokenized_share_record_id: 10,
-                owner: alice_address.clone(),
-                owner_id: user_id,
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            super::execute_build_vessel(
-                deps.as_mut(),
-                MessageInfo {
-                    sender: make_valid_addr("alice"),
-                    funds: vec![
-                        coin(
-                            1_000_000,
-                            "ibc/69ED129755461CF93B7E64A277A3552582B47A64F826F05E4F43E22C2D476C02",
-                        ),
-                        coin(
-                            500_000,
-                            "ibc/FB6F9C479D2E47419EAA9C9A48B325F68A032F76AFA04890F1278C47BC0A8BB4",
-                        ),
-                    ],
-                },
-                vec![
-                    BuildVesselParams {
-                        lock_duration: 12,
-                        auto_maintenance: true,
-                        hydromancer_id: 0,
-                    },
-                    BuildVesselParams {
-                        lock_duration: 3,
-                        auto_maintenance: false,
-                        hydromancer_id: 0,
-                    },
-                ],
-                None,
-            )
-            .unwrap_err(),
-            ContractError::TokenizedShareRecordAlreadyInUse(10)
-        );
-    }
-
     //TESTS USER VOTE
     #[test]
     fn user_vote_fails_not_zephyrus_user() {
@@ -2544,6 +2082,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: alice_user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2592,6 +2132,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2692,6 +2234,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2900,6 +2444,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2945,6 +2491,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2959,6 +2507,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: bob_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &bob_address,
         )
@@ -3003,6 +2553,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -3084,6 +2636,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -3184,6 +2738,8 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
+                current_time_weighted_shares: 1,
+                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )

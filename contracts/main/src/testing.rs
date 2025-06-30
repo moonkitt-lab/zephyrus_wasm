@@ -111,27 +111,18 @@ mod tests {
         assert!(res.is_ok(), "error: {:?}", res);
 
         //now every msg executed should be in error "ContractError::Paused"
-
-        let info2 = message_info(
-            &Addr::unchecked(admin_address.clone()),
-            &[Coin::new(3000u64, IBC_DENOM_1.to_string())],
-        );
-        let msg_build_vessel = ExecuteMsg::BuildVessel {
-            vessels: vec![BuildVesselParams {
-                lock_duration: 1000,
-                auto_maintenance: true,
-                hydromancer_id: 0,
-            }],
-            receiver: None,
-        };
-
-        let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg_build_vessel);
+        let info2 = message_info(&Addr::unchecked("sender"), &[]);
+        let msg_receive_nft = ExecuteMsg::ReceiveNft(Cw721ReceiveMsg {
+            sender: Addr::unchecked("sender").to_string(),
+            token_id: "1".to_string(),
+            msg: Binary::from("{}".as_bytes()),
+        });
+        let res = execute(deps.as_mut(), env.clone(), info2.clone(), msg_receive_nft);
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err().to_string(),
             ContractError::Paused.to_string()
         );
-
         let info3 = message_info(&Addr::unchecked("sender"), &[]);
         let msg_auto_maintain = ExecuteMsg::AutoMaintain {};
         let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg_auto_maintain);
@@ -324,6 +315,7 @@ mod tests {
         let msg = ExecuteMsg::ReceiveNft(receive_msg);
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
+        println!("res: {:?}", res);
         assert!(res.is_ok());
     }
 
@@ -354,6 +346,9 @@ mod tests {
                     let response = serde_json::from_str::<hydro_interface::msgs::SpecificUserLockupsResponse>(lockup_response).unwrap();
                     SystemResult::Ok(ContractResult::Ok(to_json_binary(&response).unwrap()))
                    }
+                } else if msg_str.contains("lockups_shares") {
+                    let response = serde_json::from_str::<hydro_interface::msgs::LockupsSharesResponse>(r#"{"lockups_shares_info":[{"lock_id":1,"time_weighted_shares":"1","token_group_id":"dAtom"}]}"#).unwrap();
+                    SystemResult::Ok(ContractResult::Ok(to_json_binary(&response).unwrap()))
                 } else {
                     SystemResult::Err(SystemError::Unknown {})
                 }

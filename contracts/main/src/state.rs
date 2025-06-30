@@ -248,6 +248,19 @@ pub fn add_vessel(
     Ok(())
 }
 
+pub fn update_time_weighted_shares_for_vessel(
+    storage: &mut dyn Storage,
+    vessel: &Vessel,
+    new_time_weighted_shares: u128,
+    token_group_id: String,
+) -> Result<(), StdError> {
+    let mut vessel = get_vessel(storage, vessel.hydro_lock_id)?;
+    vessel.current_time_weighted_shares = new_time_weighted_shares;
+    vessel.token_group_id = token_group_id;
+    VESSELS.save(storage, vessel.hydro_lock_id, &vessel)?;
+    Ok(())
+}
+
 pub fn is_tokenized_share_record_used(
     storage: &dyn Storage,
     tokenized_share_record_id: TokenizedShareRecordId,

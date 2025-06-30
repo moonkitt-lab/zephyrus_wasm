@@ -7,7 +7,6 @@ pub type UserId = u64;
 pub type HydromancerId = u64;
 pub type HydroLockId = u64; // This doesn't use a sequence, as we use lock_id returned by Hydro
 
-#[derive(Copy)]
 #[cw_serde]
 pub struct Vessel {
     pub hydro_lock_id: HydroLockId,
@@ -16,6 +15,8 @@ pub struct Vessel {
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,
     pub owner_id: UserId,
+    pub current_time_weighted_shares: u128,
+    pub token_group_id: String,
 }
 
 #[cw_serde]

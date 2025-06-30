@@ -51,11 +51,6 @@ pub struct Cw721ReceiveMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    // TODO: Determine message variants
-    BuildVessel {
-        vessels: Vec<BuildVesselParams>,
-        receiver: Option<String>,
-    },
     UpdateVesselsClass {
         hydro_lock_ids: Vec<u64>,
         hydro_lock_duration: u64,

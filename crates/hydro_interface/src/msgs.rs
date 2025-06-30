@@ -34,6 +34,19 @@ pub enum HydroQueryMsg {
     CurrentRound {},
     SpecificUserLockups { address: String, lock_ids: Vec<u64> },
     Constants {},
+    LockupsShares { lock_ids: Vec<u64> },
+}
+
+#[cw_serde]
+pub struct LockupsSharesInfo {
+    pub lock_id: u64,
+    pub time_weighted_shares: Uint128,
+    pub token_group_id: String,
+}
+
+#[cw_serde]
+pub struct LockupsSharesResponse {
+    pub lockups_shares_info: Vec<LockupsSharesInfo>,
 }
 
 #[cw_serde]

@@ -60,6 +60,25 @@ const HARBOR_OF_VESSEL: Map<((TrancheId, RoundId), HydroLockId), HydroProposalId
     Map::new("harbor_of_vessel");
 const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
     Map::new("vessels_under_user_control");
+//Track time weighted shares
+const HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
+    ((HydromancerId, TrancheId, RoundId), &str),
+    u128,
+> = Map::new("hydromancer_tw_shares_by_token_group_id");
+const PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
+    (HydroProposalId, HydromancerId, &str),
+    u128,
+> = Map::new("proposal_hydromancer_tw_shares_by_token_group_id");
+
+const PROPOSAL_TW_SHARES_UNDER_USER_CONTROL_BY_TOKEN_GROUP_ID: Map<
+    (HydroProposalId, UserId, &str),
+    u128,
+> = Map::new("proposal_tw_shares_under_user_control_by_token_group_id");
+
+const USER_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
+    ((TrancheId, RoundId), UserId, (HydromancerId, &str)),
+    u128,
+> = Map::new("user_hydromancer_tw_shares_by_token_group_id");
 
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
@@ -586,5 +605,68 @@ pub fn change_vessel_hydromancer(
 
     VESSELS.save(storage, hydro_lock_id, &vessel)?;
 
+    Ok(())
+}
+
+pub fn is_exist_tw_shares_for_hydromancer_tranche_and_round(
+    storage: &dyn Storage,
+    hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+) -> Result<bool, ContractError> {
+    let key_prefix = (hydromancer_id, tranche_id, round_id);
+
+    // Verify is exist at least one entry for (hydromancer_id, round_id)
+    let exists = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
+        .prefix(key_prefix)
+        .keys(storage, None, None, cosmwasm_std::Order::Ascending)
+        .next()
+        .is_some();
+
+    Ok(exists)
+}
+
+pub fn add_time_weighted_shares_to_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    token_group_id: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
+        .load(
+            storage,
+            ((hydromancer_id, tranche_id, round_id), token_group_id),
+        )
+        .unwrap_or_default();
+    HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
+        storage,
+        ((hydromancer_id, tranche_id, round_id), token_group_id),
+        &(current_shares + shares),
+    )?;
+    Ok(())
+}
+
+pub fn add_weighted_shares_to_user_hydromancer(
+    storage: &mut dyn Storage,
+    tranche_id: TrancheId,
+    user_id: UserId,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    validator: &str,
+    shares: u128,
+) -> Result<(), StdError> {
+    let current_shares = USER_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
+        .load(
+            storage,
+            ((tranche_id, round_id), user_id, (hydromancer_id, validator)),
+        )
+        .unwrap_or_default();
+    USER_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
+        storage,
+        ((tranche_id, round_id), user_id, (hydromancer_id, validator)),
+        &(current_shares + shares),
+    )?;
     Ok(())
 }

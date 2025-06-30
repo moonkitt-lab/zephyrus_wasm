@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::usize;
 
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
@@ -10,8 +11,8 @@ use hydro_interface::msgs::ExecuteMsg::{
     LockTokens, RefreshLockDuration, UnlockTokens, Unvote, Vote,
 };
 use hydro_interface::msgs::{
-    CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, ProposalToLockups,
-    RoundLockPowerSchedule, SpecificUserLockupsResponse,
+    CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, LockupsSharesResponse,
+    ProposalToLockups, RoundLockPowerSchedule, SpecificUserLockupsResponse,
 };
 
 use hydro_interface::state::query_lock_entries;
@@ -19,8 +20,8 @@ use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
     BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg,
-    QueryMsg, RoundId, VesselHarborInfo, VesselHarborResponse, VesselInfo, VesselsResponse,
-    VesselsToHarbor, VotingPowerResponse,
+    QueryMsg, RoundId, TrancheId, VesselHarborInfo, VesselHarborResponse, VesselInfo,
+    VesselsResponse, VesselsToHarbor, VotingPowerResponse,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
@@ -544,13 +545,21 @@ pub fn has_duplicate_vessel_id_in_vote(
 }
 
 fn execute_hydromancer_vote(
-    deps: DepsMut,
+    mut deps: DepsMut,
     info: MessageInfo,
     tranche_id: u64,
     vessels_harbors: Vec<VesselsToHarbor>,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
+
+    //initialize time weighted shares for hydromancer and current round if they are not initialized
+    initialize_hydromancer_time_weighted_shares(
+        &mut deps,
+        tranche_id,
+        info.sender.clone(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
 
     let (has_duplicated_harbor, harbor_id) =
         has_duplicate_harbor_id_in_vote(vessels_harbors.clone());
@@ -1285,6 +1294,99 @@ fn handle_unlock_tokens_reply(
         ))
 }
 
+//initialize time weighted shares for hydromancer, tranche_id for the current round if they are not initialized yet
+fn initialize_hydromancer_time_weighted_shares(
+    deps: &mut DepsMut,
+    tranche_id: TrancheId,
+    hydromancer_addr: Addr,
+    hydro_contract_addr: String,
+) -> Result<(), ContractError> {
+    let hydromancer_id =
+        state::get_hydromancer_id_by_address(deps.storage, hydromancer_addr.clone())?;
+    let current_round = query_hydro_current_round(deps.as_ref(), hydro_contract_addr.clone())?;
+    // Test if time weighted shares for hydromancer, tranche_id for the current round are already initialized
+    let is_hydromancer_tw_shares_already_initialized =
+        state::is_exist_tw_shares_for_hydromancer_tranche_and_round(
+            deps.storage,
+            hydromancer_id,
+            tranche_id,
+            current_round,
+        )?;
+    if !is_hydromancer_tw_shares_already_initialized {
+        // Not initialized, we need to initialize them
+
+        // Load all vessels for the hydromancer
+        let vessels = state::get_vessels_by_hydromancer(
+            deps.storage,
+            hydromancer_addr.clone(),
+            0,
+            usize::MAX,
+        )?;
+        let lockups_shares_response = query_hydro_lockups_shares_by_hydromancer(
+            deps.as_ref(),
+            hydro_contract_addr,
+            hydromancer_id,
+            vessels,
+        )?;
+
+        for lockup_shares in lockups_shares_response.lockups_shares_info {
+            let is_vessel_under_user_control = state::is_vessel_under_user_control(
+                deps.storage,
+                tranche_id,
+                current_round,
+                lockup_shares.lock_id,
+            );
+            if !is_vessel_under_user_control {
+                state::add_time_weighted_shares_to_hydromancer(
+                    deps.storage,
+                    hydromancer_id,
+                    tranche_id,
+                    current_round,
+                    &lockup_shares.token_group_id,
+                    lockup_shares.time_weighted_shares.u128(),
+                )
+                .expect("Failed to insert time weighted shares");
+                let vessel = state::get_vessels_by_ids(deps.storage, &[lockup_shares.lock_id])?
+                    .pop()
+                    .expect("Vessel should exist");
+                state::add_weighted_shares_to_user_hydromancer(
+                    deps.storage,
+                    tranche_id,
+                    vessel.owner_id,
+                    hydromancer_id,
+                    current_round,
+                    &lockup_shares.token_group_id,
+                    lockup_shares.time_weighted_shares.u128(),
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn query_hydro_lockups_shares_by_hydromancer(
+    deps: Deps,
+    hydro_contract_addr: String,
+    hydromancer_id: u64,
+    vessels: Vec<Vessel>,
+) -> Result<LockupsSharesResponse, StdError> {
+    let lock_ids: Vec<u64> = vessels.iter().map(|v| v.hydro_lock_id).collect::<Vec<_>>();
+    let lockups_shares: LockupsSharesResponse = deps
+        .querier
+        .query_wasm_smart(
+            hydro_contract_addr,
+            &HydroQueryMsg::LockupsShares { lock_ids },
+        )
+        .map_err(|e| {
+            StdError::generic_err(format!(
+                "Failed to get time weighted shares for hydromancer {} from hydro : {}",
+                hydromancer_id, e
+            ))
+        })?;
+    Ok(lockups_shares)
+}
+
 #[cfg(test)]
 mod test {
     use std::time::SystemTime;
@@ -1345,6 +1447,9 @@ mod test {
                     QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
                 }
                 HydroQueryMsg::SpecificUserLockups { .. } => {
+                    QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
+                }
+                HydroQueryMsg::LockupsShares { lock_ids } => {
                     QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
                 }
             }

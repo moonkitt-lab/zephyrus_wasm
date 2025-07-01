@@ -468,14 +468,6 @@ fn execute_hydromancer_vote(
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
-    //initialize time weighted shares for hydromancer and current round if they are not initialized
-    initialize_hydromancer_time_weighted_shares(
-        &mut deps,
-        tranche_id,
-        info.sender.clone(),
-        constants.hydro_config.hydro_contract_address.to_string(),
-    )?;
-
     let (has_duplicated_harbor, harbor_id) =
         has_duplicate_harbor_id_in_vote(vessels_harbors.clone());
     if has_duplicated_harbor {
@@ -489,13 +481,23 @@ fn execute_hydromancer_vote(
         let vessel_id = vessel_id.expect("If there is duplicated vessel, id should be present");
         return Err(ContractError::VoteDuplicatedVesselId { vessel_id });
     }
+    let sender = info.sender.clone();
 
-    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, info.sender)
+    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, sender.clone())
         .map_err(|err: StdError| ContractError::from(err))?;
     let current_round_id = query_hydro_current_round(
         deps.as_ref(),
         constants.hydro_config.hydro_contract_address.to_string(),
     )?;
+    //initialize time weighted shares for hydromancer and current round if they are not initialized
+    initialize_hydromancer_time_weighted_shares(
+        &mut deps,
+        tranche_id,
+        sender.clone(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+        current_round_id,
+    )?;
+
     let mut proposal_votes = vec![];
     for vessels_to_harbor in vessels_harbors.clone() {
         let proposal_to_lockups = ProposalToLockups {
@@ -1154,10 +1156,10 @@ fn initialize_hydromancer_time_weighted_shares(
     tranche_id: TrancheId,
     hydromancer_addr: Addr,
     hydro_contract_addr: String,
+    current_round: RoundId,
 ) -> Result<(), ContractError> {
     let hydromancer_id =
         state::get_hydromancer_id_by_address(deps.storage, hydromancer_addr.clone())?;
-    let current_round = query_hydro_current_round(deps.as_ref(), hydro_contract_addr.clone())?;
     // Test if time weighted shares for hydromancer, tranche_id for the current round are already initialized
     let is_hydromancer_tw_shares_already_initialized =
         state::is_exist_tw_shares_for_hydromancer_tranche_and_round(

@@ -4,7 +4,7 @@ use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
     msgs::{HydroProposalId, RoundId, TrancheId, UserId},
-    state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor},
+    state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor, VesselSharesInfo},
 };
 
 use crate::errors::ContractError;
@@ -75,10 +75,8 @@ const PROPOSAL_TW_SHARES_UNDER_USER_CONTROL_BY_TOKEN_GROUP_ID: Map<
     u128,
 > = Map::new("proposal_tw_shares_under_user_control_by_token_group_id");
 
-const USER_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
-    ((TrancheId, RoundId), UserId, (HydromancerId, &str)),
-    u128,
-> = Map::new("user_hydromancer_tw_shares_by_token_group_id");
+const VESSEL_SHARES_INFO: Map<(RoundId, HydroLockId), VesselSharesInfo> =
+    Map::new("vessel_shares_info");
 
 pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
     USER_NEXT_ID.save(storage, &0)?;
@@ -248,17 +246,29 @@ pub fn add_vessel(
     Ok(())
 }
 
-pub fn update_time_weighted_shares_for_vessel(
+pub fn save_vessel_shares_info(
     storage: &mut dyn Storage,
-    vessel: &Vessel,
+    vessel_id: HydroLockId,
+    round_id: RoundId,
     new_time_weighted_shares: u128,
     token_group_id: String,
+    locked_rounds: Option<u64>,
 ) -> Result<(), StdError> {
-    let mut vessel = get_vessel(storage, vessel.hydro_lock_id)?;
-    vessel.current_time_weighted_shares = new_time_weighted_shares;
-    vessel.token_group_id = token_group_id;
-    VESSELS.save(storage, vessel.hydro_lock_id, &vessel)?;
+    let vessel_shares_info = VesselSharesInfo {
+        time_weighted_shares: new_time_weighted_shares,
+        token_group_id,
+        locked_rounds,
+    };
+    VESSEL_SHARES_INFO.save(storage, (round_id, vessel_id), &vessel_shares_info)?;
     Ok(())
+}
+
+pub fn get_vessel_shares_info(
+    storage: &dyn Storage,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> Result<VesselSharesInfo, StdError> {
+    VESSEL_SHARES_INFO.load(storage, (round_id, hydro_lock_id))
 }
 
 pub fn is_tokenized_share_record_used(
@@ -656,29 +666,6 @@ pub fn add_time_weighted_shares_to_hydromancer(
     HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
         storage,
         ((hydromancer_id, tranche_id, round_id), token_group_id),
-        &(current_shares + shares),
-    )?;
-    Ok(())
-}
-
-pub fn add_weighted_shares_to_user_hydromancer(
-    storage: &mut dyn Storage,
-    tranche_id: TrancheId,
-    user_id: UserId,
-    hydromancer_id: HydromancerId,
-    round_id: RoundId,
-    validator: &str,
-    shares: u128,
-) -> Result<(), StdError> {
-    let current_shares = USER_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
-        .load(
-            storage,
-            ((tranche_id, round_id), user_id, (hydromancer_id, validator)),
-        )
-        .unwrap_or_default();
-    USER_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
-        storage,
-        ((tranche_id, round_id), user_id, (hydromancer_id, validator)),
         &(current_shares + shares),
     )?;
     Ok(())

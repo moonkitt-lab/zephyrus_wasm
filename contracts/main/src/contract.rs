@@ -20,7 +20,9 @@ use zephyrus_core::msgs::{
     QueryMsg, RoundId, TrancheId, VesselHarborInfo, VesselHarborResponse, VesselInfo,
     VesselsResponse, VesselsToHarbor, VotingPowerResponse,
 };
-use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
+use zephyrus_core::state::{
+    Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor, VesselSharesInfo,
+};
 
 use crate::{
     errors::ContractError,
@@ -142,6 +144,10 @@ fn execute_receive_nft(
     if info.sender.to_string() != constants.hydro_config.hydro_contract_address.to_string() {
         return Err(ContractError::NftNotAccepted);
     }
+    let current_round = query_hydro_current_round(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
 
     let vessel_info: VesselInfo = from_json(&msg)?;
     let hydro_lock_id: u64 = token_id.parse().unwrap();
@@ -197,6 +203,7 @@ fn execute_receive_nft(
     let token_group_id = lockup_shares_response.lockups_shares_info[0]
         .token_group_id
         .clone();
+    let locked_rounds = lockup_shares_response.lockups_shares_info[0].locked_rounds;
 
     // 7. Store the vessel in state
     let vessel = Vessel {
@@ -206,10 +213,35 @@ fn execute_receive_nft(
         hydromancer_id: vessel_info.hydromancer_id,
         auto_maintenance: vessel_info.auto_maintenance,
         owner_id,
-        current_time_weighted_shares: current_time_weighted_shares.u128(),
-        token_group_id,
     };
     state::add_vessel(deps.storage, &vessel, &owner_addr)?;
+
+    let is_hydromancer_tw_shares_already_initialized =
+        state::is_exist_tw_shares_for_hydromancer_tranche_and_round(
+            deps.storage,
+            vessel_info.hydromancer_id,
+            tranche_id,
+            current_round,
+        )?;
+    if is_hydromancer_tw_shares_already_initialized {
+        state::save_vessel_shares_info(
+            deps.storage,
+            vessel.hydro_lock_id,
+            current_round,
+            current_time_weighted_shares.u128(),
+            token_group_id,
+            locked_rounds,
+        )?;
+        // hydromancer tw shares already initialized, so we need to add the new time weighted shares to the hydromancer
+        state::add_time_weighted_shares_to_hydromancer(
+            deps.storage,
+            vessel_info.hydromancer_id,
+            tranche_id,
+            current_round,
+            token_group_id,
+            current_time_weighted_shares,
+        )?;
+    }
 
     Ok(Response::default())
 }
@@ -616,23 +648,44 @@ fn execute_user_vote(
     let mut unvote_ids = vec![];
 
     for vessels_to_harbor in vessels_harbors.clone() {
-        for vessel_id in vessels_to_harbor.vessel_ids.iter() {
+        let lockups_shares_response = query_hydro_lockups_shares(
+            deps.as_ref(),
+            constants.hydro_config.hydro_contract_address.to_string(),
+            vessels_to_harbor.vessel_ids.clone(),
+        )?;
+        for lockup_shares_info in lockups_shares_response.lockups_shares_info.iter() {
             //if not under user control and already voted by hydromancer, lock_id should be unvote, otherwise if user vote the same proposal as hydromancer it will be skipped by hydro than zephyrus and still under hydromancer control
             if !state::is_vessel_under_user_control(
                 deps.storage,
                 tranche_id,
                 current_round_id,
-                *vessel_id,
+                lockup_shares_info.lock_id,
             ) && state::get_harbor_of_vessel(
                 deps.storage,
                 tranche_id,
                 current_round_id,
-                *vessel_id,
+                lockup_shares_info.lock_id,
             )?
             .is_some()
             {
                 // vessel used by hydromancer should be unvoted
-                unvote_ids.push(*vessel_id);
+                unvote_ids.push(lockup_shares_info.lock_id);
+            }
+            let vessel_shares_info = state::get_vessel_shares_info(
+                deps.storage,
+                current_round_id,
+                lockup_shares_info.lock_id,
+            );
+            if vessel_shares_info.is_err() {
+                //if vessel shares info is not initialized, initialize it
+                state::save_vessel_shares_info(
+                    deps.storage,
+                    lockup_shares_info.lock_id,
+                    current_round_id,
+                    lockup_shares_info.time_weighted_shares.u128(),
+                    lockup_shares_info.token_group_id.clone(),
+                    lockup_shares_info.locked_rounds,
+                )?;
             }
         }
 
@@ -1190,11 +1243,13 @@ fn initialize_hydromancer_time_weighted_shares(
                 .pop()
                 .expect("Vessel should exist");
 
-            state::update_time_weighted_shares_for_vessel(
+            state::save_vessel_shares_info(
                 deps.storage,
-                &vessel,
+                vessel.hydro_lock_id,
+                current_round,
                 lockup_shares.time_weighted_shares.u128(),
                 lockup_shares.token_group_id.clone(),
+                lockup_shares.locked_rounds,
             )?;
             let is_vessel_under_user_control = state::is_vessel_under_user_control(
                 deps.storage,
@@ -1212,16 +1267,6 @@ fn initialize_hydromancer_time_weighted_shares(
                     lockup_shares.time_weighted_shares.u128(),
                 )
                 .expect("Failed to insert time weighted shares");
-
-                state::add_weighted_shares_to_user_hydromancer(
-                    deps.storage,
-                    tranche_id,
-                    vessel.owner_id,
-                    hydromancer_id,
-                    current_round,
-                    &lockup_shares.token_group_id,
-                    lockup_shares.time_weighted_shares.u128(),
-                )?;
             }
         }
     }
@@ -1501,8 +1546,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: alice_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -1551,8 +1594,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -1608,8 +1649,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -1728,8 +1767,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -1830,8 +1867,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2059,8 +2094,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: alice_user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2109,8 +2142,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2211,8 +2242,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2421,8 +2450,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2468,8 +2495,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2484,8 +2509,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: bob_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &bob_address,
         )
@@ -2530,8 +2553,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2613,8 +2634,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )
@@ -2715,8 +2734,6 @@ mod test {
                 auto_maintenance: true,
                 hydromancer_id: default_hydromancer_id,
                 owner_id: user_id,
-                current_time_weighted_shares: 1,
-                token_group_id: "dAtom".to_string(),
             },
             &alice_address,
         )

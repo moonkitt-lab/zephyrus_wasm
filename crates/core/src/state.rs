@@ -15,8 +15,13 @@ pub struct Vessel {
     pub auto_maintenance: bool,
     pub hydromancer_id: u64,
     pub owner_id: UserId,
-    pub current_time_weighted_shares: u128,
+}
+
+#[cw_serde]
+pub struct VesselSharesInfo {
+    pub time_weighted_shares: u128,
     pub token_group_id: String,
+    pub locked_rounds: Option<u64>,
 }
 
 #[cw_serde]

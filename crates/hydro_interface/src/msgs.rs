@@ -42,6 +42,7 @@ pub struct LockupsSharesInfo {
     pub lock_id: u64,
     pub time_weighted_shares: Uint128,
     pub token_group_id: String,
+    pub locked_rounds: Option<u64>,
 }
 
 #[cw_serde]

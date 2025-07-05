@@ -9,7 +9,7 @@ use cosmwasm_std::{
 use hydro_interface::msgs::ExecuteMsg::{RefreshLockDuration, UnlockTokens, Unvote, Vote};
 use hydro_interface::msgs::{
     CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, LockupsSharesResponse,
-    ProposalToLockups, RoundLockPowerSchedule, SpecificUserLockupsResponse,
+    ProposalToLockups, RoundLockPowerSchedule, SpecificUserLockupsResponse, TranchesResponse,
 };
 
 use hydro_interface::state::query_lock_entries;
@@ -216,31 +216,31 @@ fn execute_receive_nft(
     };
     state::add_vessel(deps.storage, &vessel, &owner_addr)?;
 
-    let is_hydromancer_tw_shares_already_initialized =
-        state::is_exist_tw_shares_for_hydromancer_tranche_and_round(
-            deps.storage,
-            vessel_info.hydromancer_id,
-            tranche_id,
-            current_round,
-        )?;
+    let is_hydromancer_tw_shares_already_initialized = state::is_exist_tw_shares_for_hydromancer(
+        deps.storage,
+        vessel_info.hydromancer_id,
+        current_round,
+    )?;
     if is_hydromancer_tw_shares_already_initialized {
         state::save_vessel_shares_info(
             deps.storage,
             vessel.hydro_lock_id,
             current_round,
             current_time_weighted_shares.u128(),
-            token_group_id,
+            token_group_id.clone(),
             locked_rounds,
         )?;
-        // hydromancer tw shares already initialized, so we need to add the new time weighted shares to the hydromancer
-        state::add_time_weighted_shares_to_hydromancer(
-            deps.storage,
-            vessel_info.hydromancer_id,
-            tranche_id,
-            current_round,
-            token_group_id,
-            current_time_weighted_shares,
-        )?;
+        if let Some(locked_rounds) = locked_rounds {
+            // hydromancer tw shares already initialized, so we need to add the new time weighted shares to the hydromancer
+            state::add_time_weighted_shares_to_hydromancer(
+                deps.storage,
+                vessel_info.hydromancer_id,
+                current_round,
+                &token_group_id,
+                locked_rounds,
+                current_time_weighted_shares.u128(),
+            )?;
+        }
     }
 
     Ok(Response::default())
@@ -580,8 +580,84 @@ fn execute_change_hydromancer(
         deps.as_ref(),
         constants.hydro_config.hydro_contract_address.to_string(),
     )?;
+    let tranches: TranchesResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::Tranches {},
+    )?;
 
     for hydro_lock_id in hydro_lock_ids.iter() {
+        let vessel = state::get_vessel(deps.storage, *hydro_lock_id)?;
+        let vessel_shares =
+            state::get_vessel_shares_info(deps.storage, current_round_id, *hydro_lock_id)?;
+        let previous_hydromancer_id = vessel.hydromancer_id;
+        // If the vessel is locked, substract the time weighted shares from the previous hydromancer and add it to the new hydromancer
+        // if Vessel was used by hydromancer or user, it will be unvoted, it means that the time weighted shares will have to be substracted from the hydromancer proposal and from total time wighted shares of the proposal
+        if let Some(locked_rounds) = vessel_shares.locked_rounds {
+            let is_previous_hydromancertws_already_initialize =
+                state::is_exist_tw_shares_for_hydromancer(
+                    deps.storage,
+                    previous_hydromancer_id,
+                    current_round_id,
+                )?;
+
+            if is_previous_hydromancertws_already_initialize {
+                state::substract_time_weighted_shares_from_hydromancer(
+                    deps.storage,
+                    previous_hydromancer_id,
+                    current_round_id,
+                    &vessel_shares.token_group_id,
+                    locked_rounds,
+                    vessel_shares.time_weighted_shares,
+                )?;
+            }
+
+            let is_new_hydromancertws_already_initialize =
+                state::is_exist_tw_shares_for_hydromancer(
+                    deps.storage,
+                    hydromancer_id,
+                    current_round_id,
+                )?;
+
+            if !is_new_hydromancertws_already_initialize {
+                state::add_time_weighted_shares_to_hydromancer(
+                    deps.storage,
+                    hydromancer_id,
+                    current_round_id,
+                    &vessel_shares.token_group_id,
+                    locked_rounds,
+                    vessel_shares.time_weighted_shares,
+                )?;
+            }
+            for tranche in tranches.tranches.iter() {
+                let vessel_harbor = state::get_vessel_harbor(
+                    deps.storage,
+                    tranche_id,
+                    current_round_id,
+                    *hydro_lock_id,
+                );
+                if vessel_harbor.is_ok() {
+                    let (vessel_harbor, proposal_id) = vessel_harbor.unwrap();
+                    // Vessel is already used by hydromancer or user, substract the time weighted shares from the proposal
+                    state::substract_time_weighted_shares_from_proposal(
+                        deps.storage,
+                        proposal_id,
+                        &vessel_shares.token_group_id,
+                        vessel_shares.time_weighted_shares,
+                    )?;
+                    if !vessel_harbor.user_control {
+                        // Vessel was used by hydromancer, substract the time weighted shares from the hydromancer on the proposal
+                        state::substract_time_weighted_shares_from_proposal_for_hydromancer(
+                            deps.storage,
+                            proposal_id,
+                            previous_hydromancer_id,
+                            &vessel_shares.token_group_id,
+                            vessel_shares.time_weighted_shares,
+                        )?;
+                    }
+                }
+            }
+        }
+
         state::change_vessel_hydromancer(
             deps.storage,
             tranche_id,
@@ -677,7 +753,7 @@ fn execute_user_vote(
                 lockup_shares_info.lock_id,
             );
             if vessel_shares_info.is_err() {
-                //if vessel shares info is not initialized, initialize it
+                //if vessel shares info is not initialized, initialize it, it means that hydromancer has not voted yet
                 state::save_vessel_shares_info(
                     deps.storage,
                     lockup_shares_info.lock_id,
@@ -1215,12 +1291,7 @@ fn initialize_hydromancer_time_weighted_shares(
         state::get_hydromancer_id_by_address(deps.storage, hydromancer_addr.clone())?;
     // Test if time weighted shares for hydromancer, tranche_id for the current round are already initialized
     let is_hydromancer_tw_shares_already_initialized =
-        state::is_exist_tw_shares_for_hydromancer_tranche_and_round(
-            deps.storage,
-            hydromancer_id,
-            tranche_id,
-            current_round,
-        )?;
+        state::is_exist_tw_shares_for_hydromancer(deps.storage, hydromancer_id, current_round)?;
     if !is_hydromancer_tw_shares_already_initialized {
         // Not initialized, we need to initialize them
 
@@ -1258,15 +1329,18 @@ fn initialize_hydromancer_time_weighted_shares(
                 lockup_shares.lock_id,
             );
             if !is_vessel_under_user_control {
-                state::add_time_weighted_shares_to_hydromancer(
-                    deps.storage,
-                    hydromancer_id,
-                    tranche_id,
-                    current_round,
-                    &lockup_shares.token_group_id,
-                    lockup_shares.time_weighted_shares.u128(),
-                )
-                .expect("Failed to insert time weighted shares");
+                if let Some(locked_rounds) = lockup_shares.locked_rounds {
+                    // Vessel is still locked, it has voting power
+                    state::add_time_weighted_shares_to_hydromancer(
+                        deps.storage,
+                        hydromancer_id,
+                        current_round,
+                        &lockup_shares.token_group_id,
+                        locked_rounds,
+                        lockup_shares.time_weighted_shares.u128(),
+                    )
+                    .expect("Failed to insert time weighted shares");
+                }
             }
         }
     }
@@ -1364,6 +1438,9 @@ mod test {
                     QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
                 }
                 HydroQueryMsg::LockupsShares { lock_ids } => {
+                    QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
+                }
+                HydroQueryMsg::Tranches {} => {
                     QuerierResult::Err(cosmwasm_std::SystemError::Unknown {})
                 }
             }

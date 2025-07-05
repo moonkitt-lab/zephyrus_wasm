@@ -32,6 +32,7 @@ pub enum ExecuteMsg {
 #[cw_serde]
 pub enum HydroQueryMsg {
     CurrentRound {},
+    Tranches {},
     SpecificUserLockups { address: String, lock_ids: Vec<u64> },
     Constants {},
     LockupsShares { lock_ids: Vec<u64> },
@@ -116,4 +117,16 @@ pub struct LockPowerEntry {
 pub struct CollectionInfo {
     pub name: String,
     pub symbol: String,
+}
+
+#[cw_serde]
+pub struct Tranche {
+    pub id: u64,
+    pub name: String,
+    pub metadata: String,
+}
+
+#[cw_serde]
+pub struct TranchesResponse {
+    pub tranches: Vec<Tranche>,
 }

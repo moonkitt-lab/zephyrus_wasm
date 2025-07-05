@@ -107,11 +107,9 @@ export interface VesselsResponse {
 export interface Vessel {
   auto_maintenance: boolean;
   class_period: number;
-  current_time_weighted_shares: number;
   hydro_lock_id: number;
   hydromancer_id: number;
   owner_id: number;
-  token_group_id: string;
   tokenized_share_record_id?: number | null;
 }
 export interface VesselHarborResponse {

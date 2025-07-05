@@ -20,9 +20,7 @@ use zephyrus_core::msgs::{
     QueryMsg, RoundId, TrancheId, VesselHarborInfo, VesselHarborResponse, VesselInfo,
     VesselsResponse, VesselsToHarbor, VotingPowerResponse,
 };
-use zephyrus_core::state::{
-    Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor, VesselSharesInfo,
-};
+use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
 use crate::{
     errors::ContractError,
@@ -631,7 +629,7 @@ fn execute_change_hydromancer(
             for tranche in tranches.tranches.iter() {
                 let vessel_harbor = state::get_vessel_harbor(
                     deps.storage,
-                    tranche_id,
+                    tranche.id,
                     current_round_id,
                     *hydro_lock_id,
                 );

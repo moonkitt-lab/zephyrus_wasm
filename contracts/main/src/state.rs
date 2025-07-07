@@ -61,10 +61,8 @@ const HARBOR_OF_VESSEL: Map<((TrancheId, RoundId), HydroLockId), HydroProposalId
 const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
     Map::new("vessels_under_user_control");
 //Track time weighted shares
-const HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
-    ((HydromancerId, TrancheId, RoundId), u64, &str),
-    u128,
-> = Map::new("hydromancer_tw_shares_by_token_group_id");
+const HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<((HydromancerId, RoundId), u64, &str), u128> =
+    Map::new("hydromancer_tw_shares_by_token_group_id");
 const PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
     (HydroProposalId, HydromancerId, &str),
     u128,
@@ -370,7 +368,7 @@ pub fn remove_vessel_harbor(
     Ok(())
 }
 
-pub fn was_vessel_under_user_control(
+pub fn is_vessel_under_user_control(
     storage: &dyn Storage,
     tranche_id: TrancheId,
     round_id: RoundId,
@@ -641,10 +639,10 @@ pub fn change_vessel_hydromancer(
 pub fn is_exist_tw_shares_for_hydromancer(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
-    tranche_id: TrancheId,
+
     round_id: RoundId,
 ) -> Result<bool, ContractError> {
-    let key_prefix = (hydromancer_id, tranche_id, round_id);
+    let key_prefix = (hydromancer_id, round_id);
 
     // Verify is exist at least one entry for (hydromancer_id, round_id)
     let exists = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
@@ -659,7 +657,7 @@ pub fn is_exist_tw_shares_for_hydromancer(
 pub fn add_time_weighted_shares_to_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
-    tranche_id: TrancheId,
+
     round_id: RoundId,
     token_group_id: &str,
     locked_rounds: u64,
@@ -668,20 +666,12 @@ pub fn add_time_weighted_shares_to_hydromancer(
     let current_shares = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
         .load(
             storage,
-            (
-                (hydromancer_id, tranche_id, round_id),
-                locked_rounds,
-                token_group_id,
-            ),
+            ((hydromancer_id, round_id), locked_rounds, token_group_id),
         )
         .unwrap_or_default();
     HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
         storage,
-        (
-            (hydromancer_id, tranche_id, round_id),
-            locked_rounds,
-            token_group_id,
-        ),
+        ((hydromancer_id, round_id), locked_rounds, token_group_id),
         &(current_shares + shares),
     )?;
     Ok(())
@@ -690,7 +680,6 @@ pub fn add_time_weighted_shares_to_hydromancer(
 pub fn substract_time_weighted_shares_from_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
-    tranche_id: TrancheId,
     round_id: RoundId,
     token_group_id: &str,
     locked_rounds: u64,
@@ -699,21 +688,13 @@ pub fn substract_time_weighted_shares_from_hydromancer(
     let current_shares = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
         .load(
             storage,
-            (
-                (hydromancer_id, tranche_id, round_id),
-                locked_rounds,
-                token_group_id,
-            ),
+            ((hydromancer_id, round_id), locked_rounds, token_group_id),
         )
         .unwrap_or_default();
 
     HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
         storage,
-        (
-            (hydromancer_id, tranche_id, round_id),
-            locked_rounds,
-            token_group_id,
-        ),
+        ((hydromancer_id, round_id), locked_rounds, token_group_id),
         &(current_shares - shares),
     )?;
     Ok(())

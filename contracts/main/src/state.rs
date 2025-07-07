@@ -61,8 +61,10 @@ const HARBOR_OF_VESSEL: Map<((TrancheId, RoundId), HydroLockId), HydroProposalId
 const VESSELS_UNDER_USER_CONTROL: Map<(TrancheId, RoundId), BTreeSet<HydroLockId>> =
     Map::new("vessels_under_user_control");
 //Track time weighted shares
-const HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<((HydromancerId, RoundId), u64, &str), u128> =
-    Map::new("hydromancer_tw_shares_by_token_group_id");
+const HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
+    ((HydromancerId, TrancheId, RoundId), u64, &str),
+    u128,
+> = Map::new("hydromancer_tw_shares_by_token_group_id");
 const PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
     (HydroProposalId, HydromancerId, &str),
     u128,
@@ -214,14 +216,15 @@ pub fn add_vessel(
     owner_vessels.insert(vessel_id);
 
     OWNER_VESSELS.save(storage, owner.as_str(), &owner_vessels)?;
+    if let Some(hydromancer_id) = vessel.hydromancer_id {
+        let mut vessels_hydromancer = HYDROMANCER_VESSELS
+            .may_load(storage, hydromancer_id)?
+            .unwrap_or_default();
 
-    let mut vessels_hydromancer = HYDROMANCER_VESSELS
-        .may_load(storage, vessel.hydromancer_id)?
-        .unwrap_or_default();
+        vessels_hydromancer.insert(vessel_id);
 
-    vessels_hydromancer.insert(vessel_id);
-
-    HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
+        HYDROMANCER_VESSELS.save(storage, hydromancer_id, &vessels_hydromancer)?;
+    }
 
     if vessel.auto_maintenance {
         let mut vessels_class = AUTO_MAINTAINED_VESSELS_BY_CLASS
@@ -367,7 +370,7 @@ pub fn remove_vessel_harbor(
     Ok(())
 }
 
-pub fn is_vessel_under_user_control(
+pub fn was_vessel_under_user_control(
     storage: &dyn Storage,
     tranche_id: TrancheId,
     round_id: RoundId,
@@ -499,13 +502,15 @@ pub fn remove_vessel(
 
     OWNER_VESSELS.save(storage, owner.as_str(), &owner_vessels)?;
 
-    let mut vessels_hydromancer = HYDROMANCER_VESSELS
-        .may_load(storage, vessel.hydromancer_id)?
-        .unwrap_or_default();
+    if let Some(hydromancer_id) = vessel.hydromancer_id {
+        let mut vessels_hydromancer = HYDROMANCER_VESSELS
+            .may_load(storage, hydromancer_id)?
+            .unwrap_or_default();
 
-    vessels_hydromancer.remove(&hydro_lock_id);
+        vessels_hydromancer.remove(&hydro_lock_id);
 
-    HYDROMANCER_VESSELS.save(storage, vessel.hydromancer_id, &vessels_hydromancer)?;
+        HYDROMANCER_VESSELS.save(storage, hydromancer_id, &vessels_hydromancer)?;
+    }
 
     if vessel.auto_maintenance {
         let mut vessels_class = AUTO_MAINTAINED_VESSELS_BY_CLASS
@@ -565,74 +570,81 @@ pub fn change_vessel_hydromancer(
 
     let old_hydromancer_id = vessel.hydromancer_id;
 
-    //if vesssel is under user control then it have to be removed from user control
-    //we have to do it even if the new hydromancer is the same as the old one, because the user can give back control to hydromancer
-    let mut vote_reseted = false;
-    if is_vessel_under_user_control(storage, tranche_id, current_round_id, hydro_lock_id) {
-        let hydro_proposal_id =
-            get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id)?;
+    match old_hydromancer_id {
+        Some(old_hydromancer_id) => {
+            if old_hydromancer_id == new_hydromancer_id {
+                return Ok(());
+            }
+            let hydro_proposal_id =
+                get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id)?;
 
-        if let Some(proposal_id) = hydro_proposal_id {
-            remove_vessel_harbor(
-                storage,
-                tranche_id,
-                current_round_id,
-                proposal_id,
-                hydro_lock_id,
-            )?;
+            if let Some(proposal_id) = hydro_proposal_id {
+                remove_vessel_harbor(
+                    storage,
+                    tranche_id,
+                    current_round_id,
+                    proposal_id,
+                    hydro_lock_id,
+                )?;
+            }
+            let mut old_hydromancer_vessels = HYDROMANCER_VESSELS
+                .may_load(storage, old_hydromancer_id)?
+                .unwrap_or_default();
+
+            old_hydromancer_vessels.remove(&hydro_lock_id);
+            HYDROMANCER_VESSELS.save(storage, old_hydromancer_id, &old_hydromancer_vessels)?;
+
+            let mut new_hydromancer_vessels = HYDROMANCER_VESSELS
+                .may_load(storage, new_hydromancer_id)?
+                .unwrap_or_default();
+
+            new_hydromancer_vessels.insert(hydro_lock_id);
+
+            HYDROMANCER_VESSELS.save(storage, new_hydromancer_id, &new_hydromancer_vessels)?;
+
+            vessel.hydromancer_id = Some(new_hydromancer_id);
+
+            VESSELS.save(storage, hydro_lock_id, &vessel)?;
+
+            return Ok(());
         }
-        vote_reseted = true;
-    }
+        None => {
+            // Vessel has no hydromancer, it's under user control for this round, new hydromancer will be set and user vote will be reseted
+            let hydro_proposal_id =
+                get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id)?;
 
-    if old_hydromancer_id == new_hydromancer_id {
-        return Ok(());
-    }
+            if let Some(proposal_id) = hydro_proposal_id {
+                remove_vessel_harbor(
+                    storage,
+                    tranche_id,
+                    current_round_id,
+                    proposal_id,
+                    hydro_lock_id,
+                )?;
+            }
+            let mut new_hydromancer_vessels = HYDROMANCER_VESSELS
+                .may_load(storage, new_hydromancer_id)?
+                .unwrap_or_default();
 
-    //new hydromancer is different from the old one so we have to reset the vote if it was not reseted before
-    if !vote_reseted {
-        let hydro_proposal_id =
-            get_harbor_of_vessel(storage, tranche_id, current_round_id, hydro_lock_id)?;
+            new_hydromancer_vessels.insert(hydro_lock_id);
 
-        if let Some(proposal_id) = hydro_proposal_id {
-            remove_vessel_harbor(
-                storage,
-                tranche_id,
-                current_round_id,
-                proposal_id,
-                hydro_lock_id,
-            )?;
+            HYDROMANCER_VESSELS.save(storage, new_hydromancer_id, &new_hydromancer_vessels)?;
+
+            vessel.hydromancer_id = Some(new_hydromancer_id);
+
+            VESSELS.save(storage, hydro_lock_id, &vessel)?;
+            return Ok(());
         }
     }
-
-    let mut old_hydromancer_vessels = HYDROMANCER_VESSELS
-        .may_load(storage, old_hydromancer_id)?
-        .unwrap_or_default();
-
-    old_hydromancer_vessels.remove(&hydro_lock_id);
-
-    HYDROMANCER_VESSELS.save(storage, old_hydromancer_id, &old_hydromancer_vessels)?;
-
-    let mut new_hydromancer_vessels = HYDROMANCER_VESSELS
-        .may_load(storage, new_hydromancer_id)?
-        .unwrap_or_default();
-
-    new_hydromancer_vessels.insert(hydro_lock_id);
-
-    HYDROMANCER_VESSELS.save(storage, new_hydromancer_id, &new_hydromancer_vessels)?;
-
-    vessel.hydromancer_id = new_hydromancer_id;
-
-    VESSELS.save(storage, hydro_lock_id, &vessel)?;
-
-    Ok(())
 }
 
 pub fn is_exist_tw_shares_for_hydromancer(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
     round_id: RoundId,
 ) -> Result<bool, ContractError> {
-    let key_prefix = (hydromancer_id, round_id);
+    let key_prefix = (hydromancer_id, tranche_id, round_id);
 
     // Verify is exist at least one entry for (hydromancer_id, round_id)
     let exists = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
@@ -647,6 +659,7 @@ pub fn is_exist_tw_shares_for_hydromancer(
 pub fn add_time_weighted_shares_to_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
     round_id: RoundId,
     token_group_id: &str,
     locked_rounds: u64,
@@ -655,12 +668,20 @@ pub fn add_time_weighted_shares_to_hydromancer(
     let current_shares = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
         .load(
             storage,
-            ((hydromancer_id, round_id), locked_rounds, token_group_id),
+            (
+                (hydromancer_id, tranche_id, round_id),
+                locked_rounds,
+                token_group_id,
+            ),
         )
         .unwrap_or_default();
     HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
         storage,
-        ((hydromancer_id, round_id), locked_rounds, token_group_id),
+        (
+            (hydromancer_id, tranche_id, round_id),
+            locked_rounds,
+            token_group_id,
+        ),
         &(current_shares + shares),
     )?;
     Ok(())
@@ -669,6 +690,7 @@ pub fn add_time_weighted_shares_to_hydromancer(
 pub fn substract_time_weighted_shares_from_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
+    tranche_id: TrancheId,
     round_id: RoundId,
     token_group_id: &str,
     locked_rounds: u64,
@@ -677,13 +699,21 @@ pub fn substract_time_weighted_shares_from_hydromancer(
     let current_shares = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
         .load(
             storage,
-            ((hydromancer_id, round_id), locked_rounds, token_group_id),
+            (
+                (hydromancer_id, tranche_id, round_id),
+                locked_rounds,
+                token_group_id,
+            ),
         )
         .unwrap_or_default();
 
     HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
         storage,
-        ((hydromancer_id, round_id), locked_rounds, token_group_id),
+        (
+            (hydromancer_id, tranche_id, round_id),
+            locked_rounds,
+            token_group_id,
+        ),
         &(current_shares - shares),
     )?;
     Ok(())

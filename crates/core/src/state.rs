@@ -13,7 +13,7 @@ pub struct Vessel {
     pub tokenized_share_record_id: Option<u64>,
     pub class_period: u64,
     pub auto_maintenance: bool,
-    pub hydromancer_id: u64,
+    pub hydromancer_id: Option<u64>,
     pub owner_id: UserId,
 }
 

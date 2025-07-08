@@ -368,7 +368,7 @@ pub fn remove_vessel_harbor(
     Ok(())
 }
 
-pub fn is_vessel_under_user_control(
+pub fn is_vessel_used_under_user_control(
     storage: &dyn Storage,
     tranche_id: TrancheId,
     round_id: RoundId,
@@ -771,5 +771,15 @@ pub fn substract_time_weighted_shares_from_proposal_for_hydromancer(
         (proposal_id, hydromancer_id, token_group_id),
         &(current_shares - time_weighted_shares),
     )?;
+    Ok(())
+}
+
+pub fn take_control_of_vessels(
+    storage: &mut dyn Storage,
+    vessel_id: HydroLockId,
+) -> Result<(), ContractError> {
+    let mut vessel = get_vessel(storage, vessel_id)?;
+    vessel.hydromancer_id = None;
+    VESSELS.save(storage, vessel_id, &vessel)?;
     Ok(())
 }

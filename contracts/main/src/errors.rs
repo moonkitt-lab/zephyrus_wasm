@@ -71,4 +71,7 @@ pub enum ContractError {
 
     #[error("Duplicate Vessel ID: {vessel_id}")]
     VoteDuplicatedVesselId { vessel_id: u64 },
+
+    #[error("Vessel {vessel_id} is under hydromancer control")]
+    VesselUnderHydromancerControl { vessel_id: u64 },
 }

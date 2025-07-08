@@ -17,6 +17,12 @@ pub struct Vessel {
     pub owner_id: UserId,
 }
 
+impl Vessel {
+    pub fn is_under_user_control_for_current_round(&self) -> bool {
+        self.hydromancer_id.is_none()
+    }
+}
+
 #[cw_serde]
 pub struct VesselSharesInfo {
     pub time_weighted_shares: u128,

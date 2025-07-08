@@ -51,6 +51,9 @@ pub struct Cw721ReceiveMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
+    TakeControl {
+        vessel_ids: Vec<u64>,
+    },
     UpdateVesselsClass {
         hydro_lock_ids: Vec<u64>,
         hydro_lock_duration: u64,

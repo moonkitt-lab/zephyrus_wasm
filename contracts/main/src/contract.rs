@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankMsg, BankQuery, Binary,
@@ -615,7 +615,7 @@ fn execute_change_hydromancer(
             state::get_vessel_shares_info(deps.storage, current_round_id, *hydro_lock_id)?;
         let previous_hydromancer_id = vessel.hydromancer_id;
 
-        if previous_hydromancer_id.is_some() {
+        if !vessel.is_under_user_control_for_current_round() {
             let previous_hydromancer_id = previous_hydromancer_id.unwrap();
             let is_previous_hydromancertws_already_initialize =
                 state::is_exist_tw_shares_for_hydromancer(
@@ -638,7 +638,7 @@ fn execute_change_hydromancer(
         // If the vessel is locked, substract the time weighted shares from the previous hydromancer and add it to the new hydromancer
         // if Vessel was used by hydromancer or user, it will be unvoted, it means that the time weighted shares will have to be substracted from the hydromancer proposal and from total time wighted shares of the proposal
         if let Some(locked_rounds) = vessel_shares.locked_rounds {
-            if previous_hydromancer_id.is_some() {
+            if !vessel.is_under_user_control_for_current_round() {
                 let previous_hydromancer_id = previous_hydromancer_id.unwrap();
                 state::substract_time_weighted_shares_from_hydromancer(
                     deps.storage,
@@ -667,7 +667,7 @@ fn execute_change_hydromancer(
                     *hydro_lock_id,
                 );
                 if vessel_harbor.is_ok() {
-                    let (vessel_harbor, proposal_id) = vessel_harbor.unwrap();
+                    let (_, proposal_id) = vessel_harbor.unwrap();
                     // Vessel is already used by hydromancer or user, substract the time weighted shares from the proposal
                     state::substract_time_weighted_shares_from_proposal(
                         deps.storage,
@@ -675,7 +675,7 @@ fn execute_change_hydromancer(
                         &vessel_shares.token_group_id,
                         vessel_shares.time_weighted_shares,
                     )?;
-                    if previous_hydromancer_id.is_some() {
+                    if !vessel.is_under_user_control_for_current_round() {
                         let previous_hydromancer_id = previous_hydromancer_id.unwrap();
                         // Vessel was used by hydromancer, substract the time weighted shares from the hydromancer on the proposal
                         state::substract_time_weighted_shares_from_proposal_for_hydromancer(
@@ -723,6 +723,105 @@ fn execute_change_hydromancer(
         ))
 }
 
+fn execute_take_control(
+    deps: DepsMut,
+    info: MessageInfo,
+    vessel_ids: Vec<u64>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    let user_id = state::get_user_id_by_address(deps.storage, info.sender.clone())?;
+    let tranches: TranchesResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::Tranches {},
+    )?;
+    let current_round_id = query_hydro_current_round(
+        deps.as_ref(),
+        constants.hydro_config.hydro_contract_address.to_string(),
+    )?;
+    let mut unvote_ids_by_tranche: HashMap<TrancheId, Vec<HydroLockId>> = HashMap::new();
+    let mut new_vessels_under_user_control: Vec<HydroLockId> = vec![];
+    for vessel_id in vessel_ids.iter() {
+        let vessel = state::get_vessel(deps.storage, *vessel_id)?;
+
+        if vessel.owner_id != user_id {
+            return Err(ContractError::Unauthorized {});
+        }
+        // If vessel is already under user control there is nothing to do, if not we should reset hydromancer shares, and unvote if it was voted
+        if !vessel.is_under_user_control_for_current_round() {
+            let vessel_shares =
+                state::get_vessel_shares_info(deps.storage, current_round_id, *vessel_id)?;
+
+            // if Vessel has VP we should substract the time weighted shares from the hydromancer
+            if vessel_shares.locked_rounds.is_some() {
+                state::substract_time_weighted_shares_from_hydromancer(
+                    deps.storage,
+                    vessel.hydromancer_id.unwrap(),
+                    current_round_id,
+                    &vessel_shares.token_group_id,
+                    vessel_shares.locked_rounds.unwrap(),
+                    vessel_shares.time_weighted_shares,
+                )?;
+            }
+            // Vessel was controlled by hydromancer, if hydromancer already voted for it, it should be unvoted
+            for tranche in tranches.tranches.iter() {
+                let proposal_id = state::get_harbor_of_vessel(
+                    deps.storage,
+                    tranche.id,
+                    current_round_id,
+                    *vessel_id,
+                )?;
+
+                if proposal_id.is_some() {
+                    let proposal_id = proposal_id.unwrap();
+                    state::substract_time_weighted_shares_from_proposal(
+                        deps.storage,
+                        proposal_id,
+                        &vessel_shares.token_group_id,
+                        vessel_shares.time_weighted_shares,
+                    )?;
+                    state::substract_time_weighted_shares_from_proposal_for_hydromancer(
+                        deps.storage,
+                        proposal_id,
+                        vessel.hydromancer_id.unwrap(),
+                        &vessel_shares.token_group_id,
+                        vessel_shares.time_weighted_shares,
+                    )?;
+                    // vessel used by hydromancer should be unvoted
+                    unvote_ids_by_tranche
+                        .entry(tranche.id)
+                        .or_insert(vec![])
+                        .push(*vessel_id);
+                }
+            }
+            new_vessels_under_user_control.push(*vessel_id);
+            state::take_control_of_vessels(deps.storage, *vessel_id)?;
+        }
+    }
+    let mut response = Response::new();
+    for (tranche_id, unvote_ids) in unvote_ids_by_tranche.iter() {
+        let unvote_msg = Unvote {
+            tranche_id: *tranche_id,
+            lock_ids: unvote_ids.clone(),
+        };
+        response = response.add_message(WasmMsg::Execute {
+            msg: to_json_binary(&unvote_msg)?,
+            contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+            funds: vec![],
+        });
+    }
+    Ok(response
+        .add_attribute("action", "take_control")
+        .add_attribute(
+            "new_vessels_under_user_control",
+            new_vessels_under_user_control
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ))
+}
+
 fn execute_user_vote(
     mut deps: DepsMut,
     info: MessageInfo,
@@ -762,28 +861,17 @@ fn execute_user_vote(
             vessels_to_harbor.vessel_ids.clone(),
         )?;
         for lockup_shares_info in lockups_shares_response.lockups_shares_info.iter() {
-            //if not under user control and already voted by hydromancer, lock_id should be unvote, otherwise if user vote the same proposal as hydromancer it will be skipped by hydro than zephyrus and still under hydromancer control
-            if !state::is_vessel_under_user_control(
-                deps.storage,
-                tranche_id,
-                current_round_id,
-                lockup_shares_info.lock_id,
-            ) && state::get_harbor_of_vessel(
-                deps.storage,
-                tranche_id,
-                current_round_id,
-                lockup_shares_info.lock_id,
-            )?
-            .is_some()
-            {
-                // vessel used by hydromancer should be unvoted
-                unvote_ids.push(lockup_shares_info.lock_id);
-            }
             let vessel = state::get_vessel(deps.storage, lockup_shares_info.lock_id)?;
+            // Even if a vessel is owned by the user, if it's under hydromancer control, user can't vote with it
+            if !vessel.is_under_user_control_for_current_round() {
+                return Err(ContractError::VesselUnderHydromancerControl {
+                    vessel_id: lockup_shares_info.lock_id,
+                });
+            }
 
             // Check if there is tranches, if there is, check if the hydromancer tws are initialized for any tranche, if not initialize them
 
-            if vessel.hydromancer_id.is_some() {
+            if !vessel.is_under_user_control_for_current_round() {
                 let hydromancer_id = vessel.hydromancer_id.unwrap();
                 let is_hydromancertws_already_initialize =
                     state::is_exist_tw_shares_for_hydromancer(
@@ -891,6 +979,7 @@ pub fn execute(
             hydromancer_id,
             hydro_lock_ids,
         } => execute_change_hydromancer(deps, info, tranche_id, hydromancer_id, hydro_lock_ids),
+        ExecuteMsg::TakeControl { vessel_ids } => execute_take_control(deps, info, vessel_ids),
     }
 }
 
@@ -1086,7 +1175,7 @@ fn handle_vote_reply(
                     });
                 }
             } else {
-                if vessel.hydromancer_id.is_some() {
+                if !vessel.is_under_user_control_for_current_round() {
                     let hydromancer_id = vessel.hydromancer_id.unwrap();
                     //control that vessel is delegated to hydromancer who wants to vote
                     if hydromancer_id != payload.steerer_id {
@@ -2895,7 +2984,7 @@ mod test {
                 .unwrap()
                 .is_empty()
         );
-        assert!(!state::is_vessel_under_user_control(
+        assert!(!state::is_vessel_used_under_user_control(
             deps.as_ref().storage,
             1,
             1,

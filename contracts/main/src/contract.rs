@@ -735,7 +735,7 @@ fn execute_change_hydromancer(
                     vessel_shares.time_weighted_shares,
                 )?;
             }
-
+            // Add time weighted shares to the new hydromancer
             state::add_time_weighted_shares_to_hydromancer(
                 deps.storage,
                 hydromancer_id,
@@ -745,6 +745,7 @@ fn execute_change_hydromancer(
                 vessel_shares.time_weighted_shares,
             )?;
 
+            // Check it vessels were already used in any tranche, if so substract the time weighted shares from the proposal
             for tranche in tranches.tranches.iter() {
                 let vessel_harbor = state::get_vessel_harbor(
                     deps.storage,

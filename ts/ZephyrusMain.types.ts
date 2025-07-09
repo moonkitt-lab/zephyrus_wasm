@@ -14,6 +14,10 @@ export interface InstantiateMsg {
   whitelist_admins: string[];
 }
 export type ExecuteMsg = {
+  take_control: {
+    vessel_ids: number[];
+  };
+} | {
   update_vessels_class: {
     hydro_lock_duration: number;
     hydro_lock_ids: number[];
@@ -108,7 +112,7 @@ export interface Vessel {
   auto_maintenance: boolean;
   class_period: number;
   hydro_lock_id: number;
-  hydromancer_id: number;
+  hydromancer_id?: number | null;
   owner_id: number;
   tokenized_share_record_id?: number | null;
 }

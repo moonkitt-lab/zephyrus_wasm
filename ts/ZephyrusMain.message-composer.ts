@@ -12,6 +12,11 @@ import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721Rece
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
+  takeControl: ({
+    vesselIds
+  }: {
+    vesselIds: number[];
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   updateVesselsClass: ({
     hydroLockDuration,
     hydroLockIds
@@ -73,6 +78,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   constructor(sender: string, contractAddress: string) {
     this.sender = sender;
     this.contractAddress = contractAddress;
+    this.takeControl = this.takeControl.bind(this);
     this.updateVesselsClass = this.updateVesselsClass.bind(this);
     this.autoMaintain = this.autoMaintain.bind(this);
     this.modifyAutoMaintenance = this.modifyAutoMaintenance.bind(this);
@@ -84,6 +90,25 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
   }
+  takeControl = ({
+    vesselIds
+  }: {
+    vesselIds: number[];
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          take_control: {
+            vessel_ids: vesselIds
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
   updateVesselsClass = ({
     hydroLockDuration,
     hydroLockIds

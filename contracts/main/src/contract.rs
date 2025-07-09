@@ -17,13 +17,12 @@ use hydro_interface::state::query_lock_entries;
 use neutron_sdk::bindings::msg::NeutronMsg;
 use serde::{Deserialize, Serialize};
 use zephyrus_core::msgs::{
-    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, HydromancerId,
-    InstantiateMsg, MigrateMsg, QueryMsg, RoundId, TrancheId, VesselHarborInfo,
-    VesselHarborResponse, VesselInfo, VesselsResponse, VesselsToHarbor, VotingPowerResponse,
+    BuildVesselParams, ConstantsResponse, ExecuteMsg, HydroProposalId, InstantiateMsg, MigrateMsg,
+    QueryMsg, RoundId, TrancheId, VesselHarborInfo, VesselHarborResponse, VesselInfo,
+    VesselsResponse, VesselsToHarbor, VotingPowerResponse,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel, VesselHarbor};
 
-use crate::state::{save_vessel_shares_info, substract_time_weighted_shares_from_proposal};
 use crate::{
     errors::ContractError,
     helpers::vectors::{compare_coin_vectors, compare_u64_vectors},
@@ -893,7 +892,7 @@ fn execute_take_control(
                     // vessel used by hydromancer should be unvoted
                     unvote_ids_by_tranche
                         .entry(tranche.id)
-                        .or_insert(vec![])
+                        .or_default()
                         .push(*vessel_id);
                 }
             }
@@ -926,7 +925,7 @@ fn execute_take_control(
 }
 
 fn execute_user_vote(
-    mut deps: DepsMut,
+    deps: DepsMut,
     info: MessageInfo,
     tranche_id: u64,
     vessels_harbors: Vec<VesselsToHarbor>,
@@ -1313,23 +1312,21 @@ fn handle_refresh_time_weighted_shares_reply(
                     &lockup_shares.token_group_id,
                     new_time_weighted_share.u128(),
                 )?;
-                if vessel_harbor.user_control {
-                    if !vessel.is_under_user_control_for_current_round() {
-                        state::substract_time_weighted_shares_from_proposal_for_hydromancer(
-                            deps.storage,
-                            hydro_proposal_id,
-                            vessel.hydromancer_id.unwrap(),
-                            &vessel_shares_info_before.token_group_id,
-                            vessel_shares_info_before.time_weighted_shares,
-                        )?;
-                        state::add_time_weighted_shares_to_proposal_for_hydromancer(
-                            deps.storage,
-                            hydro_proposal_id,
-                            vessel.hydromancer_id.unwrap(),
-                            &lockup_shares.token_group_id,
-                            new_time_weighted_share.u128(),
-                        )?;
-                    }
+                if vessel_harbor.user_control && !vessel.is_under_user_control_for_current_round() {
+                    state::substract_time_weighted_shares_from_proposal_for_hydromancer(
+                        deps.storage,
+                        hydro_proposal_id,
+                        vessel.hydromancer_id.unwrap(),
+                        &vessel_shares_info_before.token_group_id,
+                        vessel_shares_info_before.time_weighted_shares,
+                    )?;
+                    state::add_time_weighted_shares_to_proposal_for_hydromancer(
+                        deps.storage,
+                        hydro_proposal_id,
+                        vessel.hydromancer_id.unwrap(),
+                        &lockup_shares.token_group_id,
+                        new_time_weighted_share.u128(),
+                    )?;
                 }
             }
         }
@@ -1368,17 +1365,15 @@ fn handle_vote_reply(
                         vessel_user_id: vessel.owner_id,
                     });
                 }
-            } else {
-                if !vessel.is_under_user_control_for_current_round() {
-                    let hydromancer_id = vessel.hydromancer_id.unwrap();
-                    //control that vessel is delegated to hydromancer who wants to vote
-                    if hydromancer_id != payload.steerer_id {
-                        return Err(ContractError::InvalidHydromancerId {
-                            vessel_id: vessel.hydro_lock_id,
-                            hydromancer_id: payload.steerer_id,
-                            vessel_hydromancer_id: hydromancer_id,
-                        });
-                    }
+            } else if !vessel.is_under_user_control_for_current_round() {
+                let hydromancer_id = vessel.hydromancer_id.unwrap();
+                //control that vessel is delegated to hydromancer who wants to vote
+                if hydromancer_id != payload.steerer_id {
+                    return Err(ContractError::InvalidHydromancerId {
+                        vessel_id: vessel.hydro_lock_id,
+                        hydromancer_id: payload.steerer_id,
+                        vessel_hydromancer_id: hydromancer_id,
+                    });
                 } else {
                     // This vessel is under user control, hydromancer can't vote for it
                     return Err(ContractError::VesselUnderUserControl {
@@ -1429,23 +1424,21 @@ fn handle_vote_reply(
                             vessel_shares_info.time_weighted_shares.u128(),
                         )?;
                         // if it's a hydromancer vote, add time weighted shares to proposal for hydromancer
-                        if !payload.user_vote {
-                            if vessel_shares_info.locked_rounds.is_some() {
-                                state::add_time_weighted_shares_to_proposal_for_hydromancer(
-                                    deps.storage,
-                                    vessels_to_harbor.harbor_id,
-                                    payload.steerer_id,
-                                    &vessel_shares_info.token_group_id,
-                                    vessel_shares_info.time_weighted_shares.u128(),
-                                )?;
-                                state::substract_time_weighted_shares_from_proposal_for_hydromancer(
-                                    deps.storage,
-                                    previous_harbor_id,
-                                    payload.steerer_id,
-                                    &vessel_shares_info.token_group_id,
-                                    vessel_shares_info.time_weighted_shares.u128(),
-                                )?;
-                            }
+                        if !payload.user_vote && vessel_shares_info.locked_rounds.is_some() {
+                            state::add_time_weighted_shares_to_proposal_for_hydromancer(
+                                deps.storage,
+                                vessels_to_harbor.harbor_id,
+                                payload.steerer_id,
+                                &vessel_shares_info.token_group_id,
+                                vessel_shares_info.time_weighted_shares.u128(),
+                            )?;
+                            state::substract_time_weighted_shares_from_proposal_for_hydromancer(
+                                deps.storage,
+                                previous_harbor_id,
+                                payload.steerer_id,
+                                &vessel_shares_info.token_group_id,
+                                vessel_shares_info.time_weighted_shares.u128(),
+                            )?;
                         }
                     }
                 }
@@ -1468,17 +1461,15 @@ fn handle_vote_reply(
                         &vessel_shares_info.token_group_id,
                         vessel_shares_info.time_weighted_shares.u128(),
                     )?;
-                    if !payload.user_vote {
-                        if vessel_shares_info.locked_rounds.is_some() {
-                            // should always be some, because hydro has accepted the vote
-                            state::add_time_weighted_shares_to_proposal_for_hydromancer(
-                                deps.storage,
-                                vessels_to_harbor.harbor_id,
-                                payload.steerer_id,
-                                &vessel_shares_info.token_group_id,
-                                vessel_shares_info.time_weighted_shares.u128(),
-                            )?;
-                        }
+                    if !payload.user_vote && vessel_shares_info.locked_rounds.is_some() {
+                        // should always be some, because hydro has accepted the vote
+                        state::add_time_weighted_shares_to_proposal_for_hydromancer(
+                            deps.storage,
+                            vessels_to_harbor.harbor_id,
+                            payload.steerer_id,
+                            &vessel_shares_info.token_group_id,
+                            vessel_shares_info.time_weighted_shares.u128(),
+                        )?;
                     }
                 }
             }
@@ -1738,7 +1729,7 @@ fn initialize_tws_for_hydromancer_or_vessel(
     let lockups_shares_response = query_hydro_lockups_shares(
         deps.as_ref(),
         hydro_config.hydro_contract_address.to_string(),
-        lock_ids.iter().cloned().collect(),
+        lock_ids.to_vec(),
     )?;
 
     for lockup_shares_info in lockups_shares_response.lockups_shares_info.iter() {

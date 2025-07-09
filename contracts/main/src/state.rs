@@ -605,7 +605,7 @@ pub fn change_vessel_hydromancer(
 
             VESSELS.save(storage, hydro_lock_id, &vessel)?;
 
-            return Ok(());
+            Ok(())
         }
         None => {
             // Vessel has no hydromancer, it's under user control for this round, new hydromancer will be set and user vote will be reseted
@@ -632,7 +632,7 @@ pub fn change_vessel_hydromancer(
             vessel.hydromancer_id = Some(new_hydromancer_id);
 
             VESSELS.save(storage, hydro_lock_id, &vessel)?;
-            return Ok(());
+            Ok(())
         }
     }
 }

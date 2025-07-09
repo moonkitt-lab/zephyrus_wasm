@@ -74,4 +74,7 @@ pub enum ContractError {
 
     #[error("Vessel {vessel_id} is under hydromancer control")]
     VesselUnderHydromancerControl { vessel_id: u64 },
+
+    #[error("Vessel {vessel_id} is tied to a proposal, cannot be transferred")]
+    VesselTiedToProposalNotTransferable { vessel_id: u64 },
 }

@@ -34,6 +34,7 @@ pub enum HydroQueryMsg {
     CurrentRound {},
     Tranches {},
     SpecificUserLockups { address: String, lock_ids: Vec<u64> },
+    SpecificUserLockupsWithTrancheInfos { address: String, lock_ids: Vec<u64> },
     Constants {},
     LockupsShares { lock_ids: Vec<u64> },
 }
@@ -129,4 +130,44 @@ pub struct Tranche {
 #[cw_serde]
 pub struct TranchesResponse {
     pub tranches: Vec<Tranche>,
+}
+
+#[cw_serde]
+pub struct RoundWithBid {
+    pub round_id: u64,
+    pub proposal_id: u64,
+    pub round_end: Timestamp,
+}
+
+// PerTrancheLockupInfo is used to store the lockup information for a specific tranche.
+#[cw_serde]
+pub struct PerTrancheLockupInfo {
+    pub tranche_id: u64,
+    // If this number is less or equal to the current round, it means the lockup can vote in the current round.
+    pub next_round_lockup_can_vote: u64,
+    // This is the proposal that the lockup is voting for in the current round, if any.
+    // In particular, if the lockup is blocked from voting in the current round (because it voted for a
+    // proposal with a long deployment duration in a previous round), this will be None.
+    pub current_voted_on_proposal: Option<u64>,
+
+    // This is the id of the proposal that the lockup is tied to because it has voted for a proposal with a long deployment duration.
+    // In case the lockup can currently vote (and is not tied to a proposal), this will be None.
+    // Note that None will also be returned if the lockup voted for a proposal that received a deployment with zero funds.
+    pub tied_to_proposal: Option<u64>,
+
+    /// This is the list of proposals that the lockup has been used to vote for in the past.
+    /// It is used to show the history of the lockup upon transfer / selling on Marketplace.
+    /// Note that this does not include the current voted on proposal, which is found in the current_voted_on_proposal field.
+    pub historic_voted_on_proposals: Vec<RoundWithBid>,
+}
+
+#[cw_serde]
+pub struct LockupWithPerTrancheInfo {
+    pub lock_with_power: LockEntryWithPower,
+    pub per_tranche_info: Vec<PerTrancheLockupInfo>,
+}
+
+#[cw_serde]
+pub struct SpecificUserLockupsWithTrancheInfosResponse {
+    pub lockups_with_per_tranche_infos: Vec<LockupWithPerTrancheInfo>,
 }

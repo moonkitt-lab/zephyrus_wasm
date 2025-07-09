@@ -447,7 +447,8 @@ pub fn get_vessels_by_hydromancer(
         .collect()
 }
 
-pub fn get_vessels_id_by_class() -> Result<Map<u64, BTreeSet<HydroLockId>>, StdError> {
+pub fn get_vessel_ids_auto_maintained_by_class() -> Result<Map<u64, BTreeSet<HydroLockId>>, StdError>
+{
     Ok(AUTO_MAINTAINED_VESSELS_BY_CLASS)
 }
 

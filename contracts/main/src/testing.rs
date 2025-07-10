@@ -10,9 +10,7 @@ mod tests {
         MessageInfo, OwnedDeps, SystemError, SystemResult, WasmQuery,
     };
     use serde_json;
-    use zephyrus_core::msgs::{
-        BuildVesselParams, Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg, VesselInfo,
-    };
+    use zephyrus_core::msgs::{Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg, VesselInfo};
 
     pub const IBC_DENOM_1: &str =
         "ibc/0EA38305D72BE22FD87E7C0D1002D36D59B59BC3C863078A54550F8E50C50EEE";

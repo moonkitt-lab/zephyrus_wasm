@@ -20,14 +20,6 @@ pub struct InstantiateMsg {
     pub default_hydromancer_address: String,
 }
 
-#[derive(Copy)]
-#[cw_serde]
-pub struct BuildVesselParams {
-    pub lock_duration: u64,
-    pub auto_maintenance: bool,
-    pub hydromancer_id: u64,
-}
-
 #[cw_serde]
 pub struct VesselsToHarbor {
     pub vessel_ids: Vec<HydroLockId>,

@@ -6,14 +6,11 @@ mod tests {
     };
     use cosmwasm_std::{
         testing::{message_info, mock_dependencies, mock_env, MockApi, MockQuerier},
-        to_json_binary, Addr, Binary, Coin, ContractResult, Decimal, Empty, MemoryStorage,
-        MessageInfo, OwnedDeps, SystemError, SystemResult, WasmQuery,
+        to_json_binary, Addr, Binary, ContractResult, Decimal, Empty, MemoryStorage, MessageInfo,
+        OwnedDeps, SystemError, SystemResult, WasmQuery,
     };
     use serde_json;
     use zephyrus_core::msgs::{Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg, VesselInfo};
-
-    pub const IBC_DENOM_1: &str =
-        "ibc/0EA38305D72BE22FD87E7C0D1002D36D59B59BC3C863078A54550F8E50C50EEE";
 
     pub fn get_address_as_str(mock_api: &MockApi, addr: &str) -> String {
         mock_api.addr_make(addr).to_string()
@@ -321,7 +318,6 @@ mod tests {
         deps: &mut OwnedDeps<MemoryStorage, MockApi, MockQuerier<Empty>>,
         error_specific_user_lockups: bool,
     ) {
-        let hydro_constants_response = r#"{"constants":{"round_length":10,"lock_epoch_length":10,"first_round_start":"1000000000000000000","max_locked_tokens":10,"known_users_cap":10,"paused":false,"max_deployment_duration":10,"round_lock_power_schedule":{"round_lock_power_schedule":[{"locked_rounds":1,"power_scaling_factor":"1"},{"locked_rounds":2,"power_scaling_factor":"1.25"},{"locked_rounds":3,"power_scaling_factor":"1.5"}]},"cw721_collection_info":{"name":"hydro","symbol":"test"}}}"#;
         // Mock the Hydro contract responses
         deps.querier.update_wasm(
             move |msg| {
@@ -332,10 +328,11 @@ mod tests {
                     _ => "".to_string(),
                 };
                 if msg_str.contains("constants") {
+                    let hydro_constants_response = r#"{"constants":{"round_length":10,"lock_epoch_length":10,"first_round_start":"1000000000000000000","max_locked_tokens":10,"known_users_cap":10,"paused":false,"max_deployment_duration":10,"round_lock_power_schedule":{"round_lock_power_schedule":[{"locked_rounds":1,"power_scaling_factor":"1"},{"locked_rounds":2,"power_scaling_factor":"1.25"},{"locked_rounds":3,"power_scaling_factor":"1.5"}]},"cw721_collection_info":{"name":"hydro","symbol":"test"}}}"#;
                     let response = serde_json::from_str::<hydro_interface::msgs::HydroConstantsResponse>(hydro_constants_response).unwrap();
                     SystemResult::Ok(ContractResult::Ok(to_json_binary(&response).unwrap()))
                 } else if msg_str.contains("specific_user_lockups") {
-                   if ! error_specific_user_lockups {
+                   if !error_specific_user_lockups {
                     let lockup_response = r#"{"lockups":[{"lock_entry":{"lock_id":1,"owner":"addr0000","funds":{"denom":"uatom","amount":"1000"},"lock_start":"1000000000000000000","lock_end":"2000000000000000000"},"current_voting_power":"1000"}]}"#;
                     let response = serde_json::from_str::<hydro_interface::msgs::SpecificUserLockupsResponse>(lockup_response).unwrap();
                     SystemResult::Ok(ContractResult::Ok(to_json_binary(&response).unwrap()))
@@ -345,7 +342,8 @@ mod tests {
                     SystemResult::Ok(ContractResult::Ok(to_json_binary(&response).unwrap()))
                    }
                 } else if msg_str.contains("lockups_shares") {
-                    let response = serde_json::from_str::<hydro_interface::msgs::LockupsSharesResponse>(r#"{"lockups_shares_info":[{"lock_id":1,"time_weighted_shares":"1","token_group_id":"dAtom"}]}"#).unwrap();
+                    let lockup_shares_response = r#"{"lockups_shares_info":[{"lock_id":1,"time_weighted_shares":"1","token_group_id":"dAtom"}]}"#;
+                    let response = serde_json::from_str::<hydro_interface::msgs::LockupsSharesResponse>(lockup_shares_response).unwrap();
                     SystemResult::Ok(ContractResult::Ok(to_json_binary(&response).unwrap()))
                 } else {
                     SystemResult::Err(SystemError::Unknown {})

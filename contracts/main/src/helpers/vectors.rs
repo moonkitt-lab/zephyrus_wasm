@@ -50,3 +50,14 @@ pub fn compare_u64_vectors(mut vec1: Vec<u64>, mut vec2: Vec<u64>) -> bool {
     // Compare the sorted vectors
     vec1 == vec2
 }
+
+pub fn join_u64_ids<I>(ids: I) -> String
+where
+    I: IntoIterator,
+    I::Item: std::fmt::Display,
+{
+    ids.into_iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}

@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, Storage};
+use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage};
 use cw_storage_plus::{Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
@@ -74,27 +74,28 @@ const PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID: Map<(HydroProposalId, &str), u
 const VESSEL_SHARES_INFO: Map<(RoundId, HydroLockId), VesselSharesInfo> =
     Map::new("vessel_shares_info");
 
-pub fn initialize_sequences(storage: &mut dyn Storage) -> Result<(), StdError> {
+// Track hydromancers with completed TWS per round for efficient checking
+const HYDROMANCER_TWS_COMPLETED_PER_ROUND: Map<(RoundId, HydromancerId), bool> =
+    Map::new("hydromancer_tws_completed_per_round");
+
+pub fn initialize_sequences(storage: &mut dyn Storage) -> StdResult<()> {
     USER_NEXT_ID.save(storage, &0)?;
-    HYDROMANCER_NEXT_ID.save(storage, &0)?;
-    Ok(())
+    HYDROMANCER_NEXT_ID.save(storage, &0)
 }
 
-pub fn update_constants(storage: &mut dyn Storage, constants: Constants) -> Result<(), StdError> {
-    CONSTANTS.save(storage, &constants)?;
-    Ok(())
+pub fn update_constants(storage: &mut dyn Storage, constants: Constants) -> StdResult<()> {
+    CONSTANTS.save(storage, &constants)
 }
 
-pub fn get_constants(storage: &dyn Storage) -> Result<Constants, StdError> {
+pub fn get_constants(storage: &dyn Storage) -> StdResult<Constants> {
     CONSTANTS.load(storage)
 }
 
 pub fn update_whitelist_admins(
     storage: &mut dyn Storage,
     whitelist_admins: Vec<Addr>,
-) -> Result<(), StdError> {
-    WHITELIST_ADMINS.save(storage, &whitelist_admins)?;
-    Ok(())
+) -> StdResult<()> {
+    WHITELIST_ADMINS.save(storage, &whitelist_admins)
 }
 
 pub fn get_vessel_harbor(
@@ -102,7 +103,7 @@ pub fn get_vessel_harbor(
     tranche_id: TrancheId,
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
-) -> Result<(VesselHarbor, HydroProposalId), StdError> {
+) -> StdResult<(VesselHarbor, HydroProposalId)> {
     let proposal_id = HARBOR_OF_VESSEL.load(storage, ((tranche_id, round_id), hydro_lock_id))?;
     let vessel_harbor = VESSEL_TO_HARBOR.load(
         storage,
@@ -111,41 +112,33 @@ pub fn get_vessel_harbor(
     Ok((vessel_harbor, proposal_id))
 }
 
-pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> Result<UserId, StdError> {
-    let user_id = get_user_id_by_address(storage, user_address.clone());
-    match user_id {
-        Ok(user_id) => Err(StdError::generic_err(format!(
+pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> StdResult<UserId> {
+    // Check if user already exists
+    if let Ok(user_id) = get_user_id_by_address(storage, user_address.clone()) {
+        return Err(StdError::generic_err(format!(
             "User {} already exists with id {}",
             user_address, user_id
-        ))),
-        Err(_) => {
-            //user id was not found, so we can create a new user
-            let user_id = USER_NEXT_ID.may_load(storage)?.unwrap_or_default();
-
-            let user = User {
-                user_id,
-                address: user_address.clone(),
-                claimable_rewards: vec![],
-            };
-            USERS.save(storage, user_id, &user)?;
-
-            USERID_BY_ADDR.save(storage, user_address.as_str(), &user_id)?;
-
-            USER_NEXT_ID.save(storage, &(user_id + 1))?;
-
-            Ok(user_id)
-        }
+        )));
     }
+
+    // User doesn't exist, create new one
+    let user_id = USER_NEXT_ID.may_load(storage)?.unwrap_or_default();
+
+    let user = User {
+        user_id,
+        address: user_address.clone(),
+        claimable_rewards: vec![],
+    };
+
+    USERS.save(storage, user_id, &user)?;
+    USERID_BY_ADDR.save(storage, user_address.as_str(), &user_id)?;
+    USER_NEXT_ID.save(storage, &(user_id + 1))?;
+
+    Ok(user_id)
 }
 
-pub fn get_user_id_by_address(storage: &dyn Storage, user_addr: Addr) -> Result<UserId, StdError> {
-    match USERID_BY_ADDR.load(storage, user_addr.as_str()) {
-        Ok(user_id) => Ok(user_id),
-        Err(_) => Err(StdError::generic_err(format!(
-            "User {} not found",
-            user_addr
-        ))),
-    }
+pub fn get_user_id_by_address(storage: &dyn Storage, user_addr: Addr) -> StdResult<UserId> {
+    USERID_BY_ADDR.load(storage, user_addr.as_str())
 }
 
 pub fn insert_new_hydromancer(
@@ -153,7 +146,7 @@ pub fn insert_new_hydromancer(
     hydromancer_address: Addr,
     hydromancer_name: String,
     hydromancer_commission_rate: Decimal,
-) -> Result<HydromancerId, StdError> {
+) -> StdResult<HydromancerId> {
     let hydromancer_id = HYDROMANCER_NEXT_ID.may_load(storage)?.unwrap_or_default();
 
     let hydromancer = Hydromancer {
@@ -162,10 +155,9 @@ pub fn insert_new_hydromancer(
         name: hydromancer_name,
         commission_rate: hydromancer_commission_rate,
     };
+
     HYDROMANCERS.save(storage, hydromancer_id, &hydromancer)?;
-
     HYDROMANCERID_BY_ADDR.save(storage, hydromancer_address.as_str(), &hydromancer_id)?;
-
     HYDROMANCER_NEXT_ID.save(storage, &(hydromancer_id + 1))?;
 
     Ok(hydromancer_id)
@@ -174,35 +166,22 @@ pub fn insert_new_hydromancer(
 pub fn get_hydromancer(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
-) -> Result<Hydromancer, ContractError> {
-    match HYDROMANCERS.load(storage, hydromancer_id) {
-        Ok(hydromancer) => Ok(hydromancer),
-        Err(_) => Err(ContractError::HydromancerNotFound { hydromancer_id }),
-    }
+) -> StdResult<Hydromancer> {
+    HYDROMANCERS.load(storage, hydromancer_id)
 }
 
 pub fn get_hydromancer_id_by_address(
     storage: &dyn Storage,
     hydromancer_addr: Addr,
-) -> Result<HydromancerId, StdError> {
-    match HYDROMANCERID_BY_ADDR.load(storage, hydromancer_addr.as_str()) {
-        Ok(hydromancer_id) => Ok(hydromancer_id),
-        Err(_) => Err(StdError::generic_err(format!(
-            "Hydromancer {} not found",
-            hydromancer_addr
-        ))),
-    }
+) -> StdResult<HydromancerId> {
+    HYDROMANCERID_BY_ADDR.load(storage, hydromancer_addr.as_str())
 }
 
 pub fn hydromancer_exists(storage: &dyn Storage, hydromancer_id: HydromancerId) -> bool {
     HYDROMANCERS.has(storage, hydromancer_id)
 }
 
-pub fn add_vessel(
-    storage: &mut dyn Storage,
-    vessel: &Vessel,
-    owner: &Addr,
-) -> Result<(), StdError> {
+pub fn add_vessel(storage: &mut dyn Storage, vessel: &Vessel, owner: &Addr) -> StdResult<()> {
     let vessel_id = vessel.hydro_lock_id;
 
     VESSELS.save(storage, vessel_id, vessel)?;
@@ -247,24 +226,23 @@ pub fn save_vessel_shares_info(
     storage: &mut dyn Storage,
     vessel_id: HydroLockId,
     round_id: RoundId,
-    new_time_weighted_shares: u128,
+    time_weighted_shares: u128,
     token_group_id: String,
-    locked_rounds: Option<u64>,
-) -> Result<(), StdError> {
+    locked_rounds: u64,
+) -> StdResult<()> {
     let vessel_shares_info = VesselSharesInfo {
-        time_weighted_shares: new_time_weighted_shares,
+        time_weighted_shares,
         token_group_id,
         locked_rounds,
     };
-    VESSEL_SHARES_INFO.save(storage, (round_id, vessel_id), &vessel_shares_info)?;
-    Ok(())
+    VESSEL_SHARES_INFO.save(storage, (round_id, vessel_id), &vessel_shares_info)
 }
 
 pub fn get_vessel_shares_info(
     storage: &dyn Storage,
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
-) -> Result<VesselSharesInfo, StdError> {
+) -> StdResult<VesselSharesInfo> {
     VESSEL_SHARES_INFO.load(storage, (round_id, hydro_lock_id))
 }
 
@@ -281,7 +259,7 @@ pub fn add_vessel_to_harbor(
     round_id: RoundId,
     proposal_id: HydroProposalId,
     vessel_harbor: &VesselHarbor,
-) -> Result<(), StdError> {
+) -> StdResult<()> {
     VESSEL_TO_HARBOR.save(
         storage,
         (
@@ -291,26 +269,21 @@ pub fn add_vessel_to_harbor(
         ),
         vessel_harbor,
     )?;
+
     HARBOR_OF_VESSEL.save(
         storage,
         ((tranche_id, round_id), vessel_harbor.hydro_lock_id),
         &proposal_id,
     )?;
+
     if vessel_harbor.user_control {
         let vessels_under_user_control = VESSELS_UNDER_USER_CONTROL
             .may_load(storage, (tranche_id, round_id))
             .unwrap_or_default();
-        match vessels_under_user_control {
-            Some(mut vessel_ids) => {
-                vessel_ids.insert(vessel_harbor.hydro_lock_id);
-                VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &vessel_ids)?;
-            }
-            None => {
-                let mut vessel_ids = BTreeSet::new();
-                vessel_ids.insert(vessel_harbor.hydro_lock_id);
-                VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &vessel_ids)?;
-            }
-        }
+
+        let mut vessel_ids = vessels_under_user_control.unwrap_or_default();
+        vessel_ids.insert(vessel_harbor.hydro_lock_id);
+        VESSELS_UNDER_USER_CONTROL.save(storage, (tranche_id, round_id), &vessel_ids)?;
     }
 
     Ok(())
@@ -321,7 +294,7 @@ pub fn get_vessel_to_harbor_by_harbor_id(
     tranche_id: TrancheId,
     round_id: RoundId,
     hydro_proposal_id: HydroProposalId,
-) -> Result<Vec<(HydroLockId, VesselHarbor)>, StdError> {
+) -> StdResult<Vec<(HydroLockId, VesselHarbor)>> {
     VESSEL_TO_HARBOR
         .prefix(((tranche_id, round_id), hydro_proposal_id))
         .range(storage, None, None, Order::Ascending)
@@ -333,7 +306,7 @@ pub fn get_harbor_of_vessel(
     tranche_id: TrancheId,
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
-) -> Result<Option<HydroProposalId>, StdError> {
+) -> StdResult<Option<HydroProposalId>> {
     HARBOR_OF_VESSEL.may_load(storage, ((tranche_id, round_id), hydro_lock_id))
 }
 
@@ -343,7 +316,7 @@ pub fn remove_vessel_harbor(
     round_id: RoundId,
     hydro_proposal_id: HydroLockId,
     hydro_lock_id: HydroLockId,
-) -> Result<(), StdError> {
+) -> StdResult<()> {
     let vessel_to_harbor = VESSEL_TO_HARBOR.load(
         storage,
         ((tranche_id, round_id), hydro_proposal_id, hydro_lock_id),
@@ -384,14 +357,14 @@ pub fn is_vessel_used_under_user_control(
     }
 }
 
-pub fn get_vessel(storage: &dyn Storage, hydro_lock_id: HydroLockId) -> Result<Vessel, StdError> {
+pub fn get_vessel(storage: &dyn Storage, hydro_lock_id: HydroLockId) -> StdResult<Vessel> {
     VESSELS.load(storage, hydro_lock_id)
 }
 
 pub fn get_vessels_by_ids(
     storage: &dyn Storage,
     hydro_lock_ids: &[HydroLockId],
-) -> Result<Vec<Vessel>, StdError> {
+) -> StdResult<Vec<Vessel>> {
     hydro_lock_ids
         .iter()
         .map(|id| VESSELS.load(storage, *id))
@@ -403,20 +376,18 @@ pub fn get_vessels_by_owner(
     owner: Addr,
     start_index: usize,
     limit: usize,
-) -> Result<Vec<Vessel>, StdError> {
-    // First try to load and handle the case where the owner has no vessels
+) -> StdResult<Vec<Vessel>> {
     let vessel_ids: BTreeSet<u64> = OWNER_VESSELS
         .may_load(storage, owner.as_str())?
-        .unwrap_or_default(); // Returns empty BTreeSet if not found
+        .unwrap_or_default();
 
     vessel_ids
         .iter()
-        .enumerate()
         .skip(start_index)
         .take(limit)
-        .map(|id| {
-            VESSELS.load(storage, *id.1).map_err(|e| {
-                StdError::generic_err(format!("Failed to load vessel {}: {}", id.1, e))
+        .map(|&vessel_id| {
+            VESSELS.load(storage, vessel_id).map_err(|e| {
+                StdError::generic_err(format!("Failed to load vessel {}: {}", vessel_id, e))
             })
         })
         .collect()
@@ -424,31 +395,23 @@ pub fn get_vessels_by_owner(
 
 pub fn get_vessels_by_hydromancer(
     storage: &dyn Storage,
-    hydromancer_addr: Addr,
+    hydromancer_id: u64,
     start_index: usize,
     limit: usize,
-) -> Result<Vec<Vessel>, StdError> {
-    let hydromancer_id = get_hydromancer_id_by_address(storage, hydromancer_addr.clone())?;
-
+) -> StdResult<Vec<Vessel>> {
     let vessel_ids = HYDROMANCER_VESSELS
         .may_load(storage, hydromancer_id)?
         .unwrap_or_default(); // Returns empty BTreeSet if not found
 
     vessel_ids
         .iter()
-        .enumerate()
         .skip(start_index)
         .take(limit)
-        .map(|id| {
-            VESSELS.load(storage, *id.1).map_err(|e| {
-                StdError::generic_err(format!("Failed to load vessel {}: {}", id.1, e))
-            })
-        })
+        .map(|&id| VESSELS.load(storage, id))
         .collect()
 }
 
-pub fn get_vessel_ids_auto_maintained_by_class() -> Result<Map<u64, BTreeSet<HydroLockId>>, StdError>
-{
+pub fn get_vessel_ids_auto_maintained_by_class() -> StdResult<Map<u64, BTreeSet<HydroLockId>>> {
     Ok(AUTO_MAINTAINED_VESSELS_BY_CLASS)
 }
 
@@ -456,30 +419,33 @@ pub fn modify_auto_maintenance(
     storage: &mut dyn Storage,
     hydro_lock_id: HydroLockId,
     auto_maintenance: bool,
-) -> Result<(), ContractError> {
+) -> StdResult<()> {
     let mut vessel = get_vessel(storage, hydro_lock_id)?;
 
-    let old_auto_maintenance = vessel.auto_maintenance;
-
     // No change in auto_maintenance, nothing to do, return early
-    if old_auto_maintenance == auto_maintenance {
+    if vessel.auto_maintenance == auto_maintenance {
         return Ok(());
     }
 
     vessel.auto_maintenance = auto_maintenance;
     VESSELS.save(storage, hydro_lock_id, &vessel)?;
 
-    let mut auto_maintained_ids = AUTO_MAINTAINED_VESSELS_BY_CLASS
-        .may_load(storage, vessel.class_period)?
-        .unwrap_or_default();
+    // Here we know we need to change, as vessel.auto_maintenance != auto_maintenance
+    AUTO_MAINTAINED_VESSELS_BY_CLASS.update(
+        storage,
+        vessel.class_period,
+        |existing| -> StdResult<BTreeSet<u64>> {
+            let mut auto_maintained_ids = existing.unwrap_or_default();
 
-    if old_auto_maintenance {
-        auto_maintained_ids.remove(&hydro_lock_id);
-    } else if auto_maintenance {
-        auto_maintained_ids.insert(hydro_lock_id);
-    }
+            if auto_maintenance {
+                auto_maintained_ids.insert(hydro_lock_id);
+            } else {
+                auto_maintained_ids.remove(&hydro_lock_id);
+            }
 
-    AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &auto_maintained_ids)?;
+            Ok(auto_maintained_ids)
+        },
+    )?;
 
     Ok(())
 }
@@ -488,41 +454,51 @@ pub fn remove_vessel(
     storage: &mut dyn Storage,
     owner: &Addr,
     hydro_lock_id: HydroLockId,
-) -> Result<(), ContractError> {
+) -> StdResult<()> {
     let vessel = get_vessel(storage, hydro_lock_id)?;
 
     VESSELS.remove(storage, hydro_lock_id);
 
-    let mut owner_vessels = OWNER_VESSELS
-        .may_load(storage, owner.as_str())?
-        .unwrap_or_default();
+    // Update owner vessels
+    OWNER_VESSELS.update(
+        storage,
+        owner.as_str(),
+        |existing| -> StdResult<BTreeSet<u64>> {
+            let mut owner_vessels = existing.unwrap_or_default();
+            owner_vessels.remove(&hydro_lock_id);
+            Ok(owner_vessels)
+        },
+    )?;
 
-    owner_vessels.remove(&hydro_lock_id);
-
-    OWNER_VESSELS.save(storage, owner.as_str(), &owner_vessels)?;
-
+    // Update hydromancer vessels if assigned
     if let Some(hydromancer_id) = vessel.hydromancer_id {
-        let mut vessels_hydromancer = HYDROMANCER_VESSELS
-            .may_load(storage, hydromancer_id)?
-            .unwrap_or_default();
-
-        vessels_hydromancer.remove(&hydro_lock_id);
-
-        HYDROMANCER_VESSELS.save(storage, hydromancer_id, &vessels_hydromancer)?;
+        HYDROMANCER_VESSELS.update(
+            storage,
+            hydromancer_id,
+            |existing| -> StdResult<BTreeSet<u64>> {
+                let mut vessels_hydromancer = existing.unwrap_or_default();
+                vessels_hydromancer.remove(&hydro_lock_id);
+                Ok(vessels_hydromancer)
+            },
+        )?;
     }
 
+    // Update auto-maintained vessels if applicable
     if vessel.auto_maintenance {
-        let mut vessels_class = AUTO_MAINTAINED_VESSELS_BY_CLASS
-            .may_load(storage, vessel.class_period)?
-            .unwrap_or_default();
-
-        vessels_class.remove(&hydro_lock_id);
-
-        AUTO_MAINTAINED_VESSELS_BY_CLASS.save(storage, vessel.class_period, &vessels_class)?;
+        AUTO_MAINTAINED_VESSELS_BY_CLASS.update(
+            storage,
+            vessel.class_period,
+            |existing| -> StdResult<BTreeSet<u64>> {
+                let mut vessels_class = existing.unwrap_or_default();
+                vessels_class.remove(&hydro_lock_id);
+                Ok(vessels_class)
+            },
+        )?;
     }
 
-    if vessel.tokenized_share_record_id.is_some() {
-        TOKENIZED_SHARE_RECORDS.remove(storage, vessel.tokenized_share_record_id.unwrap());
+    // Remove tokenized share record if it exists
+    if let Some(record_id) = vessel.tokenized_share_record_id {
+        TOKENIZED_SHARE_RECORDS.remove(storage, record_id);
     }
 
     Ok(())
@@ -532,30 +508,57 @@ pub fn is_vessel_owned_by(
     storage: &dyn Storage,
     owner: &Addr,
     hydro_lock_id: HydroLockId,
-) -> Result<bool, StdError> {
+) -> StdResult<bool> {
     let owner_vessels = OWNER_VESSELS
         .may_load(storage, owner.as_str())?
         .unwrap_or_default();
-    Ok(owner_vessels.contains(&hydro_lock_id))
-}
 
-pub fn is_whitelisted_admin(storage: &dyn Storage, sender: &Addr) -> Result<bool, ContractError> {
-    let whitelist_admins = WHITELIST_ADMINS.load(storage)?;
-    Ok(whitelist_admins.contains(sender))
+    Ok(owner_vessels.contains(&hydro_lock_id))
 }
 
 pub fn are_vessels_owned_by(
     storage: &dyn Storage,
     owner: &Addr,
     hydro_lock_ids: &[HydroLockId],
-) -> Result<bool, StdError> {
+) -> StdResult<bool> {
     let owner_vessels = OWNER_VESSELS
         .may_load(storage, owner.as_str())?
         .unwrap_or_default();
 
-    Ok(hydro_lock_ids
+    Ok(hydro_lock_ids.iter().all(|id| owner_vessels.contains(id)))
+}
+
+pub fn are_vessels_controlled_by_hydromancer(
+    storage: &dyn Storage,
+    hydromancer_id: u64,
+    vessel_ids: &[u64],
+) -> StdResult<bool> {
+    let hydromancer_vessels = HYDROMANCER_VESSELS
+        .may_load(storage, hydromancer_id)?
+        .unwrap_or_default();
+
+    Ok(vessel_ids.iter().all(|id| hydromancer_vessels.contains(id)))
+}
+
+pub fn extract_vessels_not_controlled_by_hydromancer(
+    storage: &dyn Storage,
+    hydromancer_id: u64,
+    vessel_ids: &[u64],
+) -> StdResult<Vec<u64>> {
+    let controlled_vessels = HYDROMANCER_VESSELS
+        .may_load(storage, hydromancer_id)?
+        .unwrap_or_default();
+
+    Ok(vessel_ids
         .iter()
-        .all(|&id_to_check| owner_vessels.contains(&id_to_check)))
+        .filter(|&&vessel_id| !controlled_vessels.contains(&vessel_id))
+        .copied()
+        .collect())
+}
+
+pub fn is_whitelisted_admin(storage: &dyn Storage, sender: &Addr) -> StdResult<bool> {
+    let whitelist_admins = WHITELIST_ADMINS.load(storage)?;
+    Ok(whitelist_admins.contains(sender))
 }
 
 pub fn change_vessel_hydromancer(
@@ -637,43 +640,18 @@ pub fn change_vessel_hydromancer(
     }
 }
 
-pub fn is_exist_tw_shares_for_hydromancer(
-    storage: &dyn Storage,
-    hydromancer_id: HydromancerId,
-
-    round_id: RoundId,
-) -> Result<bool, ContractError> {
-    let key_prefix = (hydromancer_id, round_id);
-
-    // Verify is exist at least one entry for (hydromancer_id, round_id)
-    let exists = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
-        .sub_prefix(key_prefix)
-        .keys(storage, None, None, cosmwasm_std::Order::Ascending)
-        .next()
-        .is_some();
-
-    Ok(exists)
-}
-
 pub fn add_time_weighted_shares_to_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
-
     round_id: RoundId,
     token_group_id: &str,
     locked_rounds: u64,
     shares: u128,
-) -> Result<(), StdError> {
-    let current_shares = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
-        .load(
-            storage,
-            ((hydromancer_id, round_id), locked_rounds, token_group_id),
-        )
-        .unwrap_or_default();
-    HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
+) -> StdResult<()> {
+    HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         ((hydromancer_id, round_id), locked_rounds, token_group_id),
-        &(current_shares + shares),
+        |current_shares| -> Result<_, StdError> { Ok(current_shares.unwrap_or_default() + shares) },
     )?;
     Ok(())
 }
@@ -685,18 +663,11 @@ pub fn substract_time_weighted_shares_from_hydromancer(
     token_group_id: &str,
     locked_rounds: u64,
     shares: u128,
-) -> Result<(), StdError> {
-    let current_shares = HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
-        .load(
-            storage,
-            ((hydromancer_id, round_id), locked_rounds, token_group_id),
-        )
-        .unwrap_or_default();
-
-    HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
+) -> StdResult<()> {
+    HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         ((hydromancer_id, round_id), locked_rounds, token_group_id),
-        &(current_shares - shares),
+        |current_shares| -> Result<_, StdError> { Ok(current_shares.unwrap_or_default() - shares) },
     )?;
     Ok(())
 }
@@ -706,15 +677,13 @@ pub fn add_time_weighted_shares_to_proposal(
     proposal_id: HydroProposalId,
     token_group_id: &str,
     time_weighted_shares: u128,
-) -> Result<(), StdError> {
-    let current_shares = PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID
-        .load(storage, (proposal_id, token_group_id))
-        .unwrap_or_default();
-
-    PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.save(
+) -> StdResult<()> {
+    PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         (proposal_id, token_group_id),
-        &(current_shares + time_weighted_shares),
+        |current_shares| -> Result<_, StdError> {
+            Ok(current_shares.unwrap_or_default() + time_weighted_shares)
+        },
     )?;
     Ok(())
 }
@@ -724,15 +693,13 @@ pub fn substract_time_weighted_shares_from_proposal(
     proposal_id: HydroProposalId,
     token_group_id: &str,
     time_weighted_shares: u128,
-) -> Result<(), StdError> {
-    let current_shares = PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID
-        .load(storage, (proposal_id, token_group_id))
-        .unwrap_or_default();
-
-    PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.save(
+) -> StdResult<()> {
+    PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         (proposal_id, token_group_id),
-        &(current_shares - time_weighted_shares),
+        |current_shares| -> Result<_, StdError> {
+            Ok(current_shares.unwrap_or_default() - time_weighted_shares)
+        },
     )?;
     Ok(())
 }
@@ -743,15 +710,13 @@ pub fn add_time_weighted_shares_to_proposal_for_hydromancer(
     hydromancer_id: HydromancerId,
     token_group_id: &str,
     time_weighted_shares: u128,
-) -> Result<(), StdError> {
-    let current_shares = PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
-        .load(storage, (proposal_id, hydromancer_id, token_group_id))
-        .unwrap_or_default();
-
-    PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
+) -> StdResult<()> {
+    PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         (proposal_id, hydromancer_id, token_group_id),
-        &(current_shares + time_weighted_shares),
+        |current_shares| -> Result<_, StdError> {
+            Ok(current_shares.unwrap_or_default() + time_weighted_shares)
+        },
     )?;
     Ok(())
 }
@@ -762,25 +727,49 @@ pub fn substract_time_weighted_shares_from_proposal_for_hydromancer(
     hydromancer_id: HydromancerId,
     token_group_id: &str,
     time_weighted_shares: u128,
-) -> Result<(), StdError> {
-    let current_shares = PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
-        .load(storage, (proposal_id, hydromancer_id, token_group_id))
-        .unwrap_or_default();
-
-    PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.save(
+) -> StdResult<()> {
+    PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         (proposal_id, hydromancer_id, token_group_id),
-        &(current_shares - time_weighted_shares),
+        |current_shares| -> Result<_, StdError> {
+            Ok(current_shares.unwrap_or_default() - time_weighted_shares)
+        },
     )?;
     Ok(())
 }
 
-pub fn take_control_of_vessels(
-    storage: &mut dyn Storage,
-    vessel_id: HydroLockId,
-) -> Result<(), ContractError> {
+pub fn take_control_of_vessels(storage: &mut dyn Storage, vessel_id: HydroLockId) -> StdResult<()> {
     let mut vessel = get_vessel(storage, vessel_id)?;
     vessel.hydromancer_id = None;
-    VESSELS.save(storage, vessel_id, &vessel)?;
-    Ok(())
+    VESSELS.save(storage, vessel_id, &vessel)
+}
+
+pub fn is_hydromancer_tws_complete(
+    storage: &dyn Storage,
+    round_id: RoundId,
+    hydromancer_id: HydromancerId,
+) -> bool {
+    HYDROMANCER_TWS_COMPLETED_PER_ROUND.has(storage, (round_id, hydromancer_id))
+}
+
+pub fn mark_hydromancer_tws_complete(
+    storage: &mut dyn Storage,
+    round_id: RoundId,
+    hydromancer_id: HydromancerId,
+) -> StdResult<()> {
+    HYDROMANCER_TWS_COMPLETED_PER_ROUND.save(storage, (round_id, hydromancer_id), &true)
+}
+
+pub fn get_all_hydromancers(storage: &dyn Storage) -> Result<Vec<HydromancerId>, StdError> {
+    HYDROMANCERS
+        .keys(storage, None, None, cosmwasm_std::Order::Ascending)
+        .collect()
+}
+
+pub fn has_vessel_shares_info(
+    storage: &dyn Storage,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> bool {
+    VESSEL_SHARES_INFO.has(storage, (round_id, hydro_lock_id))
 }

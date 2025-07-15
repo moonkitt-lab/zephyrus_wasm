@@ -1,6 +1,6 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage};
-use cw_storage_plus::{Item, Map};
+use cw_storage_plus::{Bound, Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
     msgs::{HydroProposalId, RoundId, TrancheId, UserId},
@@ -177,8 +177,10 @@ pub fn get_hydromancer_id_by_address(
     HYDROMANCERID_BY_ADDR.load(storage, hydromancer_addr.as_str())
 }
 
-pub fn hydromancer_exists(storage: &dyn Storage, hydromancer_id: HydromancerId) -> bool {
-    HYDROMANCERS.has(storage, hydromancer_id)
+/// Get user ID by address
+pub fn get_user_id(storage: &dyn Storage, user_addr: &Addr) -> Result<UserId, ContractError> {
+    let user_id = USERID_BY_ADDR.load(storage, user_addr.as_str())?;
+    Ok(user_id)
 }
 
 pub fn add_vessel(storage: &mut dyn Storage, vessel: &Vessel, owner: &Addr) -> StdResult<()> {
@@ -359,6 +361,10 @@ pub fn is_vessel_used_under_user_control(
 
 pub fn get_vessel(storage: &dyn Storage, hydro_lock_id: HydroLockId) -> StdResult<Vessel> {
     VESSELS.load(storage, hydro_lock_id)
+}
+
+pub fn vessel_exists(storage: &dyn Storage, hydro_lock_id: HydroLockId) -> bool {
+    VESSELS.has(storage, hydro_lock_id)
 }
 
 pub fn get_vessels_by_ids(
@@ -640,6 +646,85 @@ pub fn change_vessel_hydromancer(
     }
 }
 
+// === PURE DATABASE OPERATIONS FOR VESSEL-HYDROMANCER MAPPINGS ===
+
+/// Save a vessel to storage
+pub fn save_vessel(
+    storage: &mut dyn Storage,
+    vessel_id: HydroLockId,
+    vessel: &Vessel,
+) -> Result<(), ContractError> {
+    VESSELS.save(storage, vessel_id, vessel)?;
+    Ok(())
+}
+
+/// Add vessel to hydromancer's vessel set
+pub fn add_vessel_to_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    vessel_id: HydroLockId,
+) -> Result<(), ContractError> {
+    let mut hydromancer_vessels = HYDROMANCER_VESSELS
+        .may_load(storage, hydromancer_id)?
+        .unwrap_or_default();
+    hydromancer_vessels.insert(vessel_id);
+    HYDROMANCER_VESSELS.save(storage, hydromancer_id, &hydromancer_vessels)?;
+    Ok(())
+}
+
+/// Remove vessel from hydromancer's vessel set
+pub fn remove_vessel_from_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    vessel_id: HydroLockId,
+) -> Result<(), ContractError> {
+    let mut hydromancer_vessels = HYDROMANCER_VESSELS
+        .may_load(storage, hydromancer_id)?
+        .unwrap_or_default();
+    hydromancer_vessels.remove(&vessel_id);
+    HYDROMANCER_VESSELS.save(storage, hydromancer_id, &hydromancer_vessels)?;
+    Ok(())
+}
+
+/// Check if hydromancer exists
+pub fn hydromancer_exists(
+    storage: &dyn Storage,
+    hydromancer_id: HydromancerId,
+) -> Result<bool, ContractError> {
+    Ok(HYDROMANCERS.has(storage, hydromancer_id))
+}
+
+/// Iterate over vessels with a predicate and pagination
+pub fn iterate_vessels_with_predicate<F>(
+    storage: &dyn Storage,
+    start_from_vessel_id: Option<HydroLockId>,
+    limit: usize,
+    predicate: F,
+) -> Result<Vec<(HydroLockId, Vessel)>, ContractError>
+where
+    F: Fn(&Vessel) -> bool,
+{
+    let start_bound = start_from_vessel_id.map(Bound::exclusive);
+    let iter = VESSELS.range(storage, start_bound, None, Order::Ascending);
+
+    let mut results = Vec::new();
+
+    for item in iter {
+        let (vessel_id, vessel) = item?;
+
+        if predicate(&vessel) {
+            results.push((vessel_id, vessel));
+
+            // Stop when we have enough results
+            if results.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 pub fn add_time_weighted_shares_to_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
@@ -656,7 +741,7 @@ pub fn add_time_weighted_shares_to_hydromancer(
     Ok(())
 }
 
-pub fn substract_time_weighted_shares_from_hydromancer(
+pub fn subtract_time_weighted_shares_from_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
     round_id: RoundId,
@@ -688,7 +773,7 @@ pub fn add_time_weighted_shares_to_proposal(
     Ok(())
 }
 
-pub fn substract_time_weighted_shares_from_proposal(
+pub fn subtract_time_weighted_shares_from_proposal(
     storage: &mut dyn Storage,
     proposal_id: HydroProposalId,
     token_group_id: &str,
@@ -721,7 +806,7 @@ pub fn add_time_weighted_shares_to_proposal_for_hydromancer(
     Ok(())
 }
 
-pub fn substract_time_weighted_shares_from_proposal_for_hydromancer(
+pub fn subtract_time_weighted_shares_from_proposal_for_hydromancer(
     storage: &mut dyn Storage,
     proposal_id: HydroProposalId,
     hydromancer_id: HydromancerId,

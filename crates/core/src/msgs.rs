@@ -1,6 +1,6 @@
 use crate::state::{Constants, Vessel, VesselHarbor};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Binary, Decimal};
+use cosmwasm_std::{Addr, Binary, Coin, Decimal};
 
 pub type UserId = u64;
 pub type HydromancerId = u64;
@@ -50,7 +50,10 @@ pub enum ExecuteMsg {
         hydro_lock_ids: Vec<u64>,
         hydro_lock_duration: u64,
     },
-    AutoMaintain {},
+    AutoMaintain {
+        start_from_vessel_id: Option<u64>,
+        limit: Option<usize>,
+    },
     ModifyAutoMaintenance {
         hydro_lock_ids: Vec<u64>,
         auto_maintenance: bool,
@@ -136,3 +139,30 @@ pub enum QueryMsg {
 
 #[cw_serde]
 pub struct MigrateMsg {}
+
+pub const DECOMMISSION_REPLY_ID: u64 = 1;
+pub const VOTE_REPLY_ID: u64 = 2;
+pub const REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID: u64 = 3;
+
+#[cw_serde]
+pub struct VoteReplyPayload {
+    pub tranche_id: u64,
+    pub vessels_harbors: Vec<VesselsToHarbor>,
+    pub steerer_id: u64,
+    pub round_id: u64,
+    pub user_vote: bool,
+}
+
+#[cw_serde]
+pub struct RefreshTimeWeightedSharesReplyPayload {
+    pub vessel_ids: Vec<HydroLockId>,
+    pub target_class_period: u64,
+    pub current_round_id: RoundId,
+}
+
+#[cw_serde]
+pub struct DecommissionVesselsReplyPayload {
+    pub previous_balances: Vec<Coin>,
+    pub expected_unlocked_ids: Vec<u64>,
+    pub vessel_owner: Addr,
+}

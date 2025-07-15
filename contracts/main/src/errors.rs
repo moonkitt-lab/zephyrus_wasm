@@ -17,8 +17,11 @@ pub enum ContractError {
     #[error("Custom Error val: {msg:?}")]
     CustomError { msg: String },
 
-    #[error("Hydromancer {hydromancer_id} not found")]
-    HydromancerNotFound { hydromancer_id: u64 },
+    #[error("Hydromancer {identifier} not found")]
+    HydromancerNotFound { identifier: String },
+
+    #[error("User {identifier} not found")]
+    UserNotFound { identifier: String },
 
     #[error("Vessel {vessel_id} is controlled by {vessel_hydromancer_id} not {hydromancer_id}")]
     InvalidHydromancerId {
@@ -42,6 +45,10 @@ pub enum ContractError {
 
     #[error("Paused")]
     Paused,
+
+    #[error("NotPaused")]
+    NotPaused,
+
     #[error("The vessel cannot be decommissioned")]
     LockNotExpired {},
 
@@ -67,14 +74,20 @@ pub enum ContractError {
     NftNotAccepted,
 
     #[error("Duplicate Harbor ID: {harbor_id}")]
-    VoteDuplicatedHarborId { harbor_id: u64 },
+    DuplicateHarborId { harbor_id: u64 },
 
     #[error("Duplicate Vessel ID: {vessel_id}")]
-    VoteDuplicatedVesselId { vessel_id: u64 },
+    DuplicateVesselId { vessel_id: u64 },
 
     #[error("Vessel {vessel_id} is under hydromancer control")]
     VesselUnderHydromancerControl { vessel_id: u64 },
 
     #[error("Vessel {vessel_id} is tied to a proposal, cannot be transferred")]
     VesselTiedToProposalNotTransferable { vessel_id: u64 },
+
+    #[error("Lock duration must be one of: {valid_durations:?}; but was: {provided_duration}")]
+    InvalidLockDuration {
+        valid_durations: Vec<u64>,
+        provided_duration: u64,
+    },
 }

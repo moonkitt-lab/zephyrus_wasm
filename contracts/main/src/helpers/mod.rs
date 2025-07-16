@@ -20,3 +20,6 @@ mod tws_test;
 
 #[cfg(test)]
 mod validation_test;
+
+#[cfg(test)]
+mod vessel_assignment_test;

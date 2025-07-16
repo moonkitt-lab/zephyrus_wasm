@@ -236,7 +236,7 @@ fn test_cw721_receive_nft_fail_bad_period() {
         owner: sender.to_string(),
         auto_maintenance: true,
         hydromancer_id: 0,
-        class_period: 6,
+        class_period: 6_000_000, // 6 lock_epoch_length
     };
     let receive_msg = Cw721ReceiveMsg {
         sender: sender.to_string(),
@@ -249,7 +249,7 @@ fn test_cw721_receive_nft_fail_bad_period() {
     assert!(res
         .unwrap_err()
         .to_string()
-        .contains("Lock duration must be one of: [1, 2, 3]; but was: 6"));
+        .contains("Lock duration must be one of: [1000000, 2000000, 3000000]; but was: 6000000"));
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn test_cw721_receive_nft_fail_not_owner() {
         owner: sender.to_string(),
         auto_maintenance: true,
         hydromancer_id: 0,
-        class_period: 3,
+        class_period: 3_000_000, // 3 lock_epoch_length
     };
 
     let receive_msg = Cw721ReceiveMsg {
@@ -314,7 +314,7 @@ fn test_cw721_receive_nft_succeed() {
         owner: sender.to_string(),
         auto_maintenance: true,
         hydromancer_id: 0,
-        class_period: 3,
+        class_period: 3_000_000, // 3 lock_epoch_length
     };
     let receive_msg = Cw721ReceiveMsg {
         sender: sender.to_string(),
@@ -410,7 +410,7 @@ fn hydromancer_vote_with_vessel_controlled_other_hydromancer_fail() {
         &Vessel {
             hydro_lock_id: 0,
             tokenized_share_record_id: None,
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: Some(0), // Default hydromancer (not the one created above)
             owner_id: user_id,
@@ -466,7 +466,7 @@ fn hydromancer_vote_with_vessel_under_user_control_fail() {
         &Vessel {
             hydro_lock_id: 0,
             tokenized_share_record_id: None,
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: None, // under user control
             owner_id: user_id,
@@ -515,7 +515,7 @@ fn hydromancer_vote_succeed_without_change_because_vote_skipped_by_hydro() {
         &Vessel {
             hydro_lock_id: 0,
             tokenized_share_record_id: Some(0),
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: Some(default_hydromancer_id),
             owner_id: user_id,
@@ -638,7 +638,7 @@ fn hydromancer_new_vote_succeed() {
         &Vessel {
             hydro_lock_id: 0,
             tokenized_share_record_id: Some(0),
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: Some(default_hydromancer_id),
             owner_id: user_id,
@@ -745,7 +745,7 @@ fn hydromancer_change_existing_vote_succeed() {
             owner: alice_address.to_string(),
             auto_maintenance: true,
             hydromancer_id: default_hydromancer_id,
-            class_period: 3,
+            class_period: 3_000_000, // 3 lock_epoch_length
         })
         .unwrap(),
     });
@@ -1022,7 +1022,7 @@ fn user_vote_with_other_vessels_fail() {
         &Vessel {
             hydro_lock_id: 0,
             tokenized_share_record_id: Some(0),
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: Some(default_hydromancer_id),
             owner_id: alice_user_id,
@@ -1074,7 +1074,7 @@ fn user_new_vote_succeed() {
             owner: alice_address.to_string(),
             auto_maintenance: true,
             hydromancer_id: default_hydromancer_id,
-            class_period: 3,
+            class_period: 3_000_000, // 3 lock_epoch_length
         })
         .unwrap(),
     });
@@ -1208,7 +1208,7 @@ fn user_change_existing_hydromancer_vote_succeed() {
             owner: alice_address.to_string(),
             auto_maintenance: true,
             hydromancer_id: default_hydromancer_id,
-            class_period: 3,
+            class_period: 3_000_000, // 3 lock_epoch_length
         })
         .unwrap(),
     });
@@ -1462,7 +1462,7 @@ fn change_hydromancer_fail_bad_user() {
         &Vessel {
             hydro_lock_id: 0,
             tokenized_share_record_id: Some(0),
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: Some(default_hydromancer_id),
             owner_id: user_id,
@@ -1512,7 +1512,7 @@ fn change_hydromancer_2_vessels_with_1_fail_bad_user() {
         &Vessel {
             hydro_lock_id: 0,
             tokenized_share_record_id: Some(0),
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: Some(default_hydromancer_id),
             owner_id: user_id,
@@ -1526,7 +1526,7 @@ fn change_hydromancer_2_vessels_with_1_fail_bad_user() {
         &Vessel {
             hydro_lock_id: 1,
             tokenized_share_record_id: Some(0),
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: Some(default_hydromancer_id),
             owner_id: bob_id,
@@ -1574,7 +1574,7 @@ fn change_hydromancer_1_vessels_hydromancer_success() {
         &Vessel {
             hydro_lock_id: 0,
             tokenized_share_record_id: Some(0),
-            class_period: 12,
+            class_period: 12_000_000, // 12 lock_epoch_length
             auto_maintenance: true,
             hydromancer_id: Some(default_hydromancer_id),
             owner_id: alice_user_id,
@@ -1662,7 +1662,7 @@ fn change_hydromancer_1_vessels_already_vote_success() {
             owner: alice_address.to_string(),
             auto_maintenance: true,
             hydromancer_id: default_hydromancer_id,
-            class_period: 3,
+            class_period: 3_000_000, // 3 lock_epoch_length
         })
         .unwrap(),
     });
@@ -1785,7 +1785,7 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
             owner: alice_address.to_string(),
             auto_maintenance: true,
             hydromancer_id: default_hydromancer_id,
-            class_period: 3,
+            class_period: 3_000_000, // 3 lock_epoch_length
         })
         .unwrap(),
     });

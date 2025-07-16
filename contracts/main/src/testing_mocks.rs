@@ -53,68 +53,15 @@ impl MockWasmQuerier {
                 }
 
                 let response = match from_json(msg).unwrap() {
-                    HydroQueryMsg::CurrentRound {} => to_json_binary(&CurrentRoundResponse {
-                        round_id: self.current_round,
-                        round_end: Timestamp::from_seconds(
-                            SystemTime::now()
-                                .duration_since(SystemTime::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs(),
-                        ),
-                    }),
-                    HydroQueryMsg::Constants {} => to_json_binary(&HydroConstantsResponse {
-                        constants: self
-                            .hydro_constants
-                            .clone()
-                            .unwrap_or_else(|| HydroConstants {
-                                round_length: 1000,
-                                lock_epoch_length: 1,
-                                first_round_start: Timestamp::from_seconds(1000),
-                                max_locked_tokens: 50_000,
-                                known_users_cap: 250,
-                                paused: false,
-                                max_deployment_duration: 3,
-                                round_lock_power_schedule: RoundLockPowerSchedule {
-                                    round_lock_power_schedule: vec![
-                                        LockPowerEntry {
-                                            locked_rounds: 1,
-                                            power_scaling_factor: Decimal::from_ratio(
-                                                10u128, 10u128,
-                                            ),
-                                        },
-                                        LockPowerEntry {
-                                            locked_rounds: 2,
-                                            power_scaling_factor: Decimal::from_ratio(
-                                                20u128, 10u128,
-                                            ),
-                                        },
-                                        LockPowerEntry {
-                                            locked_rounds: 3,
-                                            power_scaling_factor: Decimal::from_ratio(
-                                                30u128, 10u128,
-                                            ),
-                                        },
-                                    ],
-                                },
-                                cw721_collection_info: CollectionInfo {
-                                    name: "Test Collection".to_string(),
-                                    symbol: "TEST".to_string(),
-                                },
-                            }),
-                    }),
+                    HydroQueryMsg::CurrentRound {} => self.handle_current_round(),
+                    HydroQueryMsg::Constants {} => self.handle_constants(),
                     HydroQueryMsg::SpecificUserLockups { address, lock_ids } => {
                         self.handle_specific_user_lockups(&address, &lock_ids)
                     }
                     HydroQueryMsg::LockupsShares { lock_ids } => {
                         self.handle_lockups_shares(&lock_ids)
                     }
-                    HydroQueryMsg::Tranches {} => to_json_binary(&TranchesResponse {
-                        tranches: vec![Tranche {
-                            id: 1,
-                            name: "Atom".to_string(),
-                            metadata: "".to_string(),
-                        }],
-                    }),
+                    HydroQueryMsg::Tranches {} => self.handle_tranches(),
                     HydroQueryMsg::SpecificUserLockupsWithTrancheInfos {
                         address: _,
                         lock_ids,
@@ -164,6 +111,65 @@ impl MockWasmQuerier {
         }
         to_json_binary(&LockupsSharesResponse {
             lockups_shares_info: shares_info,
+        })
+    }
+
+    fn handle_current_round(&self) -> StdResult<Binary> {
+        to_json_binary(&CurrentRoundResponse {
+            round_id: self.current_round,
+            round_end: Timestamp::from_seconds(
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            ),
+        })
+    }
+
+    fn handle_constants(&self) -> StdResult<Binary> {
+        to_json_binary(&HydroConstantsResponse {
+            constants: self
+                .hydro_constants
+                .clone()
+                .unwrap_or_else(|| HydroConstants {
+                    round_length: 1_000_000,
+                    lock_epoch_length: 1_000_000,
+                    first_round_start: Timestamp::from_nanos(1730851140000000000),
+                    max_locked_tokens: 55_000_000_000,
+                    known_users_cap: 0,
+                    paused: false,
+                    max_deployment_duration: 3,
+                    round_lock_power_schedule: RoundLockPowerSchedule {
+                        round_lock_power_schedule: vec![
+                            LockPowerEntry {
+                                locked_rounds: 1,
+                                power_scaling_factor: Decimal::one(), // 1
+                            },
+                            LockPowerEntry {
+                                locked_rounds: 2,
+                                power_scaling_factor: Decimal::from_ratio(5u128, 4u128), // 1.25
+                            },
+                            LockPowerEntry {
+                                locked_rounds: 3,
+                                power_scaling_factor: Decimal::from_ratio(3u128, 2u128), // 1.5
+                            },
+                        ],
+                    },
+                    cw721_collection_info: CollectionInfo {
+                        name: "Hydro Lockups".to_string(),
+                        symbol: "hydro-lockups".to_string(),
+                    },
+                }),
+        })
+    }
+
+    fn handle_tranches(&self) -> StdResult<Binary> {
+        to_json_binary(&TranchesResponse {
+            tranches: vec![Tranche {
+                id: 1,
+                name: "ATOM Bucket".to_string(),
+                metadata: "".to_string(),
+            }],
         })
     }
 

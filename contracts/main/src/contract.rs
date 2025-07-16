@@ -250,6 +250,8 @@ fn execute_auto_maintain(
     validate_contract_is_not_paused(&constants)?;
 
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
+    let hydro_constants_response = query_hydro_constants(&deps.as_ref(), &constants)?;
+    let lock_epoch_length = hydro_constants_response.constants.lock_epoch_length;
     let max_vessels = limit.unwrap_or(50); // Default to 50 vessels max
 
     // Collect all vessels that need auto-maintenance, sorted by vessel ID
@@ -258,6 +260,7 @@ fn execute_auto_maintain(
         current_round_id,
         start_from_vessel_id,
         max_vessels,
+        lock_epoch_length,
     )?;
 
     if vessels_needing_maintenance.is_empty() {
@@ -320,6 +323,7 @@ fn execute_auto_maintain(
             deps.storage,
             current_round_id,
             last_vessel_id,
+            lock_epoch_length,
         )?;
 
         response = response.add_attribute("has_more", has_more_vessels.to_string());

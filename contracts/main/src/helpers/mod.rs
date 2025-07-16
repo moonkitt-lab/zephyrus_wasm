@@ -8,3 +8,6 @@ pub mod vessel_assignment;
 
 #[cfg(test)]
 mod vectors_test;
+
+#[cfg(test)]
+mod testing_auto_maintenance;

@@ -219,8 +219,12 @@ impl MockQuerier {
         }
     }
 
-    pub fn set_current_round(&mut self, current_round: u64) {
-        self.wasm_querier.current_round = current_round;
+    pub fn increment_current_round(&mut self) {
+        self.wasm_querier.current_round += 1;
+    }
+
+    pub fn get_current_round(&self) -> u64 {
+        self.wasm_querier.current_round
     }
 }
 

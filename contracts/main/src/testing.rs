@@ -1931,11 +1931,12 @@ fn user_take_control_after_new_round_succeed_with_shares_initalized() {
     );
     assert!(result.is_ok());
 
-    let vessel_shares = state::get_vessel_shares_info(deps.as_ref().storage, 1, 0);
+    let vessel_shares =
+        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
     assert!(vessel_shares.is_ok());
 
     // Simulate new round
-    deps.querier.set_current_round(2);
+    deps.querier.increment_current_round();
 
     let take_control_msg = ExecuteMsg::TakeControl {
         vessel_ids: vec![0],
@@ -1951,6 +1952,7 @@ fn user_take_control_after_new_round_succeed_with_shares_initalized() {
     );
     assert!(result.is_ok());
 
-    let vessel_shares = state::get_vessel_shares_info(deps.as_ref().storage, 2, 0);
+    let vessel_shares =
+        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
     assert!(vessel_shares.is_ok());
 }

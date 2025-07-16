@@ -1893,3 +1893,64 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
         0
     ))
 }
+
+#[test]
+fn user_take_control_after_new_round_succeed_with_shares_initalized() {
+    let mut deps = mock_dependencies();
+
+    init_contract(deps.as_mut());
+
+    let constants = state::get_constants(deps.as_mut().storage).unwrap();
+
+    let alice_address = make_valid_addr("alice");
+
+    let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+        .unwrap()
+        .default_hydromancer_id;
+
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "0".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: default_hydromancer_id,
+            class_period: 3_000_000, // 3 lock_epoch_length
+        })
+        .unwrap(),
+    });
+    // Create a vessel simulating the nft reveive
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: constants.hydro_config.hydro_contract_address.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok());
+
+    let vessel_shares = state::get_vessel_shares_info(deps.as_ref().storage, 1, 0);
+    assert!(vessel_shares.is_ok());
+
+    // Simulate new round
+    deps.querier.set_current_round(2);
+
+    let take_control_msg = ExecuteMsg::TakeControl {
+        vessel_ids: vec![0],
+    };
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        take_control_msg,
+    );
+    assert!(result.is_ok());
+
+    let vessel_shares = state::get_vessel_shares_info(deps.as_ref().storage, 2, 0);
+    assert!(vessel_shares.is_ok());
+}

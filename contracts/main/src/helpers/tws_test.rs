@@ -8,9 +8,8 @@ mod tests {
     use crate::{
         helpers::tws::{
             apply_hydromancer_tws_changes, apply_proposal_hydromancer_tws_changes,
-            apply_proposal_tws_changes, batch_hydromancer_tws_changes,
-            batch_proposal_tws_changes, complete_hydromancer_time_weighted_shares,
-            initialize_vessel_tws, TwsChanges,
+            apply_proposal_tws_changes, batch_hydromancer_tws_changes, batch_proposal_tws_changes,
+            complete_hydromancer_time_weighted_shares, initialize_vessel_tws, TwsChanges,
         },
         state,
         testing::make_valid_addr,
@@ -316,13 +315,13 @@ mod tests {
         let tranche_id = 1;
         let current_round_id = 1;
         let vessel_id = 1;
-        
+
         let vessel_harbor = zephyrus_core::state::VesselHarbor {
             user_control: true,
             steerer_id: 1,
             hydro_lock_id: vessel_id,
         };
-        
+
         state::add_vessel_to_harbor(
             deps.as_mut().storage,
             tranche_id,
@@ -367,7 +366,10 @@ mod tests {
 
         // Check hydromancer changes (vessel has hydromancer_id = Some(1))
         let hyd_key = (proposal_id, 1, "dAtom".to_string());
-        assert_eq!(tws_changes.proposal_hydromancer_changes.get(&hyd_key), Some(&500i128));
+        assert_eq!(
+            tws_changes.proposal_hydromancer_changes.get(&hyd_key),
+            Some(&500i128)
+        );
     }
 
     #[test]
@@ -380,7 +382,12 @@ mod tests {
         let round_id = 1;
         let token_group_id = "dAtom".to_string();
         let locked_rounds = 2;
-        let key = (hydromancer_id, round_id, token_group_id.clone(), locked_rounds);
+        let key = (
+            hydromancer_id,
+            round_id,
+            token_group_id.clone(),
+            locked_rounds,
+        );
         hydromancer_tws_changes.insert(key, 1000i128);
 
         let result = apply_hydromancer_tws_changes(deps.as_mut().storage, hydromancer_tws_changes);
@@ -411,7 +418,12 @@ mod tests {
         .unwrap();
 
         let mut hydromancer_tws_changes = HashMap::new();
-        let key = (hydromancer_id, round_id, token_group_id.clone(), locked_rounds);
+        let key = (
+            hydromancer_id,
+            round_id,
+            token_group_id.clone(),
+            locked_rounds,
+        );
         hydromancer_tws_changes.insert(key, -500i128);
 
         let result = apply_hydromancer_tws_changes(deps.as_mut().storage, hydromancer_tws_changes);
@@ -430,7 +442,12 @@ mod tests {
         let round_id = 1;
         let token_group_id = "dAtom".to_string();
         let locked_rounds = 2;
-        let key = (hydromancer_id, round_id, token_group_id.clone(), locked_rounds);
+        let key = (
+            hydromancer_id,
+            round_id,
+            token_group_id.clone(),
+            locked_rounds,
+        );
         hydromancer_tws_changes.insert(key, 0i128);
 
         let result = apply_hydromancer_tws_changes(deps.as_mut().storage, hydromancer_tws_changes);
@@ -495,7 +512,10 @@ mod tests {
         let key = (proposal_id, hydromancer_id, token_group_id.clone());
         proposal_hydromancer_tws_changes.insert(key, 1000i128);
 
-        let result = apply_proposal_hydromancer_tws_changes(deps.as_mut().storage, proposal_hydromancer_tws_changes);
+        let result = apply_proposal_hydromancer_tws_changes(
+            deps.as_mut().storage,
+            proposal_hydromancer_tws_changes,
+        );
 
         assert!(result.is_ok());
         // Function should execute without error - storage verification would require internal access
@@ -524,7 +544,10 @@ mod tests {
         let key = (proposal_id, hydromancer_id, token_group_id.clone());
         proposal_hydromancer_tws_changes.insert(key, -500i128);
 
-        let result = apply_proposal_hydromancer_tws_changes(deps.as_mut().storage, proposal_hydromancer_tws_changes);
+        let result = apply_proposal_hydromancer_tws_changes(
+            deps.as_mut().storage,
+            proposal_hydromancer_tws_changes,
+        );
 
         assert!(result.is_ok());
         // Function should execute without error - storage verification would require internal access
@@ -561,7 +584,12 @@ mod tests {
         let current_round_id = 1;
 
         // Mark as complete first (this is backwards from the logic, but for testing)
-        state::mark_hydromancer_tws_complete(deps.as_mut().storage, current_round_id, hydromancer_id).unwrap();
+        state::mark_hydromancer_tws_complete(
+            deps.as_mut().storage,
+            current_round_id,
+            hydromancer_id,
+        )
+        .unwrap();
 
         let result = complete_hydromancer_time_weighted_shares(
             &mut deps.as_mut(),
@@ -573,8 +601,10 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify vessel shares were saved
-        let has_vessel_1 = state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 1);
-        let has_vessel_2 = state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 2);
+        let has_vessel_1 =
+            state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 1);
+        let has_vessel_2 =
+            state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 2);
         assert!(has_vessel_1);
         assert!(has_vessel_2);
     }
@@ -588,12 +618,8 @@ mod tests {
         let lock_ids = vec![];
         let current_round_id = 1;
 
-        let result = initialize_vessel_tws(
-            &mut deps.as_mut(),
-            lock_ids,
-            current_round_id,
-            &constants,
-        );
+        let result =
+            initialize_vessel_tws(&mut deps.as_mut(), lock_ids, current_round_id, &constants);
 
         assert!(result.is_ok());
     }
@@ -618,12 +644,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = initialize_vessel_tws(
-            &mut deps.as_mut(),
-            lock_ids,
-            current_round_id,
-            &constants,
-        );
+        let result =
+            initialize_vessel_tws(&mut deps.as_mut(), lock_ids, current_round_id, &constants);
 
         assert!(result.is_ok());
         // Should not duplicate or change existing data
@@ -638,18 +660,16 @@ mod tests {
         let lock_ids = vec![1, 2];
         let current_round_id = 1;
 
-        let result = initialize_vessel_tws(
-            &mut deps.as_mut(),
-            lock_ids,
-            current_round_id,
-            &constants,
-        );
+        let result =
+            initialize_vessel_tws(&mut deps.as_mut(), lock_ids, current_round_id, &constants);
 
         assert!(result.is_ok());
 
         // Verify vessel shares were saved
-        let has_vessel_1 = state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 1);
-        let has_vessel_2 = state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 2);
+        let has_vessel_1 =
+            state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 1);
+        let has_vessel_2 =
+            state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 2);
         assert!(has_vessel_1);
         assert!(has_vessel_2);
 
@@ -676,17 +696,14 @@ mod tests {
         )
         .unwrap();
 
-        let result = initialize_vessel_tws(
-            &mut deps.as_mut(),
-            lock_ids,
-            current_round_id,
-            &constants,
-        );
+        let result =
+            initialize_vessel_tws(&mut deps.as_mut(), lock_ids, current_round_id, &constants);
 
         assert!(result.is_ok());
 
         // Verify only vessel 2 was newly initialized
-        let has_vessel_2 = state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 2);
+        let has_vessel_2 =
+            state::has_vessel_shares_info(deps.as_ref().storage, current_round_id, 2);
         assert!(has_vessel_2);
     }
 
@@ -717,12 +734,8 @@ mod tests {
         let lock_ids = vec![99];
         let current_round_id = 1;
 
-        let result = initialize_vessel_tws(
-            &mut deps.as_mut(),
-            lock_ids,
-            current_round_id,
-            &constants,
-        );
+        let result =
+            initialize_vessel_tws(&mut deps.as_mut(), lock_ids, current_round_id, &constants);
 
         assert!(result.is_ok());
 
@@ -785,12 +798,12 @@ mod tests {
         let mut hydromancer_tws_changes = HashMap::new();
         let hydromancer_id = 1;
         let round_id = 1;
-        
+
         // Multiple entries
         let key1 = (hydromancer_id, round_id, "dAtom".to_string(), 1);
         let key2 = (hydromancer_id, round_id, "dAtom".to_string(), 2);
         let key3 = (hydromancer_id, round_id, "uosmo".to_string(), 1);
-        
+
         hydromancer_tws_changes.insert(key1, 1000i128);
         hydromancer_tws_changes.insert(key2, 2000i128);
         hydromancer_tws_changes.insert(key3, 1500i128);
@@ -798,7 +811,7 @@ mod tests {
         let result = apply_hydromancer_tws_changes(deps.as_mut().storage, hydromancer_tws_changes);
 
         assert!(result.is_ok());
-        
+
         // Function should execute without error - all TWS would be added internally
     }
 }

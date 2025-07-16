@@ -106,7 +106,7 @@ pub fn assign_vessel_to_user_control(
     let mut vessel = state::get_vessel(storage, vessel_id)?;
 
     // Early return if vessel is already under user control
-    if vessel.hydromancer_id.is_none() {
+    if vessel.is_under_user_control() {
         return Ok(());
     }
 

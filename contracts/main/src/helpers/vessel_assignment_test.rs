@@ -164,7 +164,7 @@ mod tests {
 
         // Get vessel to check if it has hydromancer
         let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
-        
+
         // If vessel has hydromancer, add TWS to hydromancer totals
         if let Some(hydromancer_id) = vessel.hydromancer_id {
             state::add_time_weighted_shares_to_hydromancer(
@@ -192,7 +192,7 @@ mod tests {
     ) {
         // Get vessel to determine correct steerer_id and control state
         let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
-        
+
         // Add vessel to harbor
         let vessel_harbor = VesselHarbor {
             user_control: vessel.hydromancer_id.is_none(),
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn test_assign_vessel_to_hydromancer_from_another_hydromancer() {
         let mut deps = mock_dependencies();
-        let (_, hydromancer1_id, hydromancer2_id) = setup_test_data(&mut deps);
+        let (_, _, hydromancer2_id) = setup_test_data(&mut deps);
 
         let vessel_id = 1; // Currently under hydromancer1 control
         let current_round_id = 1;
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn test_assign_vessel_to_hydromancer_with_proposal() {
         let mut deps = mock_dependencies();
-        let (_, hydromancer1_id, hydromancer2_id) = setup_test_data(&mut deps);
+        let (_, _, hydromancer2_id) = setup_test_data(&mut deps);
 
         let vessel_id = 1; // Currently under hydromancer1 control
         let current_round_id = 1;
@@ -379,7 +379,7 @@ mod tests {
             current_round_id,
             vessel_id,
         );
-        assert!(harbor.is_err() || harbor.unwrap().is_none());
+        assert!(harbor.unwrap().is_none());
     }
 
     #[test]
@@ -547,11 +547,8 @@ mod tests {
         let (_, hydromancer1_id, _) = setup_test_data(&mut deps);
 
         let vessel_ids = vec![2, 4]; // Both under user control
-        let result = categorize_vessels_by_control(
-            deps.as_ref().storage,
-            hydromancer1_id,
-            &vessel_ids,
-        );
+        let result =
+            categorize_vessels_by_control(deps.as_ref().storage, hydromancer1_id, &vessel_ids);
 
         assert!(result.is_ok());
         let (not_controlled, already_controlled) = result.unwrap();
@@ -565,11 +562,8 @@ mod tests {
         let (_, hydromancer1_id, _) = setup_test_data(&mut deps);
 
         let vessel_ids = vec![1]; // Under hydromancer1 control
-        let result = categorize_vessels_by_control(
-            deps.as_ref().storage,
-            hydromancer1_id,
-            &vessel_ids,
-        );
+        let result =
+            categorize_vessels_by_control(deps.as_ref().storage, hydromancer1_id, &vessel_ids);
 
         assert!(result.is_ok());
         let (not_controlled, already_controlled) = result.unwrap();
@@ -583,11 +577,8 @@ mod tests {
         let (_, hydromancer1_id, _) = setup_test_data(&mut deps);
 
         let vessel_ids = vec![1, 2, 3, 4]; // Mixed control
-        let result = categorize_vessels_by_control(
-            deps.as_ref().storage,
-            hydromancer1_id,
-            &vessel_ids,
-        );
+        let result =
+            categorize_vessels_by_control(deps.as_ref().storage, hydromancer1_id, &vessel_ids);
 
         assert!(result.is_ok());
         let (not_controlled, already_controlled) = result.unwrap();
@@ -601,11 +592,8 @@ mod tests {
         let (_, hydromancer1_id, _) = setup_test_data(&mut deps);
 
         let vessel_ids = vec![];
-        let result = categorize_vessels_by_control(
-            deps.as_ref().storage,
-            hydromancer1_id,
-            &vessel_ids,
-        );
+        let result =
+            categorize_vessels_by_control(deps.as_ref().storage, hydromancer1_id, &vessel_ids);
 
         assert!(result.is_ok());
         let (not_controlled, already_controlled) = result.unwrap();
@@ -619,11 +607,8 @@ mod tests {
         let (_, hydromancer1_id, _) = setup_test_data(&mut deps);
 
         let vessel_ids = vec![999]; // Non-existent vessel
-        let result = categorize_vessels_by_control(
-            deps.as_ref().storage,
-            hydromancer1_id,
-            &vessel_ids,
-        );
+        let result =
+            categorize_vessels_by_control(deps.as_ref().storage, hydromancer1_id, &vessel_ids);
 
         assert!(result.is_err());
     }
@@ -634,11 +619,8 @@ mod tests {
         let (_, hydromancer1_id, _) = setup_test_data(&mut deps);
 
         let vessel_ids = vec![1, 3]; // 1 under hydromancer1, 3 under hydromancer2
-        let result = categorize_vessels_by_control(
-            deps.as_ref().storage,
-            hydromancer1_id,
-            &vessel_ids,
-        );
+        let result =
+            categorize_vessels_by_control(deps.as_ref().storage, hydromancer1_id, &vessel_ids);
 
         assert!(result.is_ok());
         let (not_controlled, already_controlled) = result.unwrap();
@@ -794,11 +776,8 @@ mod tests {
         let (_, hydromancer1_id, _) = setup_test_data(&mut deps);
 
         let vessel_ids = vec![1]; // Single vessel under control
-        let result = categorize_vessels_by_control(
-            deps.as_ref().storage,
-            hydromancer1_id,
-            &vessel_ids,
-        );
+        let result =
+            categorize_vessels_by_control(deps.as_ref().storage, hydromancer1_id, &vessel_ids);
 
         assert!(result.is_ok());
         let (not_controlled, already_controlled) = result.unwrap();
@@ -879,12 +858,8 @@ mod tests {
         assert_eq!(vessel4.hydromancer_id, Some(hydromancer2_id));
 
         // Now move vessel 2 to user control
-        let result = assign_vessel_to_user_control(
-            deps.as_mut().storage,
-            2,
-            current_round_id,
-            &tranche_ids,
-        );
+        let result =
+            assign_vessel_to_user_control(deps.as_mut().storage, 2, current_round_id, &tranche_ids);
         assert!(result.is_ok());
 
         // Verify final state

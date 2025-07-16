@@ -10,4 +10,10 @@ pub mod vessel_assignment;
 mod vectors_test;
 
 #[cfg(test)]
-mod testing_auto_maintenance;
+mod auto_maintenance_test;
+
+#[cfg(test)]
+mod hydro_queries_test;
+
+#[cfg(test)]
+mod tws_test;

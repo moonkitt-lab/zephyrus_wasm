@@ -50,7 +50,7 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
         }
         REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID => {
             let payload: RefreshTimeWeightedSharesReplyPayload = from_json(&reply.payload)?;
-            handle_refresh_time_weighted_shares_reply(deps, reply, payload)
+            handle_refresh_time_weighted_shares_reply(deps, payload)
         }
         _ => Err(ContractError::CustomError {
             msg: "Unknown reply id".to_string(),
@@ -58,9 +58,8 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
     }
 }
 
-fn handle_refresh_time_weighted_shares_reply(
+pub fn handle_refresh_time_weighted_shares_reply(
     deps: DepsMut,
-    _reply: Reply,
     payload: RefreshTimeWeightedSharesReplyPayload,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
@@ -156,7 +155,6 @@ pub fn handle_vote_reply(
             if skipped_locks.contains(&vessel_shares_info.lock_id) {
                 continue;
             }
-
             let vessel_id = vessel_shares_info.lock_id;
             let vessel = state::get_vessel(deps.storage, vessel_id)?;
 

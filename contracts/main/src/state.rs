@@ -725,6 +725,18 @@ where
     Ok(results)
 }
 
+pub fn get_hydromancer_time_weighted_shares_by_round(
+    storage: &dyn Storage,
+    round_id: RoundId,
+    hydromancer_id: HydromancerId,
+) -> StdResult<Vec<((u64, String), u128)>> {
+    let prefix_key = (hydromancer_id, round_id);
+    HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
+        .sub_prefix(prefix_key)
+        .range(storage, None, None, Order::Ascending)
+        .collect()
+}
+
 pub fn add_time_weighted_shares_to_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
@@ -757,6 +769,17 @@ pub fn subtract_time_weighted_shares_from_hydromancer(
     Ok(())
 }
 
+pub fn get_proposal_time_weighted_shares(
+    storage: &dyn Storage,
+    proposal_id: HydroProposalId,
+) -> StdResult<Vec<(String, u128)>> {
+    let prefix = proposal_id;
+    PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID
+        .prefix(prefix)
+        .range(storage, None, None, Order::Ascending)
+        .collect()
+}
+
 pub fn add_time_weighted_shares_to_proposal(
     storage: &mut dyn Storage,
     proposal_id: HydroProposalId,
@@ -787,6 +810,18 @@ pub fn subtract_time_weighted_shares_from_proposal(
         },
     )?;
     Ok(())
+}
+
+pub fn get_hydromancer_proposal_time_weighted_shares(
+    storage: &dyn Storage,
+    proposal_id: HydroProposalId,
+    hydromancer_id: HydromancerId,
+) -> StdResult<Vec<(String, u128)>> {
+    let prefix = (proposal_id, hydromancer_id);
+    PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID
+        .prefix(prefix)
+        .range(storage, None, None, Order::Ascending)
+        .collect()
 }
 
 pub fn add_time_weighted_shares_to_proposal_for_hydromancer(

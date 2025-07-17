@@ -1,3 +1,5 @@
+use crate::helpers::hydro_queries::query_hydro_lockups_shares;
+use crate::reply::handle_refresh_time_weighted_shares_reply;
 use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};
 use crate::{
     contract::{execute, instantiate},
@@ -12,7 +14,8 @@ use cosmwasm_std::{
 };
 use hydro_interface::msgs::ExecuteMsg as HydroExecuteMsg;
 use zephyrus_core::msgs::{
-    Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg, VesselInfo, VesselsToHarbor, VoteReplyPayload,
+    Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg, RefreshTimeWeightedSharesReplyPayload, VesselInfo,
+    VesselsToHarbor, VoteReplyPayload,
 };
 use zephyrus_core::state::{Vessel, VesselHarbor};
 
@@ -324,7 +327,6 @@ fn test_cw721_receive_nft_succeed() {
     let msg = ExecuteMsg::ReceiveNft(receive_msg);
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
-    println!("res: {:?}", res);
     assert!(res.is_ok());
 }
 
@@ -1763,6 +1765,12 @@ fn change_hydromancer_1_vessels_already_vote_success() {
             .is_empty()
     );
 }
+// Step 1: Create vessel with hydromancer
+// Step 2: Take control of vessel
+// Step 3: User Vote for a proposal
+// Step 4: Handle vote reply
+// Step 5: Affect default hydromancer to vessel (Change hydromancer)
+// Step 6: Check that the proposal time weighted shares are correct and hydromancer tws are correct
 
 #[test]
 fn change_hydromancer_vessel_already_vote_under_user_control_success() {
@@ -1771,13 +1779,14 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     init_contract(deps.as_mut());
     let constants = state::get_constants(deps.as_mut().storage).unwrap();
     let alice_address = make_valid_addr("alice");
-
-    state::insert_new_user(deps.as_mut().storage, alice_address.clone()).expect("Should add user");
+    let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("Should create user id");
 
     let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
         .unwrap()
         .default_hydromancer_id;
 
+    // Step 1: Create vessel with hydromancer
     let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
         sender: alice_address.to_string(),
         token_id: "0".to_string(),
@@ -1801,6 +1810,7 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     );
     assert!(result.is_ok());
 
+    // Step 2: User take control of vessel
     let take_control_msg = ExecuteMsg::TakeControl {
         vessel_ids: vec![0],
     };
@@ -1815,6 +1825,7 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     );
     assert!(result.is_ok());
 
+    // Step 3: User Vote for a proposal
     let user_vote_msg = ExecuteMsg::UserVote {
         tranche_id: 1,
         vessels_harbors: vec![VesselsToHarbor {
@@ -1833,6 +1844,27 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
         user_vote_msg,
     );
     assert!(res.is_ok());
+
+    let proposal_id = 1;
+
+    // Step 4: Handle vote reply
+    let payload = VoteReplyPayload {
+        tranche_id: 1,
+        round_id: deps.querier.get_current_round(),
+        user_vote: true,
+        steerer_id: user_id,
+        vessels_harbors: vec![{
+            VesselsToHarbor {
+                harbor_id: proposal_id,
+                vessel_ids: vec![0],
+            }
+        }],
+    };
+    let skipped_ids = vec![];
+    let result = handle_vote_reply(deps.as_mut(), payload, skipped_ids);
+    assert!(result.is_ok());
+
+    // Step 5: Affect default hydromancer to vessel (Change hydromancer)
     let msg = ExecuteMsg::ChangeHydromancer {
         tranche_id: 1,
         hydromancer_id: default_hydromancer_id,
@@ -1877,8 +1909,20 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     } else {
         panic!("Message is not message that it should be !");
     }
-
+    // Step 6: Check that the proposal time weighted shares, vessel tws and hydromancer tws are correct
+    let hydromancer_tws = state::get_hydromancer_time_weighted_shares_by_round(
+        deps.as_ref().storage,
+        deps.querier.get_current_round(),
+        default_hydromancer_id,
+    )
+    .expect("Should get hydromancer tws even if there's no tws an empty list should be returned");
+    let lockup_shares = query_hydro_lockups_shares(&deps.as_ref(), &constants, vec![0]);
+    assert!(lockup_shares.is_ok());
+    let lockup_shares = lockup_shares.unwrap().lockups_shares_info[0].clone();
+    assert_eq!(hydromancer_tws[0].0 .0, lockup_shares.locked_rounds);
+    assert_eq!(hydromancer_tws[0].0 .0, lockup_shares.locked_rounds);
     let vessel = state::get_vessel(deps.as_ref().storage, 0).expect("Vessel should exist !");
+    assert!(!vessel.is_under_user_control()); // vessel should be under hydromancer control now
     assert_eq!(vessel.hydromancer_id.unwrap(), default_hydromancer_id);
 
     assert!(
@@ -1891,19 +1935,59 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
         1,
         1,
         0
-    ))
+    ));
+
+    let vessel_shares =
+        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
+    assert!(vessel_shares.is_ok());
+
+    let vessel_shares_info =
+        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
+    assert!(vessel_shares_info.is_ok());
+    assert_eq!(
+        vessel_shares_info.unwrap().time_weighted_shares,
+        lockup_shares.time_weighted_shares.u128()
+    );
+
+    // check tws for hydromancer is 0
+    let hydromancer_tws = state::get_hydromancer_time_weighted_shares_by_round(
+        deps.as_ref().storage,
+        deps.querier.get_current_round(),
+        default_hydromancer_id,
+    )
+    .expect("Should get hydromancer tws even if there's no tws an empty list should be returned");
+    assert_eq!(hydromancer_tws.len(), 1);
+    assert_eq!(
+        hydromancer_tws[0].1,
+        lockup_shares.time_weighted_shares.u128()
+    );
+    assert_eq!(hydromancer_tws[0].0 .0, lockup_shares.locked_rounds);
+    assert_eq!(hydromancer_tws[0].0 .1, lockup_shares.token_group_id);
+
+    let proposal_tws = state::get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id)
+        .expect("Should get proposal tws");
+    assert_eq!(proposal_tws.len(), 1);
+    assert_eq!(proposal_tws[0].1, 0); // user vote should have been removed so tws should be 0
+    assert_eq!(proposal_tws[0].0, lockup_shares.token_group_id);
 }
 
-#[test]
-fn user_take_control_after_new_round_succeed_with_shares_initalized() {
-    let mut deps = mock_dependencies();
+// Step 1: Create vessel with hydromancer
+// Step 2: Simulate new round
+// Step 3: Take control of vessel
+// Step 4: Vote for a proposal
+// Step 5: Handle vote reply
+// Step 6: Check that the proposal time weighted shares are correct
 
+#[test]
+fn user_take_control_after_new_round_succeed() {
+    let mut deps = mock_dependencies();
     init_contract(deps.as_mut());
 
     let constants = state::get_constants(deps.as_mut().storage).unwrap();
 
     let alice_address = make_valid_addr("alice");
-
+    let user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("User id should be created");
     let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
         .unwrap()
         .default_hydromancer_id;
@@ -1951,8 +2035,204 @@ fn user_take_control_after_new_round_succeed_with_shares_initalized() {
         take_control_msg,
     );
     assert!(result.is_ok());
+    let proposal_id = 1;
+    let user_vote_msg = ExecuteMsg::UserVote {
+        tranche_id: 1,
+        vessels_harbors: vec![VesselsToHarbor {
+            harbor_id: proposal_id,
+            vessel_ids: vec![0],
+        }],
+    };
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        user_vote_msg,
+    );
+    assert!(result.is_ok());
 
+    let payload = VoteReplyPayload {
+        tranche_id: 1,
+        round_id: deps.querier.get_current_round(),
+        user_vote: true,
+        steerer_id: user_id,
+        vessels_harbors: vec![{
+            VesselsToHarbor {
+                harbor_id: 1,
+                vessel_ids: vec![0],
+            }
+        }],
+    };
+    let skipped_ids = vec![];
+    let result = handle_vote_reply(deps.as_mut(), payload, skipped_ids);
+    assert!(result.is_ok());
     let vessel_shares =
         state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
     assert!(vessel_shares.is_ok());
+
+    let lockup_shares = query_hydro_lockups_shares(&deps.as_ref(), &constants, vec![0]);
+    assert!(lockup_shares.is_ok());
+    let lockup_shares = lockup_shares.unwrap().lockups_shares_info[0].clone();
+
+    // check tws for hydromancer is 0
+    let hydromancer_tws = state::get_hydromancer_time_weighted_shares_by_round(
+        deps.as_ref().storage,
+        deps.querier.get_current_round(),
+        default_hydromancer_id,
+    )
+    .expect("Should get hydromancer tws even if there's no tws an empty list should be returned");
+    assert!(hydromancer_tws.is_empty());
+
+    let hydromancer_proposal_tws = state::get_hydromancer_proposal_time_weighted_shares(
+        deps.as_ref().storage,
+        proposal_id,
+        default_hydromancer_id,
+    )
+    .expect("Should get hydromancer proposal tws even if there's no tws an empty list should be returned");
+    assert!(hydromancer_proposal_tws.is_empty());
+
+    let proposal_tws = state::get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id)
+        .expect("Should get proposal tws");
+    assert_eq!(proposal_tws.len(), 1);
+    assert_eq!(proposal_tws[0].1, lockup_shares.time_weighted_shares.u128());
+    assert_eq!(proposal_tws[0].0, lockup_shares.token_group_id);
+}
+
+#[test]
+
+// Step 1: Create 2 vessels with auto_maintenance true
+// Step 2: Simulate new round
+// Step 3: Auto maintain vessel
+// Step 4: Check that the vessel time weighted shares for the new round are correct
+fn auto_maintain_after_new_round_succeed() {
+    let mut deps = mock_dependencies();
+    init_contract(deps.as_mut());
+
+    let constants = state::get_constants(deps.as_mut().storage).unwrap();
+    let alice_address = make_valid_addr("alice");
+    let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+        .unwrap()
+        .default_hydromancer_id;
+
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "0".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: default_hydromancer_id,
+            class_period: 3_000_000, // 3 lock_epoch_length
+        })
+        .unwrap(),
+    });
+    // Create a vessel simulating the nft reveive
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: constants.hydro_config.hydro_contract_address.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok());
+
+    let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+        .unwrap()
+        .default_hydromancer_id;
+
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "1".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: default_hydromancer_id,
+            class_period: 1_000_000, // 1 lock_epoch_length
+        })
+        .unwrap(),
+    });
+    // Create a vessel simulating the nft reveive
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: constants.hydro_config.hydro_contract_address.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok());
+
+    deps.querier.increment_current_round();
+
+    let auto_maintain_msg = ExecuteMsg::AutoMaintain {
+        start_from_vessel_id: Some(0),
+        limit: None,
+    };
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        auto_maintain_msg,
+    );
+    assert!(result.is_ok());
+
+    let current_round_id = deps.querier.get_current_round();
+    let result = handle_refresh_time_weighted_shares_reply(
+        deps.as_mut(),
+        RefreshTimeWeightedSharesReplyPayload {
+            vessel_ids: vec![0],
+            target_class_period: 3_000_000,
+            current_round_id,
+        },
+    );
+    assert!(result.is_ok());
+    let result = handle_refresh_time_weighted_shares_reply(
+        deps.as_mut(),
+        RefreshTimeWeightedSharesReplyPayload {
+            vessel_ids: vec![1],
+            target_class_period: 1_000_000,
+            current_round_id,
+        },
+    );
+    assert!(result.is_ok());
+
+    let vessel_0_shares =
+        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
+    assert!(vessel_0_shares.is_ok());
+
+    let vessel_1_shares =
+        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 1);
+    assert!(vessel_1_shares.is_ok());
+
+    assert_eq!(vessel_0_shares.unwrap().time_weighted_shares, 1000u128);
+    assert_eq!(vessel_1_shares.unwrap().time_weighted_shares, 1100u128);
+
+    let hydromancer_tws = state::get_hydromancer_time_weighted_shares_by_round(
+        deps.as_ref().storage,
+        deps.querier.get_current_round(),
+        default_hydromancer_id,
+    )
+    .expect("Should get hydromancer tws even if there's no tws an empty list should be returned");
+    println!("hydromancer_tws: {:?}", hydromancer_tws);
+    let vessel_0_tws = hydromancer_tws
+        .iter()
+        .find(|tws| tws.0 .1 == "dAtom")
+        .unwrap();
+    let vessel_1_tws = hydromancer_tws
+        .iter()
+        .find(|tws| tws.0 .1 == "stAtom")
+        .unwrap();
+    assert_eq!(hydromancer_tws.len(), 2);
+    assert_eq!(vessel_0_tws.1, 1000u128);
+    assert_eq!(vessel_1_tws.1, 1100u128);
+    assert_eq!(vessel_0_tws.0 .0, 1); // vessel 0 has a class period of 3 lock_epoch_length
+    assert_eq!(vessel_1_tws.0 .0, 1); // vessel 1 has a class period of 1 lock_epoch_length
 }

@@ -10,7 +10,7 @@ mod tests {
             query_hydro_tranches,
         },
         testing::make_valid_addr,
-        testing_mocks::{mock_dependencies, mock_hydro_contract},
+        testing_mocks::{generate_deterministic_tws, mock_dependencies, mock_hydro_contract},
     };
 
     fn get_test_constants() -> Constants {
@@ -162,9 +162,10 @@ mod tests {
 
         for (i, vessel_id) in vessel_ids.iter().enumerate() {
             let shares_info = &lockups_shares_response.lockups_shares_info[i];
+            let (token_group_id, tws) = generate_deterministic_tws(*vessel_id);
             assert_eq!(shares_info.lock_id, *vessel_id);
-            assert_eq!(shares_info.time_weighted_shares.u128(), 1000u128);
-            assert_eq!(shares_info.token_group_id, "dAtom");
+            assert_eq!(shares_info.time_weighted_shares.u128(), tws);
+            assert_eq!(shares_info.token_group_id, token_group_id);
             assert_eq!(shares_info.locked_rounds, 1);
         }
     }

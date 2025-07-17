@@ -21,6 +21,15 @@ use prost::Message;
 
 use crate::testing::make_valid_addr;
 
+pub fn generate_deterministic_tws(lock_id: u64) -> (String, u128) {
+    let mut token_group_id = "dAtom".to_string();
+    if lock_id % 2 == 1 {
+        token_group_id = "stAtom".to_string();
+    }
+
+    (token_group_id, 1000 + (100 * lock_id as u128))
+}
+
 pub struct MockWasmQuerier {
     hydro_contract: String,
     current_round: u64,
@@ -102,10 +111,11 @@ impl MockWasmQuerier {
     fn handle_lockups_shares(&self, lock_ids: &[u64]) -> StdResult<Binary> {
         let mut shares_info: Vec<LockupsSharesInfo> = vec![];
         for lock_id in lock_ids {
+            let (token_group_id, tws) = generate_deterministic_tws(*lock_id);
             shares_info.push(LockupsSharesInfo {
                 lock_id: *lock_id,
-                time_weighted_shares: Uint128::from(1000u128),
-                token_group_id: "dAtom".to_string(),
+                time_weighted_shares: Uint128::from(tws),
+                token_group_id: token_group_id,
                 locked_rounds: 1,
             });
         }

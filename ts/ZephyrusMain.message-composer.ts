@@ -24,7 +24,13 @@ export interface ZephyrusMainMsg {
     hydroLockDuration: number;
     hydroLockIds: number[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
-  autoMaintain: (_funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  autoMaintain: ({
+    limit,
+    startFromVesselId
+  }: {
+    limit?: number;
+    startFromVesselId?: number;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   modifyAutoMaintenance: ({
     autoMaintenance,
     hydroLockIds
@@ -131,14 +137,23 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
       })
     };
   };
-  autoMaintain = (_funds?: Coin[]): MsgExecuteContractEncodeObject => {
+  autoMaintain = ({
+    limit,
+    startFromVesselId
+  }: {
+    limit?: number;
+    startFromVesselId?: number;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
     return {
       typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
       value: MsgExecuteContract.fromPartial({
         sender: this.sender,
         contract: this.contractAddress,
         msg: toUtf8(JSON.stringify({
-          auto_maintain: {}
+          auto_maintain: {
+            limit,
+            start_from_vessel_id: startFromVesselId
+          }
         })),
         funds: _funds
       })

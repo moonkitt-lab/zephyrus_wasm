@@ -10,3 +10,9 @@ pub mod testing;
 
 #[cfg(test)]
 mod testing_mocks;
+
+#[cfg(test)]
+mod query_test;
+
+#[cfg(test)]
+mod state_test;

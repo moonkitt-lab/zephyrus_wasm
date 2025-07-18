@@ -23,7 +23,10 @@ export type ExecuteMsg = {
     hydro_lock_ids: number[];
   };
 } | {
-  auto_maintain: {};
+  auto_maintain: {
+    limit?: number | null;
+    start_from_vessel_id?: number | null;
+  };
 } | {
   modify_auto_maintenance: {
     auto_maintenance: boolean;

@@ -128,7 +128,13 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     hydroLockDuration: number;
     hydroLockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  autoMaintain: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  autoMaintain: ({
+    limit,
+    startFromVesselId
+  }: {
+    limit?: number;
+    startFromVesselId?: number;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   modifyAutoMaintenance: ({
     autoMaintenance,
     hydroLockIds
@@ -222,9 +228,18 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
       }
     }, fee, memo, _funds);
   };
-  autoMaintain = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+  autoMaintain = async ({
+    limit,
+    startFromVesselId
+  }: {
+    limit?: number;
+    startFromVesselId?: number;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      auto_maintain: {}
+      auto_maintain: {
+        limit,
+        start_from_vessel_id: startFromVesselId
+      }
     }, fee, memo, _funds);
   };
   modifyAutoMaintenance = async ({

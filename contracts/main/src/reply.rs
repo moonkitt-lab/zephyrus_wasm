@@ -155,6 +155,7 @@ pub fn handle_vote_reply(
             if skipped_locks.contains(&vessel_shares_info.lock_id) {
                 continue;
             }
+
             let vessel_id = vessel_shares_info.lock_id;
             let vessel = state::get_vessel(deps.storage, vessel_id)?;
 

@@ -4,7 +4,6 @@ use zephyrus_core::msgs::{HydroLockId, HydromancerId, RoundId, TrancheId};
 use crate::{errors::ContractError, state};
 
 /// Comprehensive vessel assignment function that handles all TWS cleanup and vessel reassignment
-/// Implements the pattern suggested in notes_improved.md for safe state management
 pub fn assign_vessel_to_hydromancer(
     storage: &mut dyn Storage,
     vessel_id: HydroLockId,
@@ -96,7 +95,6 @@ pub fn assign_vessel_to_hydromancer(
 }
 
 /// Assign vessel to user control (remove from hydromancer control)
-/// Implements the pattern suggested in notes_improved.md for safe state management
 pub fn assign_vessel_to_user_control(
     storage: &mut dyn Storage,
     vessel_id: HydroLockId,

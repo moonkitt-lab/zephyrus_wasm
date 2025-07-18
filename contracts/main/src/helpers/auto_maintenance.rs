@@ -22,8 +22,6 @@ pub fn collect_vessels_needing_auto_maintenance(
         auto_maintained_vessels_by_class.range(storage, None, None, Order::Ascending)
     {
         let (target_class_period, vessel_ids_set) = class_result?;
-        println!("target_class_period: {:?}", target_class_period);
-        println!("vessel_ids_set: {:?}", vessel_ids_set);
         for vessel_id in vessel_ids_set {
             all_auto_maintained_vessels.push((vessel_id, target_class_period));
         }

@@ -1,5 +1,5 @@
 use crate::helpers::hydro_queries::query_hydro_lockups_shares;
-use crate::reply::handle_refresh_time_weighted_shares_reply;
+use crate::reply::{handle_refresh_time_weighted_shares_reply, handle_unlock_tokens_reply};
 use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};
 use crate::{
     contract::{execute, instantiate},
@@ -2233,6 +2233,55 @@ fn auto_maintain_after_new_round_succeed() {
     assert_eq!(hydromancer_tws.len(), 2);
     assert_eq!(vessel_0_tws.1, 1000u128);
     assert_eq!(vessel_1_tws.1, 1100u128);
-    assert_eq!(vessel_0_tws.0 .0, 1); // vessel 0 has a class period of 3 lock_epoch_length
-    assert_eq!(vessel_1_tws.0 .0, 1); // vessel 1 has a class period of 1 lock_epoch_length
+    assert_eq!(vessel_0_tws.0 .0, 1);
+    assert_eq!(vessel_1_tws.0 .0, 1);
+}
+
+#[test]
+fn decommission_vessels_succeed() {
+    let mut deps = mock_dependencies();
+    init_contract(deps.as_mut());
+
+    let constants = state::get_constants(deps.as_mut().storage).unwrap();
+    let alice_address = make_valid_addr("alice");
+    let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+        .unwrap()
+        .default_hydromancer_id;
+
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "0".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: default_hydromancer_id,
+            class_period: 1_000_000, // 1 lock_epoch_length
+        })
+        .unwrap(),
+    });
+    // Create a vessel simulating the nft reveive
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: constants.hydro_config.hydro_contract_address.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok());
+
+    let decommission_msg = ExecuteMsg::DecommissionVessels {
+        hydro_lock_ids: vec![0],
+    };
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        decommission_msg,
+    );
+    assert!(result.is_ok());
 }

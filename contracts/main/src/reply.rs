@@ -344,7 +344,7 @@ fn parse_unlocked_token_from_reply(reply: &Reply) -> Result<Vec<Coin>, ContractE
     parse_coins_from_reply(reply, "unlocked_tokens")
 }
 
-fn handle_unlock_tokens_reply(
+pub fn handle_unlock_tokens_reply(
     deps: DepsMut,
     env: Env,
     decommission_vessels_params: DecommissionVesselsReplyPayload,

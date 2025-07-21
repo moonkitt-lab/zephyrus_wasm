@@ -367,7 +367,7 @@ fn execute_update_vessels_class(
     )?;
 
     let refresh_duration_msg = HydroExecuteMsg::RefreshLockDuration {
-        lock_ids: hydro_lock_ids,
+        lock_ids: hydro_lock_ids.clone(),
         lock_duration: hydro_lock_duration,
     };
 
@@ -378,10 +378,18 @@ fn execute_update_vessels_class(
         funds: info.funds.clone(),
     };
 
+    // Create payload for reply handler
+    let refresh_payload = RefreshTimeWeightedSharesReplyPayload {
+        vessel_ids: hydro_lock_ids.clone(),
+        target_class_period: hydro_lock_duration,
+        current_round_id,
+    };
+
     let sub_msg = SubMsg::reply_on_success(
         execute_refresh_duration_msg,
         REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID,
-    );
+    )
+    .with_payload(to_json_binary(&refresh_payload)?);
 
     Ok(Response::new().add_submessage(sub_msg))
 }

@@ -18,6 +18,11 @@ export type ExecuteMsg = {
     vessel_ids: number[];
   };
 } | {
+  unvote: {
+    tranche_id: number;
+    vessel_ids: number[];
+  };
+} | {
   update_vessels_class: {
     hydro_lock_duration: number;
     hydro_lock_ids: number[];

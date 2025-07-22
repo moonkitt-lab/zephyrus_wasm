@@ -121,6 +121,13 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   }: {
     vesselIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  unvote: ({
+    trancheId,
+    vesselIds
+  }: {
+    trancheId: number;
+    vesselIds: number[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateVesselsClass: ({
     hydroLockDuration,
     hydroLockIds
@@ -192,6 +199,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.sender = sender;
     this.contractAddress = contractAddress;
     this.takeControl = this.takeControl.bind(this);
+    this.unvote = this.unvote.bind(this);
     this.updateVesselsClass = this.updateVesselsClass.bind(this);
     this.autoMaintain = this.autoMaintain.bind(this);
     this.modifyAutoMaintenance = this.modifyAutoMaintenance.bind(this);
@@ -210,6 +218,20 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       take_control: {
+        vessel_ids: vesselIds
+      }
+    }, fee, memo, _funds);
+  };
+  unvote = async ({
+    trancheId,
+    vesselIds
+  }: {
+    trancheId: number;
+    vesselIds: number[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      unvote: {
+        tranche_id: trancheId,
         vessel_ids: vesselIds
       }
     }, fee, memo, _funds);

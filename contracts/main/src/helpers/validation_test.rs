@@ -8,6 +8,7 @@ mod tests {
     use zephyrus_core::msgs::{InstantiateMsg, VesselsToHarbor};
     use zephyrus_core::state::{Constants, HydroConfig, Vessel};
 
+    use crate::helpers::validation::validate_user_controls_vessel;
     use crate::{
         errors::ContractError,
         helpers::validation::{
@@ -65,11 +66,12 @@ mod tests {
             cosmwasm_std::testing::MockApi,
             crate::testing_mocks::MockQuerier,
         >,
-    ) -> (Addr, Addr, u64) {
+    ) -> (Addr, Addr, u64, Addr) {
         init_contract(deps);
 
         let user1 = make_valid_addr("user1");
         let user2 = make_valid_addr("user2");
+        let hydromancer_addr = make_valid_addr("hydromancer");
 
         let user1_id = state::insert_new_user(deps.as_mut().storage, user1.clone()).unwrap();
         let user2_id = state::insert_new_user(deps.as_mut().storage, user2.clone()).unwrap();
@@ -77,7 +79,7 @@ mod tests {
         // Create hydromancer
         let hydromancer_id = state::insert_new_hydromancer(
             deps.as_mut().storage,
-            make_valid_addr("hydromancer"),
+            hydromancer_addr.clone(),
             "Test Hydromancer".to_string(),
             "0.1".parse().unwrap(),
         )
@@ -126,7 +128,7 @@ mod tests {
         )
         .unwrap();
 
-        (user1, user2, hydromancer_id)
+        (user1, user2, hydromancer_id, hydromancer_addr)
     }
 
     #[test]
@@ -162,7 +164,7 @@ mod tests {
     #[test]
     fn test_validate_hydromancer_exists_success() {
         let mut deps = mock_dependencies();
-        let (_, _, hydromancer_id) = setup_test_data(&mut deps);
+        let (_, _, hydromancer_id, _) = setup_test_data(&mut deps);
 
         let result = validate_hydromancer_exists(deps.as_ref().storage, hydromancer_id);
         assert!(result.is_ok());
@@ -171,7 +173,7 @@ mod tests {
     #[test]
     fn test_validate_hydromancer_exists_failure() {
         let mut deps = mock_dependencies();
-        let (_, _, _) = setup_test_data(&mut deps);
+        let (_, _, _, _) = setup_test_data(&mut deps);
 
         let non_existent_id = 999;
         let result = validate_hydromancer_exists(deps.as_ref().storage, non_existent_id);
@@ -185,7 +187,7 @@ mod tests {
     #[test]
     fn test_validate_vessels_under_user_control_success() {
         let mut deps = mock_dependencies();
-        let (_, _, _) = setup_test_data(&mut deps);
+        let (_, _, _, _) = setup_test_data(&mut deps);
 
         let user_controlled_vessels = vec![2, 3]; // Vessels without hydromancer_id
         let result =
@@ -196,7 +198,7 @@ mod tests {
     #[test]
     fn test_validate_vessels_under_user_control_failure() {
         let mut deps = mock_dependencies();
-        let (_, _, _) = setup_test_data(&mut deps);
+        let (_, _, _, _) = setup_test_data(&mut deps);
 
         let mixed_vessels = vec![1, 2]; // Vessel 1 is under hydromancer control
         let result = validate_vessels_under_user_control(deps.as_ref().storage, &mixed_vessels);
@@ -210,7 +212,7 @@ mod tests {
     #[test]
     fn test_validate_vessels_under_user_control_empty_list() {
         let mut deps = mock_dependencies();
-        let (_, _, _) = setup_test_data(&mut deps);
+        let (_, _, _, _) = setup_test_data(&mut deps);
 
         let empty_vessels = vec![];
         let result = validate_vessels_under_user_control(deps.as_ref().storage, &empty_vessels);
@@ -355,7 +357,7 @@ mod tests {
     #[test]
     fn test_validate_admin_address_success() {
         let mut deps = mock_dependencies();
-        let (_, _, _) = setup_test_data(&mut deps);
+        let (_, _, _, _) = setup_test_data(&mut deps);
 
         let admin = make_valid_addr("admin");
         let result = validate_admin_address(deps.as_ref().storage, &admin);
@@ -365,7 +367,7 @@ mod tests {
     #[test]
     fn test_validate_admin_address_failure() {
         let mut deps = mock_dependencies();
-        let (_, _, _) = setup_test_data(&mut deps);
+        let (_, _, _, _) = setup_test_data(&mut deps);
 
         let non_admin = make_valid_addr("user");
         let result = validate_admin_address(deps.as_ref().storage, &non_admin);
@@ -379,7 +381,7 @@ mod tests {
     #[test]
     fn test_validate_user_owns_vessels_success() {
         let mut deps = mock_dependencies();
-        let (user1, user2, _) = setup_test_data(&mut deps);
+        let (user1, user2, _, _) = setup_test_data(&mut deps);
 
         // User1 owns vessels 1 and 3
         let result = validate_user_owns_vessels(deps.as_ref().storage, &user1, &[1, 3]);
@@ -393,7 +395,7 @@ mod tests {
     #[test]
     fn test_validate_user_owns_vessels_failure() {
         let mut deps = mock_dependencies();
-        let (user1, user2, _) = setup_test_data(&mut deps);
+        let (user1, user2, _, _) = setup_test_data(&mut deps);
 
         // User1 doesn't own vessel 2
         let result = validate_user_owns_vessels(deps.as_ref().storage, &user1, &[2]);
@@ -415,7 +417,7 @@ mod tests {
     #[test]
     fn test_validate_user_owns_vessels_empty_list() {
         let mut deps = mock_dependencies();
-        let (user1, _, _) = setup_test_data(&mut deps);
+        let (user1, _, _, _) = setup_test_data(&mut deps);
 
         let result = validate_user_owns_vessels(deps.as_ref().storage, &user1, &[]);
         assert!(result.is_ok());
@@ -424,7 +426,7 @@ mod tests {
     #[test]
     fn test_validate_hydromancer_controls_vessels_success() {
         let mut deps = mock_dependencies();
-        let (_, _, hydromancer_id) = setup_test_data(&mut deps);
+        let (_, _, hydromancer_id, _) = setup_test_data(&mut deps);
 
         // Hydromancer controls vessel 1
         let result =
@@ -435,7 +437,7 @@ mod tests {
     #[test]
     fn test_validate_hydromancer_controls_vessels_failure() {
         let mut deps = mock_dependencies();
-        let (_, _, hydromancer_id) = setup_test_data(&mut deps);
+        let (_, _, hydromancer_id, _) = setup_test_data(&mut deps);
 
         // Hydromancer doesn't control vessel 2 (under user control)
         let result =
@@ -459,7 +461,7 @@ mod tests {
     #[test]
     fn test_validate_hydromancer_controls_vessels_empty_list() {
         let mut deps = mock_dependencies();
-        let (_, _, hydromancer_id) = setup_test_data(&mut deps);
+        let (_, _, hydromancer_id, _) = setup_test_data(&mut deps);
 
         let result =
             validate_hydromancer_controls_vessels(deps.as_ref().storage, hydromancer_id, &[]);
@@ -734,7 +736,7 @@ mod tests {
     #[test]
     fn test_validation_integration_multiple_checks() {
         let mut deps = mock_dependencies();
-        let (user1, user2, hydromancer_id) = setup_test_data(&mut deps);
+        let (user1, user2, hydromancer_id, _) = setup_test_data(&mut deps);
 
         // Test multiple validation functions together
         let constants = get_test_constants(false);
@@ -766,7 +768,7 @@ mod tests {
     #[test]
     fn test_validation_edge_cases_large_numbers() {
         let mut deps = mock_dependencies();
-        let (_, _, _) = setup_test_data(&mut deps);
+        let (_, _, _, _) = setup_test_data(&mut deps);
 
         // Test with large vessel IDs
         let large_ids = vec![u64::MAX - 1, u64::MAX];
@@ -782,7 +784,7 @@ mod tests {
     #[test]
     fn test_validation_edge_cases_zero_values() {
         let mut deps = mock_dependencies();
-        let (_, _, _) = setup_test_data(&mut deps);
+        let (_, _, _, _) = setup_test_data(&mut deps);
 
         // Test with zero IDs
         let zero_ids = vec![0, 1, 2];
@@ -792,6 +794,93 @@ mod tests {
         // Test with duplicate zero
         let duplicate_zero_ids = vec![0, 1, 0];
         let result = validate_no_duplicate_ids(&duplicate_zero_ids, "Vessel");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_user_controls_vessel_success() {
+        let mut deps = mock_dependencies();
+        let (user1, _, _, _) = setup_test_data(&mut deps);
+
+        let user1_id = state::get_user_id_by_address(deps.as_ref().storage, user1.clone()).unwrap();
+        // Test with user controlling vessel
+        let vessel = Vessel {
+            hydro_lock_id: 1,
+            tokenized_share_record_id: None,
+            class_period: 1_000_000,
+            auto_maintenance: true,
+            hydromancer_id: None,
+            owner_id: user1_id,
+        };
+        let result = validate_user_controls_vessel(deps.as_ref().storage, user1, vessel);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_hydromancer_controls_vessel_success() {
+        let mut deps = mock_dependencies();
+        let (user1, _, hydromancer_id, hydromancer_addr) = setup_test_data(&mut deps);
+
+        let user1_id = state::get_user_id_by_address(deps.as_ref().storage, user1.clone()).unwrap();
+        // Test with user controlling vessel
+        let vessel = Vessel {
+            hydro_lock_id: 1,
+            tokenized_share_record_id: None,
+            class_period: 1_000_000,
+            auto_maintenance: true,
+            hydromancer_id: Some(hydromancer_id),
+            owner_id: user1_id,
+        };
+        let result = validate_user_controls_vessel(deps.as_ref().storage, hydromancer_addr, vessel);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_user_controls_vessel_fail() {
+        let mut deps = mock_dependencies();
+        let (user1, user2, hydromancer_id, _) = setup_test_data(&mut deps);
+
+        let user1_id = state::get_user_id_by_address(deps.as_ref().storage, user1.clone()).unwrap();
+        // Test with user controlling vessel
+        let vessel = Vessel {
+            hydro_lock_id: 1,
+            tokenized_share_record_id: None,
+            class_period: 1_000_000,
+            auto_maintenance: true,
+            hydromancer_id: Some(hydromancer_id),
+            owner_id: user1_id,
+        };
+        let result = validate_user_controls_vessel(deps.as_ref().storage, user2.clone(), vessel);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_hydromancer_controls_vessel_fail() {
+        let mut deps = mock_dependencies();
+        let (user1, _, hydromancer_id, _) = setup_test_data(&mut deps);
+        let bad_hydromancer_addr = make_valid_addr("new_hydromancer");
+        state::insert_new_hydromancer(
+            deps.as_mut().storage,
+            bad_hydromancer_addr.clone(),
+            "New Hydromancer".to_string(),
+            "0.1".parse().unwrap(),
+        )
+        .unwrap();
+        let user1_id = state::get_user_id_by_address(deps.as_ref().storage, user1.clone()).unwrap();
+        // Test with user controlling vessel
+        let vessel = Vessel {
+            hydro_lock_id: 1,
+            tokenized_share_record_id: None,
+            class_period: 1_000_000,
+            auto_maintenance: true,
+            hydromancer_id: Some(hydromancer_id),
+            owner_id: user1_id,
+        };
+        let result = validate_user_controls_vessel(
+            deps.as_ref().storage,
+            bad_hydromancer_addr.clone(),
+            vessel,
+        );
         assert!(result.is_err());
     }
 }

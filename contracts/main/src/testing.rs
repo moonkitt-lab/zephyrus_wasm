@@ -1,5 +1,5 @@
 use crate::helpers::hydro_queries::query_hydro_lockups_shares;
-use crate::reply::{handle_refresh_time_weighted_shares_reply, handle_unlock_tokens_reply};
+use crate::reply::handle_refresh_time_weighted_shares_reply;
 use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};
 use crate::{
     contract::{execute, instantiate},

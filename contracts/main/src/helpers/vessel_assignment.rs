@@ -27,7 +27,7 @@ pub fn assign_vessel_to_hydromancer(
                 state::get_harbor_of_vessel(storage, tranche_id, current_round_id, vessel_id)
             {
                 // Remove vessel TWS from proposal totals
-                state::subtract_time_weighted_shares_from_proposal(
+                state::substract_time_weighted_shares_from_proposal(
                     storage,
                     proposal_id,
                     &vessel_shares.token_group_id,
@@ -36,7 +36,7 @@ pub fn assign_vessel_to_hydromancer(
 
                 // Remove vessel TWS from hydromancer-specific proposal totals (if applicable)
                 if let Some(old_hydro_id) = old_hydromancer_id {
-                    state::subtract_time_weighted_shares_from_proposal_for_hydromancer(
+                    state::substract_time_weighted_shares_from_proposal_for_hydromancer(
                         storage,
                         proposal_id,
                         old_hydro_id,
@@ -58,7 +58,7 @@ pub fn assign_vessel_to_hydromancer(
 
         // Remove from old hydromancer totals (if applicable)
         if let Some(old_hydro_id) = old_hydromancer_id {
-            state::subtract_time_weighted_shares_from_hydromancer(
+            state::substract_time_weighted_shares_from_hydromancer(
                 storage,
                 old_hydro_id,
                 current_round_id,
@@ -118,7 +118,7 @@ pub fn assign_vessel_to_user_control(
                 state::get_harbor_of_vessel(storage, tranche_id, current_round_id, vessel_id)
             {
                 // Remove vessel TWS from proposal totals
-                state::subtract_time_weighted_shares_from_proposal(
+                state::substract_time_weighted_shares_from_proposal(
                     storage,
                     proposal_id,
                     &vessel_shares.token_group_id,
@@ -126,7 +126,7 @@ pub fn assign_vessel_to_user_control(
                 )?;
 
                 // Remove vessel TWS from hydromancer-specific proposal totals
-                state::subtract_time_weighted_shares_from_proposal_for_hydromancer(
+                state::substract_time_weighted_shares_from_proposal_for_hydromancer(
                     storage,
                     proposal_id,
                     hydromancer_id,
@@ -146,7 +146,7 @@ pub fn assign_vessel_to_user_control(
         }
 
         // Remove from hydromancer totals
-        state::subtract_time_weighted_shares_from_hydromancer(
+        state::substract_time_weighted_shares_from_hydromancer(
             storage,
             hydromancer_id,
             current_round_id,

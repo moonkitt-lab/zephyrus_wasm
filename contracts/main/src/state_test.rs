@@ -21,9 +21,9 @@ mod tests {
             is_whitelisted_admin, iterate_vessels_with_predicate, mark_hydromancer_tws_complete,
             modify_auto_maintenance, remove_vessel, remove_vessel_from_hydromancer,
             remove_vessel_harbor, save_vessel, save_vessel_shares_info,
-            subtract_time_weighted_shares_from_hydromancer,
-            subtract_time_weighted_shares_from_proposal,
-            subtract_time_weighted_shares_from_proposal_for_hydromancer, take_control_of_vessels,
+            substract_time_weighted_shares_from_hydromancer,
+            substract_time_weighted_shares_from_proposal,
+            substract_time_weighted_shares_from_proposal_for_hydromancer, take_control_of_vessels,
             update_constants, update_whitelist_admins, vessel_exists,
         },
         testing_mocks::mock_dependencies,
@@ -951,7 +951,7 @@ mod tests {
         assert_eq!(tws[0].1, 1500u128);
 
         // Test subtracting shares
-        let result = subtract_time_weighted_shares_from_hydromancer(
+        let result = substract_time_weighted_shares_from_hydromancer(
             deps.as_mut().storage,
             hydromancer_id,
             round_id,
@@ -999,7 +999,7 @@ mod tests {
         assert_eq!(tws[0].1, shares);
 
         // Test subtracting proposal shares
-        let result = subtract_time_weighted_shares_from_proposal(
+        let result = substract_time_weighted_shares_from_proposal(
             deps.as_mut().storage,
             proposal_id,
             token_group_id,
@@ -1054,7 +1054,7 @@ mod tests {
         assert_eq!(tws[0].1, shares);
 
         // Test subtracting hydromancer proposal shares
-        let result = subtract_time_weighted_shares_from_proposal_for_hydromancer(
+        let result = substract_time_weighted_shares_from_proposal_for_hydromancer(
             deps.as_mut().storage,
             proposal_id,
             hydromancer_id,

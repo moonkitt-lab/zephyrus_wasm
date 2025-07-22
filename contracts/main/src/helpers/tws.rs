@@ -130,7 +130,7 @@ pub fn apply_hydromancer_tws_changes(
                 )?;
             }
             Ordering::Less => {
-                state::subtract_time_weighted_shares_from_hydromancer(
+                state::substract_time_weighted_shares_from_hydromancer(
                     storage,
                     hydromancer_id,
                     round_id,
@@ -163,7 +163,7 @@ pub fn apply_proposal_tws_changes(
                 )?;
             }
             Ordering::Less => {
-                state::subtract_time_weighted_shares_from_proposal(
+                state::substract_time_weighted_shares_from_proposal(
                     storage,
                     proposal_id,
                     &token_group_id,
@@ -197,7 +197,7 @@ pub fn apply_proposal_hydromancer_tws_changes(
                 )?;
             }
             Ordering::Less => {
-                state::subtract_time_weighted_shares_from_proposal_for_hydromancer(
+                state::substract_time_weighted_shares_from_proposal_for_hydromancer(
                     storage,
                     proposal_id,
                     hydromancer_id,

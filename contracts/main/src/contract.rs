@@ -14,6 +14,7 @@ use zephyrus_core::msgs::{
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
+use crate::helpers::validation::validate_user_controls_vessel;
 use crate::{
     errors::ContractError,
     helpers::{
@@ -134,7 +135,64 @@ pub fn execute(
             execute_change_hydromancer(deps, env, info, tranche_id, hydromancer_id, hydro_lock_ids)
         }
         ExecuteMsg::TakeControl { vessel_ids } => execute_take_control(deps, info, vessel_ids),
+        ExecuteMsg::Unvote {
+            tranche_id,
+            vessel_ids,
+        } => execute_unvote(deps, info, tranche_id, vessel_ids),
     }
+}
+
+fn execute_unvote(
+    deps: DepsMut,
+    info: MessageInfo,
+    tranche_id: u64,
+    vessel_ids: Vec<u64>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
+    let user_addr = info.sender;
+    for vessel_id in vessel_ids.iter() {
+        let vessel = state::get_vessel(deps.storage, *vessel_id)?;
+        validate_user_controls_vessel(deps.storage, user_addr.clone(), vessel.clone())?;
+        let harbor_of_vessel =
+            state::get_harbor_of_vessel(deps.storage, tranche_id, current_round_id, *vessel_id)?;
+        if harbor_of_vessel.is_some() {
+            let proposal_id = harbor_of_vessel.unwrap();
+            let vessel_shares =
+                state::get_vessel_shares_info(deps.storage, current_round_id, *vessel_id)
+                    .expect("Vessel shares for voted vessels should be initialized ");
+            state::substract_time_weighted_shares_from_proposal(
+                deps.storage,
+                proposal_id,
+                &vessel_shares.token_group_id,
+                vessel_shares.time_weighted_shares,
+            )?;
+            if !vessel.is_under_user_control() {
+                let hydromancer_id = vessel.hydromancer_id.unwrap();
+                state::substract_time_weighted_shares_from_proposal_for_hydromancer(
+                    deps.storage,
+                    proposal_id,
+                    hydromancer_id,
+                    &vessel_shares.token_group_id,
+                    vessel_shares.time_weighted_shares,
+                )?;
+            }
+        }
+    }
+    let msg_unvote = HydroExecuteMsg::Unvote {
+        tranche_id,
+        lock_ids: vessel_ids.clone(),
+    };
+    let execute_unvote_msg = WasmMsg::Execute {
+        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&msg_unvote)?,
+        funds: vec![],
+    };
+
+    Ok(Response::default()
+        .add_message(execute_unvote_msg)
+        .add_attribute("action", "unvote"))
 }
 
 /// Receive Lockup as NFT and create a Vessel with some params from "msg"
@@ -357,9 +415,7 @@ fn execute_update_vessels_class(
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
-    if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
-        return Err(ContractError::Unauthorized {});
-    }
+    validate_user_owns_vessels(deps.storage, &info.sender, &hydro_lock_ids)?;
 
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
 

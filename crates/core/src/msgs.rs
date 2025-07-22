@@ -46,6 +46,10 @@ pub enum ExecuteMsg {
     TakeControl {
         vessel_ids: Vec<u64>,
     },
+    Unvote {
+        tranche_id: TrancheId,
+        vessel_ids: Vec<u64>,
+    },
     UpdateVesselsClass {
         hydro_lock_ids: Vec<u64>,
         hydro_lock_duration: u64,

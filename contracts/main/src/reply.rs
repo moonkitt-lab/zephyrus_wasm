@@ -188,7 +188,7 @@ pub fn handle_vote_reply(
                                 steerer_id: payload.steerer_id,
                             },
                         )?;
-                        state::subtract_time_weighted_shares_from_proposal(
+                        state::substract_time_weighted_shares_from_proposal(
                             deps.storage,
                             previous_harbor_id,
                             &vessel_shares_info.token_group_id,
@@ -210,7 +210,7 @@ pub fn handle_vote_reply(
                                 &vessel_shares_info.token_group_id,
                                 vessel_shares_info.time_weighted_shares.u128(),
                             )?;
-                            state::subtract_time_weighted_shares_from_proposal_for_hydromancer(
+                            state::substract_time_weighted_shares_from_proposal_for_hydromancer(
                                 deps.storage,
                                 previous_harbor_id,
                                 payload.steerer_id,

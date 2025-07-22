@@ -753,7 +753,7 @@ pub fn add_time_weighted_shares_to_hydromancer(
     Ok(())
 }
 
-pub fn subtract_time_weighted_shares_from_hydromancer(
+pub fn substract_time_weighted_shares_from_hydromancer(
     storage: &mut dyn Storage,
     hydromancer_id: HydromancerId,
     round_id: RoundId,
@@ -796,7 +796,7 @@ pub fn add_time_weighted_shares_to_proposal(
     Ok(())
 }
 
-pub fn subtract_time_weighted_shares_from_proposal(
+pub fn substract_time_weighted_shares_from_proposal(
     storage: &mut dyn Storage,
     proposal_id: HydroProposalId,
     token_group_id: &str,
@@ -841,7 +841,7 @@ pub fn add_time_weighted_shares_to_proposal_for_hydromancer(
     Ok(())
 }
 
-pub fn subtract_time_weighted_shares_from_proposal_for_hydromancer(
+pub fn substract_time_weighted_shares_from_proposal_for_hydromancer(
     storage: &mut dyn Storage,
     proposal_id: HydroProposalId,
     hydromancer_id: HydromancerId,

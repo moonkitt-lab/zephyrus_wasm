@@ -2,7 +2,7 @@ use crate::{errors::ContractError, state};
 use cosmwasm_std::{Addr, Storage};
 use hydro_interface::msgs::{LockupWithPerTrancheInfo, RoundLockPowerSchedule};
 use zephyrus_core::msgs::{HydroLockId, HydromancerId, VesselsToHarbor};
-use zephyrus_core::state::Constants;
+use zephyrus_core::state::{Constants, Vessel};
 
 /// Validate that the contract is not paused
 pub fn validate_contract_is_not_paused(constants: &Constants) -> Result<(), ContractError> {
@@ -156,5 +156,28 @@ pub fn validate_lock_duration(
         });
     }
 
+    Ok(())
+}
+
+// Validate that the user controls the vessel
+// If the vessel is under user control, check that the user is the owner
+// If the vessel is under hydromancer control, check that the user is the hydromancer
+pub fn validate_user_controls_vessel(
+    storage: &dyn Storage,
+    user_addr: Addr,
+    vessel: Vessel,
+) -> Result<(), ContractError> {
+    // vessel is under user control, check that user is the owner, otherwise check that user is the hydromancer of the vessel
+    if vessel.is_under_user_control() {
+        let user_id = state::get_user_id_by_address(storage, user_addr)?;
+        if vessel.owner_id != user_id {
+            return Err(ContractError::Unauthorized {});
+        }
+    } else {
+        let hydromancer_id = state::get_hydromancer_id_by_address(storage, user_addr)?;
+        if vessel.hydromancer_id != Some(hydromancer_id) {
+            return Err(ContractError::Unauthorized {});
+        }
+    }
     Ok(())
 }

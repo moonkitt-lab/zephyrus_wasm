@@ -357,6 +357,10 @@ fn execute_update_vessels_class(
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
+    if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
+        return Err(ContractError::Unauthorized {});
+    }
+
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
 
     initialize_vessel_tws(

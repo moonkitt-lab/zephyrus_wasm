@@ -2,7 +2,7 @@ use crate::helpers::vectors::join_u64_ids;
 use cosmwasm_std::{Deps, Env, StdError, StdResult};
 use hydro_interface::msgs::{
     CurrentRoundResponse, HydroConstantsResponse, HydroQueryMsg, LockupWithPerTrancheInfo,
-    LockupsSharesResponse, SpecificUserLockupsResponse,
+    LockupsSharesResponse, OutstandingTributeClaimsResponse, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TranchesResponse,
 };
 use zephyrus_core::msgs::{RoundId, TrancheId};
@@ -98,4 +98,26 @@ pub fn query_hydro_specific_user_lockups(
         },
     )?;
     Ok(user_specific_lockups)
+}
+
+pub fn query_hydro_outstanding_tribute_claims(
+    deps: &Deps,
+    env: Env,
+    constants: &Constants,
+    round_id: u64,
+    tranche_id: u64,
+) -> StdResult<OutstandingTributeClaimsResponse> {
+    let outstanding_tribute_claims: OutstandingTributeClaimsResponse =
+        deps.querier.query_wasm_smart(
+            constants
+                .hydro_config
+                .hydro_tribute_contract_address
+                .to_string(),
+            &HydroQueryMsg::OutstandingTributeClaims {
+                user_address: env.contract.address.to_string(),
+                round_id,
+                tranche_id,
+            },
+        )?;
+    Ok(outstanding_tribute_claims)
 }

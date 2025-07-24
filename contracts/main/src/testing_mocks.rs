@@ -10,9 +10,9 @@ use cosmwasm_std::{
 use hydro_interface::msgs::{
     CollectionInfo, CurrentRoundResponse, HydroConstants, HydroConstantsResponse, HydroQueryMsg,
     LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo, LockupsSharesInfo,
-    LockupsSharesResponse, PerTrancheLockupInfo, RoundLockPowerSchedule,
-    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, Tranche,
-    TranchesResponse,
+    LockupsSharesResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo,
+    RoundLockPowerSchedule, SpecificUserLockupsResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, Tranche, TranchesResponse,
 };
 use neutron_std::types::ibc::applications::transfer::v1::{
     DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
@@ -75,6 +75,11 @@ impl MockWasmQuerier {
                         address: _,
                         lock_ids,
                     } => self.handle_specific_user_lockups_with_tranche_infos(&lock_ids),
+                    HydroQueryMsg::OutstandingTributeClaims {
+                        user_address: _,
+                        round_id: _,
+                        tranche_id: _,
+                    } => to_json_binary(&OutstandingTributeClaimsResponse { claims: vec![] }),
                 };
 
                 SystemResult::Ok(ContractResult::Ok(response.unwrap()))

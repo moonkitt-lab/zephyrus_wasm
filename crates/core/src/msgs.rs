@@ -81,6 +81,11 @@ pub enum ExecuteMsg {
         hydromancer_id: HydromancerId,
         hydro_lock_ids: Vec<u64>,
     },
+    Claim {
+        round_id: u64,
+        tranche_id: u64,
+        vessel_ids: Vec<u64>,
+    },
 }
 
 #[cw_serde]

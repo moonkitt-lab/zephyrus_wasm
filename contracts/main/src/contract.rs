@@ -14,6 +14,7 @@ use zephyrus_core::msgs::{
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
+use crate::helpers::hydro_queries::query_hydro_outstanding_tribute_claims;
 use crate::helpers::validation::validate_user_controls_vessel;
 use crate::{
     errors::ContractError,
@@ -139,7 +140,38 @@ pub fn execute(
             tranche_id,
             vessel_ids,
         } => execute_unvote(deps, info, tranche_id, vessel_ids),
+        ExecuteMsg::Claim {
+            round_id,
+            tranche_id,
+            vessel_ids,
+        } => execute_claim(deps, env, info, round_id, tranche_id, vessel_ids),
     }
+}
+
+fn execute_claim(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    round_id: u64,
+    tranche_id: u64,
+    vessel_ids: Vec<u64>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+
+    // Check if zephyrus has outstanding tributes to claim
+    let outstanding_tributes = query_hydro_outstanding_tribute_claims(
+        &deps.as_ref(),
+        env,
+        &constants,
+        round_id,
+        tranche_id,
+    );
+    // TODO: For each outstanding_tribute, create a submessage to claim it
+    // TODO: Handle the reply verifying that the claim was successful with the correct amount
+    // TODO: Then for each vessel, cumulate rewards to send to the user
+
+    Ok(Response::default())
 }
 
 fn execute_unvote(

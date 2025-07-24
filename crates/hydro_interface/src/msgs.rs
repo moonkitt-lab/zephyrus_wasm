@@ -33,10 +33,37 @@ pub enum ExecuteMsg {
 pub enum HydroQueryMsg {
     CurrentRound {},
     Tranches {},
-    SpecificUserLockups { address: String, lock_ids: Vec<u64> },
-    SpecificUserLockupsWithTrancheInfos { address: String, lock_ids: Vec<u64> },
+    SpecificUserLockups {
+        address: String,
+        lock_ids: Vec<u64>,
+    },
+    SpecificUserLockupsWithTrancheInfos {
+        address: String,
+        lock_ids: Vec<u64>,
+    },
     Constants {},
-    LockupsShares { lock_ids: Vec<u64> },
+    LockupsShares {
+        lock_ids: Vec<u64>,
+    },
+    OutstandingTributeClaims {
+        user_address: String,
+        round_id: u64,
+        tranche_id: u64,
+    },
+}
+
+#[cw_serde]
+pub struct TributeClaim {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub tribute_id: u64,
+    pub amount: Coin,
+}
+
+#[cw_serde]
+pub struct OutstandingTributeClaimsResponse {
+    pub claims: Vec<TributeClaim>,
 }
 
 #[cw_serde]

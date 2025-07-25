@@ -314,3 +314,42 @@ pub fn initialize_vessel_tws(
 
     Ok(())
 }
+
+// Reset vessel vote by removing harbor mapping and substract TWS
+// Typically called when a user unvotes a vessel
+pub fn reset_vessel_vote(
+    storage: &mut dyn Storage,
+    vessel: Vessel,
+    current_round_id: RoundId,
+    tranche_id: TrancheId,
+    proposal_id: HydroProposalId,
+) -> Result<(), ContractError> {
+    let vessel_shares =
+        state::get_vessel_shares_info(storage, current_round_id, vessel.hydro_lock_id)
+            .expect("Vessel shares for voted vessels should be initialized ");
+    state::substract_time_weighted_shares_from_proposal(
+        storage,
+        proposal_id,
+        &vessel_shares.token_group_id,
+        vessel_shares.time_weighted_shares,
+    )?;
+    if !vessel.is_under_user_control() {
+        let hydromancer_id = vessel.hydromancer_id.unwrap();
+        state::substract_time_weighted_shares_from_proposal_for_hydromancer(
+            storage,
+            proposal_id,
+            hydromancer_id,
+            &vessel_shares.token_group_id,
+            vessel_shares.time_weighted_shares,
+        )?;
+    }
+    // Remove vessel harbor mapping
+    state::remove_vessel_harbor(
+        storage,
+        tranche_id,
+        current_round_id,
+        proposal_id,
+        vessel.hydro_lock_id,
+    )?;
+    Ok(())
+}

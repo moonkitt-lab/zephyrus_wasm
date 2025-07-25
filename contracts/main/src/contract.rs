@@ -14,6 +14,7 @@ use zephyrus_core::msgs::{
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
+use crate::helpers::tws::reset_vessel_vote;
 use crate::helpers::validation::validate_user_controls_vessel;
 use crate::{
     errors::ContractError,
@@ -159,25 +160,13 @@ fn execute_unvote(
             state::get_harbor_of_vessel(deps.storage, tranche_id, current_round_id, *vessel_id)?;
         if harbor_of_vessel.is_some() {
             let proposal_id = harbor_of_vessel.unwrap();
-            let vessel_shares =
-                state::get_vessel_shares_info(deps.storage, current_round_id, *vessel_id)
-                    .expect("Vessel shares for voted vessels should be initialized ");
-            state::substract_time_weighted_shares_from_proposal(
+            reset_vessel_vote(
                 deps.storage,
+                vessel,
+                current_round_id,
+                tranche_id,
                 proposal_id,
-                &vessel_shares.token_group_id,
-                vessel_shares.time_weighted_shares,
             )?;
-            if !vessel.is_under_user_control() {
-                let hydromancer_id = vessel.hydromancer_id.unwrap();
-                state::substract_time_weighted_shares_from_proposal_for_hydromancer(
-                    deps.storage,
-                    proposal_id,
-                    hydromancer_id,
-                    &vessel_shares.token_group_id,
-                    vessel_shares.time_weighted_shares,
-                )?;
-            }
         }
     }
     let msg_unvote = HydroExecuteMsg::Unvote {

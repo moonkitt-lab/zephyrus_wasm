@@ -814,4 +814,179 @@ mod tests {
 
         // Function should execute without error - all TWS would be added internally
     }
+
+    #[test]
+    fn test_reset_vessel_vote_success() {
+        let mut deps = mock_dependencies();
+        let (_, _) = setup_test_vessels(&mut deps);
+
+        let current_round_id = 1;
+        let tranche_id = 1;
+        let proposal_id = 1;
+        let vessel_id = 1;
+
+        // Set up vessel shares info
+        state::save_vessel_shares_info(
+            deps.as_mut().storage,
+            vessel_id,
+            current_round_id,
+            1000,
+            "dAtom".to_string(),
+            2,
+        )
+        .unwrap();
+
+        // Set up harbor mapping
+        let vessel_harbor = zephyrus_core::state::VesselHarbor {
+            user_control: false,
+            steerer_id: 1, // hydromancer_id
+            hydro_lock_id: vessel_id,
+        };
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            tranche_id,
+            current_round_id,
+            proposal_id,
+            &vessel_harbor,
+        )
+        .unwrap();
+
+        // Add some TWS to proposal and hydromancer proposal
+        state::add_time_weighted_shares_to_proposal(
+            deps.as_mut().storage,
+            proposal_id,
+            "dAtom",
+            1000,
+        )
+        .unwrap();
+
+        state::add_time_weighted_shares_to_proposal_for_hydromancer(
+            deps.as_mut().storage,
+            proposal_id,
+            1, // hydromancer_id
+            "dAtom",
+            1000,
+        )
+        .unwrap();
+
+        // Get the vessel
+        let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
+
+        // Call reset_vessel_vote
+        let result = crate::helpers::tws::reset_vessel_vote(
+            deps.as_mut().storage,
+            vessel,
+            current_round_id,
+            tranche_id,
+            proposal_id,
+        );
+
+        assert!(result.is_ok());
+
+        // Verify that vessel harbor mapping was removed
+        let harbor_exists = state::get_harbor_of_vessel(
+            deps.as_ref().storage,
+            tranche_id,
+            current_round_id,
+            vessel_id,
+        )
+        .unwrap();
+        assert!(harbor_exists.is_none());
+
+        // Verify that TWS were subtracted from proposal
+        // Note: We can't directly verify the TWS values without internal access,
+        // but the function should execute without error
+    }
+
+    #[test]
+    fn test_reset_vessel_vote_user_control_success() {
+        let mut deps = mock_dependencies();
+        init_contract(&mut deps);
+
+        let user = make_valid_addr("user");
+        let user_id = state::insert_new_user(deps.as_mut().storage, user.clone()).unwrap();
+
+        // Add vessel under user control (no hydromancer)
+        state::add_vessel(
+            deps.as_mut().storage,
+            &Vessel {
+                hydro_lock_id: 99,
+                tokenized_share_record_id: None,
+                class_period: 1_000_000,
+                auto_maintenance: false,
+                hydromancer_id: None, // User control
+                owner_id: user_id,
+            },
+            &user,
+        )
+        .unwrap();
+
+        let current_round_id = 1;
+        let tranche_id = 1;
+        let proposal_id = 1;
+        let vessel_id = 99;
+
+        // Set up vessel shares info
+        state::save_vessel_shares_info(
+            deps.as_mut().storage,
+            vessel_id,
+            current_round_id,
+            500,
+            "stAtom".to_string(),
+            1,
+        )
+        .unwrap();
+
+        // Set up harbor mapping for user-controlled vessel
+        let vessel_harbor = zephyrus_core::state::VesselHarbor {
+            user_control: true,
+            steerer_id: user_id,
+            hydro_lock_id: vessel_id,
+        };
+
+        state::add_vessel_to_harbor(
+            deps.as_mut().storage,
+            tranche_id,
+            current_round_id,
+            proposal_id,
+            &vessel_harbor,
+        )
+        .unwrap();
+
+        // Add some TWS to proposal (no hydromancer TWS for user-controlled vessels)
+        state::add_time_weighted_shares_to_proposal(
+            deps.as_mut().storage,
+            proposal_id,
+            "stAtom",
+            500,
+        )
+        .unwrap();
+
+        // Get the vessel
+        let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
+
+        // Call reset_vessel_vote
+        let result = crate::helpers::tws::reset_vessel_vote(
+            deps.as_mut().storage,
+            vessel,
+            current_round_id,
+            tranche_id,
+            proposal_id,
+        );
+
+        assert!(result.is_ok());
+
+        // Verify that vessel harbor mapping was removed
+        let harbor_exists = state::get_harbor_of_vessel(
+            deps.as_ref().storage,
+            tranche_id,
+            current_round_id,
+            vessel_id,
+        )
+        .unwrap();
+        assert!(harbor_exists.is_none());
+
+        // Function should execute without error for user-controlled vessels
+    }
 }

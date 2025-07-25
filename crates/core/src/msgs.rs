@@ -152,6 +152,7 @@ pub struct MigrateMsg {}
 pub const DECOMMISSION_REPLY_ID: u64 = 1;
 pub const VOTE_REPLY_ID: u64 = 2;
 pub const REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID: u64 = 3;
+pub const CLAIM_TRIBUTE_REPLY_ID: u64 = 4;
 
 #[cw_serde]
 pub struct VoteReplyPayload {
@@ -174,4 +175,13 @@ pub struct DecommissionVesselsReplyPayload {
     pub previous_balances: Vec<Coin>,
     pub expected_unlocked_ids: Vec<u64>,
     pub vessel_owner: Addr,
+}
+
+#[cw_serde]
+pub struct ClaimTributeReplyPayload {
+    pub proposal_id: u64,
+    pub tribute_id: u64,
+    pub amount: Coin,
+    pub balance_before_claim: Coin,
+    pub vessel_ids: Vec<u64>,
 }

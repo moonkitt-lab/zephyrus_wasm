@@ -12,7 +12,8 @@ use hydro_interface::msgs::{
     LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo, LockupsSharesInfo,
     LockupsSharesResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo,
     RoundLockPowerSchedule, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, Tranche, TranchesResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, Tranche,
+    TranchesResponse,
 };
 use neutron_std::types::ibc::applications::transfer::v1::{
     DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
@@ -80,6 +81,9 @@ impl MockWasmQuerier {
                         round_id: _,
                         tranche_id: _,
                     } => to_json_binary(&OutstandingTributeClaimsResponse { claims: vec![] }),
+                    HydroQueryMsg::TokenInfoProviders {} => {
+                        to_json_binary(&TokenInfoProvidersResponse { providers: vec![] })
+                    }
                 };
 
                 SystemResult::Ok(ContractResult::Ok(response.unwrap()))

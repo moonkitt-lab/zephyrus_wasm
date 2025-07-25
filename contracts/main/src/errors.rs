@@ -90,4 +90,6 @@ pub enum ContractError {
         valid_durations: Vec<u64>,
         provided_duration: u64,
     },
+    #[error("Insufficient balance,the tribute {tribute_id} is not what was expected.")]
+    InsufficientTributeReceived { tribute_id: u64 },
 }

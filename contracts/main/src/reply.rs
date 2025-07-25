@@ -7,8 +7,9 @@ use std::collections::HashMap;
 use neutron_sdk::bindings::msg::NeutronMsg;
 
 use zephyrus_core::msgs::{
-    DecommissionVesselsReplyPayload, HydromancerId, RefreshTimeWeightedSharesReplyPayload, RoundId,
-    VoteReplyPayload, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
+    ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, HydromancerId,
+    RefreshTimeWeightedSharesReplyPayload, RoundId, VoteReplyPayload, DECOMMISSION_REPLY_ID,
+    REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
 };
 use zephyrus_core::state::VesselHarbor;
 
@@ -55,7 +56,36 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
         _ => Err(ContractError::CustomError {
             msg: "Unknown reply id".to_string(),
         }),
+        CLAIM_TRIBUTE_REPLY_ID => {
+            let payload: ClaimTributeReplyPayload = from_json(&reply.payload)?;
+            handle_claim_tribute_reply(deps, env, payload)
+        }
     }
+}
+
+pub fn handle_claim_tribute_reply(
+    deps: DepsMut,
+    env: Env,
+    payload: ClaimTributeReplyPayload,
+) -> Result<Response, ContractError> {
+    let balance_query = deps
+        .querier
+        .query_balance(env.contract.address, payload.amount.denom)?;
+    let balance_expected = payload
+        .balance_before_claim
+        .amount
+        .strict_add(payload.amount.amount);
+    if balance_query.amount < balance_expected {
+        return Err(ContractError::InsufficientTributeReceived {
+            tribute_id: payload.tribute_id,
+        });
+    }
+
+    // TODO: Calcul and store portion of rewards for each hydromancer
+
+    // TODO: Then Distribute portion of this tribute tp the initial user (info.sender) has a vessel concerned by the tribute
+
+    Ok(Response::new().add_attribute("action", "handle_claim_tribute_reply"))
 }
 
 pub fn handle_refresh_time_weighted_shares_reply(

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 
@@ -27,6 +29,12 @@ pub enum ExecuteMsg {
         tranche_id: u64,
         lock_ids: Vec<u64>,
     },
+    ClaimTribute {
+        round_id: u64,
+        tranche_id: u64,
+        tribute_id: u64,
+        voter_address: String,
+    },
 }
 
 #[cw_serde]
@@ -50,6 +58,12 @@ pub enum HydroQueryMsg {
         round_id: u64,
         tranche_id: u64,
     },
+    TokenInfoProviders {},
+}
+
+#[cw_serde]
+pub enum DerivativeTokenInfoProviderQueryMsg {
+    DenomInfo { round_id: u64 },
 }
 
 #[cw_serde]
@@ -197,4 +211,37 @@ pub struct LockupWithPerTrancheInfo {
 #[cw_serde]
 pub struct SpecificUserLockupsWithTrancheInfosResponse {
     pub lockups_with_per_tranche_infos: Vec<LockupWithPerTrancheInfo>,
+}
+
+#[cw_serde]
+pub struct DenomInfoResponse {
+    pub denom: String,
+    pub token_group_id: String,
+    pub ratio: Decimal,
+}
+
+#[cw_serde]
+pub struct TokenInfoProviderDerivative {
+    pub contract: String,
+    pub cache: HashMap<u64, DenomInfoResponse>,
+}
+
+#[cw_serde]
+pub struct TokenInfoProviderLSM {
+    pub max_validator_shares_participating: u64,
+    pub hub_connection_id: String,
+    pub hub_transfer_channel_id: String,
+    pub icq_update_period: u64,
+}
+
+#[cw_serde]
+pub enum TokenInfoProvider {
+    #[serde(rename = "lsm")]
+    LSM(TokenInfoProviderLSM),
+    Derivative(TokenInfoProviderDerivative),
+}
+
+#[cw_serde]
+pub struct TokenInfoProvidersResponse {
+    pub providers: Vec<TokenInfoProvider>,
 }

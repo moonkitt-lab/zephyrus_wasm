@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankQuery, Binary, DepsMut,
-    Env, MessageInfo, QueryRequest, Response as CwResponse, StdResult, SubMsg, WasmMsg,
+    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankQuery, Binary, Coin,
+    DepsMut, Env, MessageInfo, QueryRequest, Response as CwResponse, StdResult, SubMsg, Uint128,
+    WasmMsg,
 };
 use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups};
 
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::msgs::{
-    DecommissionVesselsReplyPayload, ExecuteMsg, InstantiateMsg, MigrateMsg,
-    RefreshTimeWeightedSharesReplyPayload, TrancheId, VesselInfo, VesselsToHarbor,
-    VoteReplyPayload, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
+    ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, ExecuteMsg, InstantiateMsg,
+    MigrateMsg, RefreshTimeWeightedSharesReplyPayload, TrancheId, VesselInfo, VesselsToHarbor,
+    VoteReplyPayload, CLAIM_TRIBUTE_REPLY_ID, DECOMMISSION_REPLY_ID,
+    REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
@@ -159,7 +161,7 @@ fn execute_claim(
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
-
+    let contract_address = env.contract.address.clone();
     // Check if zephyrus has outstanding tributes to claim
     let outstanding_tributes = query_hydro_outstanding_tribute_claims(
         &deps.as_ref(),
@@ -171,6 +173,59 @@ fn execute_claim(
     // TODO: For each outstanding_tribute, create a submessage to claim it
     // TODO: Handle the reply verifying that the claim was successful with the correct amount
     // TODO: Then for each vessel, cumulate rewards to send to the user
+    let mut response = Response::new().add_attribute("action", "claim");
+    if outstanding_tributes.is_ok() {
+        let outstanding_tributes = outstanding_tributes.unwrap();
+        let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
+        for outstanding_tribute in outstanding_tributes.claims {
+            let claim_msg = HydroExecuteMsg::ClaimTribute {
+                round_id,
+                tranche_id,
+                tribute_id: outstanding_tribute.tribute_id,
+                voter_address: contract_address.to_string(),
+            };
+            let execute_claim_msg = WasmMsg::Execute {
+                contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+                msg: to_json_binary(&claim_msg)?,
+                funds: vec![],
+            };
+            let balance_before_claim = balances
+                .iter()
+                .find(|balance| balance.denom == outstanding_tribute.amount.denom)
+                .cloned()
+                .unwrap_or(Coin {
+                    denom: outstanding_tribute.amount.denom.clone(),
+                    amount: Uint128::zero(),
+                });
+
+            let payload = ClaimTributeReplyPayload {
+                proposal_id: outstanding_tribute.proposal_id,
+                tribute_id: outstanding_tribute.tribute_id,
+                amount: outstanding_tribute.amount.clone(),
+                balance_before_claim,
+                vessel_ids: vessel_ids.clone(),
+            };
+
+            let sub_msg: SubMsg<NeutronMsg> =
+                SubMsg::reply_on_success(execute_claim_msg, CLAIM_TRIBUTE_REPLY_ID)
+                    .with_payload(to_json_binary(&payload)?);
+
+            response = response.add_submessage(sub_msg);
+
+            if let Some(balance) = balances
+                .iter_mut()
+                .find(|balance| balance.denom == outstanding_tribute.amount.denom)
+            {
+                // Utilisateur trouvé, modifier le solde
+                balance.amount = balance
+                    .amount
+                    .strict_add(outstanding_tribute.amount.amount.clone());
+            } else {
+                // Utilisateur non trouvé, l'ajouter
+                balances.push(outstanding_tribute.amount.clone());
+            }
+        }
+    }
 
     Ok(Response::default())
 }

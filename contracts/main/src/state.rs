@@ -1,9 +1,9 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage};
+use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage, Uint128};
 use cw_storage_plus::{Bound, Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
-    msgs::{HydroProposalId, RoundId, TrancheId, UserId},
+    msgs::{HydroProposalId, RoundId, TrancheId, TributeId, UserId},
     state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor, VesselSharesInfo},
 };
 
@@ -77,6 +77,27 @@ const VESSEL_SHARES_INFO: Map<(RoundId, HydroLockId), VesselSharesInfo> =
 // Track hydromancers with completed TWS per round for efficient checking
 const HYDROMANCER_TWS_COMPLETED_PER_ROUND: Map<(RoundId, HydromancerId), bool> =
     Map::new("hydromancer_tws_completed_per_round");
+
+const HYDROMANCER_REWARDS_BY_TRIBUTE: Map<(HydromancerId, RoundId, TributeId), Coin> =
+    Map::new("hydromancer_rewards_by_tribute");
+
+// Insert new rewards to hydromancer
+// If the hydromancer already has a reward for the tribute => error
+// If the hydromancer doesn't have a reward for the tribute => insert new reward
+pub fn add_new_rewards_to_hydromancer(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    tribute_id: TributeId,
+    reward: Coin,
+) -> StdResult<()> {
+    let tribute_reward =
+        HYDROMANCER_REWARDS_BY_TRIBUTE.may_load(storage, (hydromancer_id, round_id, tribute_id))?;
+    if tribute_reward.is_some() {
+        return Err(StdError::generic_err("Tribute reward already exists"));
+    }
+    HYDROMANCER_REWARDS_BY_TRIBUTE.save(storage, (hydromancer_id, round_id, tribute_id), &reward)
+}
 
 pub fn initialize_sequences(storage: &mut dyn Storage) -> StdResult<()> {
     USER_NEXT_ID.save(storage, &0)?;

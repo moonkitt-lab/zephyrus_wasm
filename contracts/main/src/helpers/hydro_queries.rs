@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::iter::Map;
+
 use crate::helpers::vectors::join_u64_ids;
 use cosmwasm_std::{Deps, Env, StdError, StdResult};
 use hydro_interface::msgs::{
@@ -128,25 +131,25 @@ pub fn query_hydro_derivative_token_info_providers(
     deps: &Deps,
     constants: &Constants,
     round_id: RoundId,
-) -> StdResult<Vec<DenomInfoResponse>> {
+) -> StdResult<HashMap<String, DenomInfoResponse>> {
     let token_info_providers: TokenInfoProvidersResponse = deps.querier.query_wasm_smart(
         constants.hydro_config.hydro_contract_address.to_string(),
         &HydroQueryMsg::TokenInfoProviders {},
     )?;
-    let mut providers: Vec<DenomInfoResponse> = vec![];
+    let mut providers: HashMap<String, DenomInfoResponse> = HashMap::new();
 
     for provider in token_info_providers.providers {
         if let TokenInfoProvider::Derivative(derivative) = provider {
             for (round, denom_info) in derivative.cache {
                 if round == round_id {
-                    providers.push(denom_info);
+                    providers.insert(denom_info.token_group_id.clone(), denom_info);
                 } else {
-                    // DenomInfo is not cached for the round, query the provider contract to get the denom info for the round
+                    // DenomInfo is not cached for the round in hydro, query the provider contract to get the denom info for the round
                     let denom_info: DenomInfoResponse = deps.querier.query_wasm_smart(
                         derivative.contract.clone(),
                         &DerivativeTokenInfoProviderQueryMsg::DenomInfo { round_id },
                     )?;
-                    providers.push(denom_info);
+                    providers.insert(denom_info.token_group_id.clone(), denom_info);
                 }
             }
         }

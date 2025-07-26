@@ -92,4 +92,12 @@ pub enum ContractError {
     },
     #[error("Insufficient balance,the tribute {tribute_id} is not what was expected.")]
     InsufficientTributeReceived { tribute_id: u64 },
+
+    #[error(
+        "Token info provider not found for token group id: {token_group_id} for round {round_id}"
+    )]
+    TokenInfoProviderNotFound {
+        token_group_id: String,
+        round_id: u64,
+    },
 }

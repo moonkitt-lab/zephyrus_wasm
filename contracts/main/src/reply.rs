@@ -1,5 +1,5 @@
 use cosmwasm_std::{
-    entry_point, from_json, AllBalanceResponse, BankMsg, BankQuery, Coin, DepsMut, Env,
+    entry_point, from_json, AllBalanceResponse, BankMsg, BankQuery, Coin, Decimal, DepsMut, Env,
     QueryRequest, Reply, Response as CwResponse, StdError,
 };
 use std::collections::HashMap;
@@ -8,11 +8,15 @@ use neutron_sdk::bindings::msg::NeutronMsg;
 
 use zephyrus_core::msgs::{
     ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, HydromancerId,
-    RefreshTimeWeightedSharesReplyPayload, RoundId, VoteReplyPayload, DECOMMISSION_REPLY_ID,
-    REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
+    RefreshTimeWeightedSharesReplyPayload, RoundId, VoteReplyPayload, CLAIM_TRIBUTE_REPLY_ID,
+    DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
 };
 use zephyrus_core::state::VesselHarbor;
 
+use crate::helpers::hydro_queries::query_hydro_derivative_token_info_providers;
+use crate::helpers::rewards::{
+    calcul_total_voting_power_of_hydromancer_on_proposal, calcul_total_voting_power_on_proposal,
+};
 use crate::{
     errors::ContractError,
     helpers::{
@@ -53,13 +57,13 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
             let payload: RefreshTimeWeightedSharesReplyPayload = from_json(&reply.payload)?;
             handle_refresh_time_weighted_shares_reply(deps, payload)
         }
-        _ => Err(ContractError::CustomError {
-            msg: "Unknown reply id".to_string(),
-        }),
         CLAIM_TRIBUTE_REPLY_ID => {
             let payload: ClaimTributeReplyPayload = from_json(&reply.payload)?;
             handle_claim_tribute_reply(deps, env, payload)
         }
+        _ => Err(ContractError::CustomError {
+            msg: "Unknown reply id".to_string(),
+        }),
     }
 }
 
@@ -68,20 +72,59 @@ pub fn handle_claim_tribute_reply(
     env: Env,
     payload: ClaimTributeReplyPayload,
 ) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
     let balance_query = deps
         .querier
-        .query_balance(env.contract.address, payload.amount.denom)?;
+        .query_balance(env.contract.address, payload.amount.denom.clone())?;
     let balance_expected = payload
         .balance_before_claim
         .amount
-        .strict_add(payload.amount.amount);
-    if balance_query.amount < balance_expected {
+        .strict_add(payload.amount.amount.clone());
+
+    if balance_query.amount != balance_expected {
         return Err(ContractError::InsufficientTributeReceived {
             tribute_id: payload.tribute_id,
         });
     }
 
     // TODO: Calcul and store portion of rewards for each hydromancer
+    let token_info_provider =
+        query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, payload.round_id)?;
+    let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
+        deps.storage,
+        payload.proposal_id,
+        payload.round_id,
+        &token_info_provider,
+    )?;
+    let hydromancer_ids = state::get_all_hydromancers(deps.storage)?;
+    for hydromancer_id in hydromancer_ids {
+        let hydromancer_voting_power = calcul_total_voting_power_of_hydromancer_on_proposal(
+            deps.storage,
+            hydromancer_id,
+            payload.proposal_id,
+            payload.round_id,
+            &token_info_provider,
+        )?;
+        let hydromancer_portion = hydromancer_voting_power
+            .checked_div(total_proposal_voting_power)
+            .map_err(|_| ContractError::CustomError {
+                msg: "Division by zero in voting power calculation".to_string(),
+            })?;
+        let hydromancer_reward = Decimal::from_ratio(payload.amount.amount.clone(), 1u128)
+            .saturating_mul(hydromancer_portion)
+            .to_uint_floor();
+
+        state::add_new_rewards_to_hydromancer(
+            deps.storage,
+            hydromancer_id,
+            payload.round_id,
+            payload.tribute_id,
+            Coin {
+                denom: payload.amount.denom.clone(),
+                amount: hydromancer_reward,
+            },
+        )?;
+    }
 
     // TODO: Then Distribute portion of this tribute tp the initial user (info.sender) has a vessel concerned by the tribute
 

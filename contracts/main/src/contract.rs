@@ -16,7 +16,10 @@ use zephyrus_core::msgs::{
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
-use crate::helpers::hydro_queries::query_hydro_outstanding_tribute_claims;
+use crate::helpers::hydro_queries::{
+    query_hydro_derivative_token_info_providers, query_hydro_outstanding_tribute_claims,
+};
+use crate::helpers::rewards::build_claim_tribute_sub_msg;
 use crate::helpers::tws::reset_vessel_vote;
 use crate::helpers::validation::validate_user_controls_vessel;
 use crate::{
@@ -178,40 +181,19 @@ fn execute_claim(
         let outstanding_tributes = outstanding_tributes.unwrap();
         let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
         for outstanding_tribute in outstanding_tributes.claims {
-            let claim_msg = HydroExecuteMsg::ClaimTribute {
+            let sub_msg = build_claim_tribute_sub_msg(
                 round_id,
                 tranche_id,
-                tribute_id: outstanding_tribute.tribute_id,
-                voter_address: contract_address.to_string(),
-            };
-            let execute_claim_msg = WasmMsg::Execute {
-                contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
-                msg: to_json_binary(&claim_msg)?,
-                funds: vec![],
-            };
-            let balance_before_claim = balances
-                .iter()
-                .find(|balance| balance.denom == outstanding_tribute.amount.denom)
-                .cloned()
-                .unwrap_or(Coin {
-                    denom: outstanding_tribute.amount.denom.clone(),
-                    amount: Uint128::zero(),
-                });
-
-            let payload = ClaimTributeReplyPayload {
-                proposal_id: outstanding_tribute.proposal_id,
-                tribute_id: outstanding_tribute.tribute_id,
-                amount: outstanding_tribute.amount.clone(),
-                balance_before_claim,
-                vessel_ids: vessel_ids.clone(),
-            };
-
-            let sub_msg: SubMsg<NeutronMsg> =
-                SubMsg::reply_on_success(execute_claim_msg, CLAIM_TRIBUTE_REPLY_ID)
-                    .with_payload(to_json_binary(&payload)?);
+                &vessel_ids,
+                &constants,
+                &contract_address,
+                &balances,
+                &outstanding_tribute,
+            )?;
 
             response = response.add_submessage(sub_msg);
 
+            // Update virtual balances for checking purposes
             if let Some(balance) = balances
                 .iter_mut()
                 .find(|balance| balance.denom == outstanding_tribute.amount.denom)

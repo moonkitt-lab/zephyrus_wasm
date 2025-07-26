@@ -9,6 +9,7 @@ pub type HydroProposalId = u64;
 pub type TrancheId = u64;
 pub type RoundId = u64;
 pub type UserControl = bool;
+pub type TributeId = u64;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -181,6 +182,8 @@ pub struct DecommissionVesselsReplyPayload {
 pub struct ClaimTributeReplyPayload {
     pub proposal_id: u64,
     pub tribute_id: u64,
+    pub round_id: u64,
+    pub tranche_id: u64,
     pub amount: Coin,
     pub balance_before_claim: Coin,
     pub vessel_ids: Vec<u64>,

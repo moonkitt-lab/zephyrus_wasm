@@ -5,7 +5,8 @@ use hydro_interface::msgs::{DenomInfoResponse, ExecuteMsg as HydroExecuteMsg};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::{
     msgs::{
-        ClaimTributeReplyPayload, HydroProposalId, HydromancerId, RoundId, CLAIM_TRIBUTE_REPLY_ID,
+        ClaimTributeReplyPayload, HydroLockId, HydroProposalId, HydromancerId, RoundId,
+        CLAIM_TRIBUTE_REPLY_ID,
     },
     state::Constants,
 };
@@ -78,6 +79,32 @@ pub fn calcul_total_voting_power_of_hydromancer_on_proposal(
     Ok(total_voting_power)
 }
 
+pub fn calcul_total_voting_power_of_hydromancer_for_locked_rounds(
+    storage: &dyn Storage,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    locked_rounds: u64,
+    token_info_provider: &HashMap<String, DenomInfoResponse>,
+) -> Result<Decimal, ContractError> {
+    let list_tws =
+        state::get_hydromancer_time_weighted_shares_by_round(storage, round_id, hydromancer_id)?;
+    let mut total_voting_power = Decimal::zero();
+    for ((locked_round, token_group_id), tws) in list_tws {
+        if locked_round < locked_rounds {
+            continue;
+        }
+        let token_info = token_info_provider.get(&token_group_id).ok_or(
+            ContractError::TokenInfoProviderNotFound {
+                token_group_id: token_group_id.clone(),
+                round_id: round_id,
+            },
+        )?;
+        total_voting_power = total_voting_power
+            .saturating_add(Decimal::from_ratio(tws, 1u128).saturating_mul(token_info.ratio));
+    }
+    Ok(total_voting_power)
+}
+
 pub fn calcul_total_voting_power_on_proposal(
     storage: &dyn Storage,
     proposal_id: HydroProposalId,
@@ -97,4 +124,22 @@ pub fn calcul_total_voting_power_on_proposal(
             .saturating_add(Decimal::from_ratio(tws, 1u128).saturating_mul(token_info.ratio));
     }
     Ok(total_voting_power)
+}
+
+pub fn calcul_voting_power_of_vessel(
+    storage: &dyn Storage,
+    vessel_id: HydroLockId,
+    round_id: RoundId,
+    token_info_provider: &HashMap<String, DenomInfoResponse>,
+) -> Result<Decimal, ContractError> {
+    let vessel_share_info = state::get_vessel_shares_info(storage, round_id, vessel_id)?;
+    let token_info = token_info_provider
+        .get(&vessel_share_info.token_group_id)
+        .ok_or(ContractError::TokenInfoProviderNotFound {
+            token_group_id: vessel_share_info.token_group_id.clone(),
+            round_id: round_id,
+        })?;
+    let voting_power = Decimal::from_ratio(vessel_share_info.time_weighted_shares, 1u128)
+        .saturating_mul(token_info.ratio);
+    Ok(voting_power)
 }

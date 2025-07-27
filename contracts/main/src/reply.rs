@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     entry_point, from_json, AllBalanceResponse, BankMsg, BankQuery, Coin, Decimal, DepsMut, Env,
-    QueryRequest, Reply, Response as CwResponse, StdError,
+    QueryRequest, Reply, Response as CwResponse, StdError, Uint128,
 };
 use std::collections::HashMap;
 
@@ -16,7 +16,9 @@ use zephyrus_core::state::VesselHarbor;
 use crate::helpers::hydro_queries::query_hydro_derivative_token_info_providers;
 use crate::helpers::rewards::{
     calcul_total_voting_power_of_hydromancer_on_proposal, calcul_total_voting_power_on_proposal,
+    calcul_voting_power_of_vessel,
 };
+use crate::helpers::validation::validate_user_owns_vessels;
 use crate::{
     errors::ContractError,
     helpers::{
@@ -126,7 +128,41 @@ pub fn handle_claim_tribute_reply(
         )?;
     }
 
-    // TODO: Then Distribute portion of this tribute tp the initial user (info.sender) has a vessel concerned by the tribute
+    // TODO: Then Distribute portion of this tribute tp the initial user (info.sender) has a vessel concerned by the tribut
+    let mut amount_to_distribute = Decimal::zero();
+
+    for vessel_id in payload.vessel_ids {
+        let vessel = state::get_vessel(deps.storage, vessel_id)?;
+        let voting_power = calcul_voting_power_of_vessel(
+            deps.storage,
+            vessel_id,
+            payload.round_id,
+            &token_info_provider,
+        )?;
+        if vessel.is_under_user_control() {
+            let vessel_harbor = state::get_harbor_of_vessel(
+                deps.storage,
+                payload.tranche_id,
+                payload.round_id,
+                vessel_id,
+            )?;
+            if vessel_harbor.is_some() {
+                let vessel_harbor = vessel_harbor.unwrap();
+
+                if vessel_harbor == payload.proposal_id {
+                    let portion = voting_power
+                        .checked_div(total_proposal_voting_power)
+                        .map_err(|_| ContractError::CustomError {
+                            msg: "Division by zero in voting power calculation".to_string(),
+                        })?
+                        .saturating_mul(Decimal::from_ratio(payload.amount.amount, 1u128));
+                    amount_to_distribute = amount_to_distribute.saturating_add(portion);
+                }
+            }
+        } else {
+            // Vessel is under hydromancer control, we don't care if it was used or not, it take a portion of hydromancer rewards
+        }
+    }
 
     Ok(Response::new().add_attribute("action", "handle_claim_tribute_reply"))
 }

@@ -164,6 +164,7 @@ fn execute_claim(
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
+    validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
     let contract_address = env.contract.address.clone();
     // Check if zephyrus has outstanding tributes to claim
     let outstanding_tributes = query_hydro_outstanding_tribute_claims(

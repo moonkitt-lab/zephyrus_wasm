@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 use std::iter::Map;
 
+use crate::errors::ContractError;
 use crate::helpers::vectors::join_u64_ids;
 use cosmwasm_std::{Deps, Env, StdError, StdResult};
 use hydro_interface::msgs::{
     CurrentRoundResponse, DenomInfoResponse, DerivativeTokenInfoProviderQueryMsg,
     HydroConstantsResponse, HydroQueryMsg, LockupWithPerTrancheInfo, LockupsSharesResponse,
-    OutstandingTributeClaimsResponse, Proposal, ProposalResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse,
-    TranchesResponse,
+    OutstandingTributeClaimsResponse, Proposal, ProposalResponse, RoundProposalsResponse,
+    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider,
+    TokenInfoProvidersResponse, TranchesResponse,
 };
 use zephyrus_core::msgs::{RoundId, TrancheId};
 use zephyrus_core::state::Constants;
@@ -173,4 +174,46 @@ pub fn query_hydro_proposal(
         },
     )?;
     Ok(proposal.proposal)
+}
+
+pub fn query_hydro_round_all_proposals(
+    deps: &Deps,
+    constants: &Constants,
+    round_id: u64,
+    tranche_id: u64,
+) -> Result<Vec<Proposal>, ContractError> {
+    let mut all_proposals = Vec::new();
+    let mut start_from = 0u32;
+    let limit = 100u32;
+    let max_iterations = 100; // Éviter les boucles infinies
+    let mut iteration = 0;
+
+    while iteration < max_iterations {
+        let response: RoundProposalsResponse = deps.querier.query_wasm_smart(
+            constants.hydro_config.hydro_contract_address.clone(),
+            &HydroQueryMsg::RoundProposals {
+                round_id,
+                tranche_id,
+                start_from,
+                limit,
+            },
+        )?;
+
+        all_proposals.extend(response.proposals.clone());
+
+        if response.proposals.len() < limit as usize {
+            break;
+        }
+
+        start_from += limit;
+        iteration += 1;
+    }
+
+    if iteration >= max_iterations {
+        return Err(ContractError::CustomError {
+            msg: "Too many proposals to fetch".to_string(),
+        });
+    }
+
+    Ok(all_proposals)
 }

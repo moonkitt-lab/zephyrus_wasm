@@ -281,3 +281,46 @@ pub fn allocate_rewards_to_hydromancer(
     )?;
     Ok(())
 }
+
+pub fn calculate_rewards_for_vessels_on_tribute(
+    deps: DepsMut<'_>,
+    vessel_ids: Vec<u64>,
+    tribute_id: TributeId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    proposal_id: HydroProposalId,
+    tribute_rewards: Coin,
+    constants: zephyrus_core::state::Constants,
+    token_info_provider: HashMap<String, hydro_interface::msgs::DenomInfoResponse>,
+    total_proposal_voting_power: Decimal,
+) -> Result<Decimal, ContractError> {
+    let mut amount_to_distribute = Decimal::zero();
+    for vessel_id in vessel_ids.clone() {
+        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
+            let proposal_vessel_rewards = calcul_rewards_amount_for_vessel_on_proposal(
+                &deps,
+                round_id,
+                tranche_id,
+                proposal_id,
+                tribute_id,
+                &constants,
+                &token_info_provider,
+                total_proposal_voting_power,
+                tribute_rewards.clone(),
+                vessel_id,
+            )?;
+            amount_to_distribute =
+                amount_to_distribute.saturating_add(proposal_vessel_rewards.clone());
+            state::save_vessel_tribute_claim(
+                deps.storage,
+                vessel_id,
+                tribute_id,
+                Coin {
+                    denom: tribute_rewards.denom.clone(),
+                    amount: proposal_vessel_rewards.to_uint_floor(),
+                },
+            )?;
+        }
+    }
+    Ok(amount_to_distribute)
+}

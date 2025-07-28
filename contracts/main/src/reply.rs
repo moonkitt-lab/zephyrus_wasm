@@ -8,7 +8,7 @@ use neutron_sdk::bindings::msg::NeutronMsg;
 
 use zephyrus_core::msgs::{
     ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, HydroProposalId, HydromancerId,
-    RefreshTimeWeightedSharesReplyPayload, RoundId, TrancheId, VoteReplyPayload,
+    RefreshTimeWeightedSharesReplyPayload, RoundId, TrancheId, TributeId, VoteReplyPayload,
     CLAIM_TRIBUTE_REPLY_ID, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID,
     VOTE_REPLY_ID,
 };
@@ -21,7 +21,7 @@ use crate::helpers::rewards::{
     allocate_rewards_to_hydromancer, calcul_rewards_amount_for_vessel_on_proposal,
     calcul_total_voting_power_of_hydromancer_for_locked_rounds,
     calcul_total_voting_power_of_hydromancer_on_proposal, calcul_total_voting_power_on_proposal,
-    calcul_voting_power_of_vessel,
+    calcul_voting_power_of_vessel, calculate_rewards_for_vessels_on_tribute,
 };
 use crate::helpers::validation::validate_user_owns_vessels;
 use crate::{
@@ -115,35 +115,18 @@ pub fn handle_claim_tribute_reply(
     }
 
     // Cumulate rewards for each vessel
-    let mut amount_to_distribute = Decimal::zero();
-
-    for vessel_id in payload.vessel_ids {
-        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, payload.tribute_id) {
-            let proposal_vessel_rewards = calcul_rewards_amount_for_vessel_on_proposal(
-                &deps,
-                payload.round_id,
-                payload.tranche_id,
-                payload.proposal_id,
-                payload.tribute_id,
-                &constants,
-                &token_info_provider,
-                total_proposal_voting_power,
-                payload.amount.clone(),
-                vessel_id,
-            )?;
-            amount_to_distribute =
-                amount_to_distribute.saturating_add(proposal_vessel_rewards.clone());
-            state::save_vessel_tribute_claim(
-                deps.storage,
-                vessel_id,
-                payload.tribute_id,
-                Coin {
-                    denom: payload.amount.denom.clone(),
-                    amount: proposal_vessel_rewards.to_uint_floor(),
-                },
-            )?;
-        }
-    }
+    let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
+        deps,
+        payload.vessel_ids.clone(),
+        payload.tribute_id,
+        payload.tranche_id,
+        payload.round_id,
+        payload.proposal_id,
+        payload.amount.clone(),
+        constants,
+        token_info_provider,
+        total_proposal_voting_power,
+    )?;
     let mut response = Response::new();
     if !amount_to_distribute.is_zero() {
         let send_msg = BankMsg::Send {

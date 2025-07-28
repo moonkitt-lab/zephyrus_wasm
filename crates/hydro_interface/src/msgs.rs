@@ -64,11 +64,27 @@ pub enum HydroQueryMsg {
         tranche_id: u64,
         proposal_id: u64,
     },
+    RoundProposals {
+        round_id: u64,
+        tranche_id: u64,
+        start_from: u32,
+        limit: u32,
+    },
 }
 
 #[cw_serde]
 pub enum DerivativeTokenInfoProviderQueryMsg {
     DenomInfo { round_id: u64 },
+}
+
+#[cw_serde]
+pub enum TributeQueryMsg {
+    ProposalTributes {
+        round_id: u64,
+        proposal_id: u64,
+        start_from: u32,
+        limit: u32,
+    },
 }
 
 #[cw_serde]
@@ -267,4 +283,27 @@ pub struct Proposal {
 #[cw_serde]
 pub struct ProposalResponse {
     pub proposal: Proposal,
+}
+
+#[cw_serde]
+pub struct RoundProposalsResponse {
+    pub proposals: Vec<Proposal>,
+}
+
+#[cw_serde]
+pub struct Tribute {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub tribute_id: u64,
+    pub depositor: Addr,
+    pub funds: Coin,
+    pub refunded: bool,
+    pub creation_time: Timestamp,
+    pub creation_round: u64,
+}
+
+#[cw_serde]
+pub struct ProposalTributesResponse {
+    pub tributes: Vec<Tribute>,
 }

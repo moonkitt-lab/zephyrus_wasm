@@ -89,6 +89,12 @@ impl MockWasmQuerier {
                         tranche_id: _,
                         proposal_id: _,
                     } => Err(StdError::generic_err("unsupported query type")),
+                    HydroQueryMsg::RoundProposals {
+                        round_id: _,
+                        tranche_id: _,
+                        start_from: _,
+                        limit: _,
+                    } => Err(StdError::generic_err("unsupported query type")),
                 };
 
                 SystemResult::Ok(ContractResult::Ok(response.unwrap()))

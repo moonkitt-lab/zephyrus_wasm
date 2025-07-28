@@ -6,7 +6,7 @@ use cosmwasm_std::{Deps, Env, StdError, StdResult};
 use hydro_interface::msgs::{
     CurrentRoundResponse, DenomInfoResponse, DerivativeTokenInfoProviderQueryMsg,
     HydroConstantsResponse, HydroQueryMsg, LockupWithPerTrancheInfo, LockupsSharesResponse,
-    OutstandingTributeClaimsResponse, SpecificUserLockupsResponse,
+    OutstandingTributeClaimsResponse, Proposal, ProposalResponse, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse,
     TranchesResponse,
 };
@@ -155,4 +155,22 @@ pub fn query_hydro_derivative_token_info_providers(
         }
     }
     Ok(providers)
+}
+
+pub fn query_hydro_proposal(
+    deps: &Deps,
+    constants: &Constants,
+    round_id: u64,
+    tranche_id: u64,
+    proposal_id: u64,
+) -> StdResult<Proposal> {
+    let proposal: ProposalResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::Proposal {
+            round_id,
+            tranche_id,
+            proposal_id,
+        },
+    )?;
+    Ok(proposal.proposal)
 }

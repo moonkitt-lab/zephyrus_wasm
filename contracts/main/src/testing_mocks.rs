@@ -4,8 +4,8 @@ use cosmwasm_std::{
     coin, from_json,
     testing::{MockApi, MockQuerier as StdMockQuerier, MockStorage},
     to_json_binary, Addr, Binary, ContractResult, Decimal, Empty, GrpcQuery, OwnedDeps, Querier,
-    QuerierResult, QueryRequest, StdResult, SystemError, SystemResult, Timestamp, Uint128,
-    WasmQuery,
+    QuerierResult, QueryRequest, StdError, StdResult, SystemError, SystemResult, Timestamp,
+    Uint128, WasmQuery,
 };
 use hydro_interface::msgs::{
     CollectionInfo, CurrentRoundResponse, HydroConstants, HydroConstantsResponse, HydroQueryMsg,
@@ -84,6 +84,11 @@ impl MockWasmQuerier {
                     HydroQueryMsg::TokenInfoProviders {} => {
                         to_json_binary(&TokenInfoProvidersResponse { providers: vec![] })
                     }
+                    HydroQueryMsg::Proposal {
+                        round_id: _,
+                        tranche_id: _,
+                        proposal_id: _,
+                    } => Err(StdError::generic_err("unsupported query type")),
                 };
 
                 SystemResult::Ok(ContractResult::Ok(response.unwrap()))

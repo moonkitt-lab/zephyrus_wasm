@@ -186,6 +186,7 @@ fn execute_claim(
                 round_id,
                 tranche_id,
                 &vessel_ids,
+                &info.sender,
                 &constants,
                 &contract_address,
                 &balances,

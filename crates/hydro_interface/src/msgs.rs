@@ -59,6 +59,11 @@ pub enum HydroQueryMsg {
         tranche_id: u64,
     },
     TokenInfoProviders {},
+    Proposal {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+    },
 }
 
 #[cw_serde]
@@ -244,4 +249,22 @@ pub enum TokenInfoProvider {
 #[cw_serde]
 pub struct TokenInfoProvidersResponse {
     pub providers: Vec<TokenInfoProvider>,
+}
+
+#[cw_serde]
+pub struct Proposal {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub title: String,
+    pub description: String,
+    pub power: Uint128,
+    pub percentage: Uint128,
+    pub deployment_duration: u64, // number of rounds liquidity is allocated excluding voting round.
+    pub minimum_atom_liquidity_request: Uint128,
+}
+
+#[cw_serde]
+pub struct ProposalResponse {
+    pub proposal: Proposal,
 }

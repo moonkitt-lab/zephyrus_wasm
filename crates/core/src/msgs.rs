@@ -186,5 +186,6 @@ pub struct ClaimTributeReplyPayload {
     pub tranche_id: u64,
     pub amount: Coin,
     pub balance_before_claim: Coin,
+    pub vessels_owner: Addr,
     pub vessel_ids: Vec<u64>,
 }

@@ -7,14 +7,19 @@ use std::collections::HashMap;
 use neutron_sdk::bindings::msg::NeutronMsg;
 
 use zephyrus_core::msgs::{
-    ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, HydromancerId,
-    RefreshTimeWeightedSharesReplyPayload, RoundId, VoteReplyPayload, CLAIM_TRIBUTE_REPLY_ID,
-    DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
+    ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, HydroProposalId, HydromancerId,
+    RefreshTimeWeightedSharesReplyPayload, RoundId, TrancheId, VoteReplyPayload,
+    CLAIM_TRIBUTE_REPLY_ID, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID,
+    VOTE_REPLY_ID,
 };
 use zephyrus_core::state::VesselHarbor;
 
-use crate::helpers::hydro_queries::query_hydro_derivative_token_info_providers;
+use crate::helpers::hydro_queries::{
+    query_hydro_derivative_token_info_providers, query_hydro_proposal,
+};
 use crate::helpers::rewards::{
+    allocate_rewards_to_hydromancer, calcul_rewards_amount_for_vessel_on_proposal,
+    calcul_total_voting_power_of_hydromancer_for_locked_rounds,
     calcul_total_voting_power_of_hydromancer_on_proposal, calcul_total_voting_power_on_proposal,
     calcul_voting_power_of_vessel,
 };
@@ -70,7 +75,7 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
 }
 
 pub fn handle_claim_tribute_reply(
-    deps: DepsMut,
+    mut deps: DepsMut<'_>,
     env: Env,
     payload: ClaimTributeReplyPayload,
 ) -> Result<Response, ContractError> {
@@ -100,71 +105,58 @@ pub fn handle_claim_tribute_reply(
     )?;
     let hydromancer_ids = state::get_all_hydromancers(deps.storage)?;
     for hydromancer_id in hydromancer_ids {
-        let hydromancer_voting_power = calcul_total_voting_power_of_hydromancer_on_proposal(
-            deps.storage,
-            hydromancer_id,
-            payload.proposal_id,
-            payload.round_id,
+        allocate_rewards_to_hydromancer(
+            &mut deps,
+            &payload,
             &token_info_provider,
-        )?;
-        let hydromancer_portion = hydromancer_voting_power
-            .checked_div(total_proposal_voting_power)
-            .map_err(|_| ContractError::CustomError {
-                msg: "Division by zero in voting power calculation".to_string(),
-            })?;
-        let hydromancer_reward = Decimal::from_ratio(payload.amount.amount.clone(), 1u128)
-            .saturating_mul(hydromancer_portion)
-            .to_uint_floor();
-
-        state::add_new_rewards_to_hydromancer(
-            deps.storage,
+            total_proposal_voting_power,
             hydromancer_id,
-            payload.round_id,
-            payload.tribute_id,
-            Coin {
-                denom: payload.amount.denom.clone(),
-                amount: hydromancer_reward,
-            },
         )?;
     }
 
-    // TODO: Then Distribute portion of this tribute tp the initial user (info.sender) has a vessel concerned by the tribut
+    // Cumulate rewards for each vessel
     let mut amount_to_distribute = Decimal::zero();
 
     for vessel_id in payload.vessel_ids {
-        let vessel = state::get_vessel(deps.storage, vessel_id)?;
-        let voting_power = calcul_voting_power_of_vessel(
-            deps.storage,
-            vessel_id,
-            payload.round_id,
-            &token_info_provider,
-        )?;
-        if vessel.is_under_user_control() {
-            let vessel_harbor = state::get_harbor_of_vessel(
-                deps.storage,
-                payload.tranche_id,
+        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, payload.tribute_id) {
+            let proposal_vessel_rewards = calcul_rewards_amount_for_vessel_on_proposal(
+                &deps,
                 payload.round_id,
+                payload.tranche_id,
+                payload.proposal_id,
+                payload.tribute_id,
+                &constants,
+                &token_info_provider,
+                total_proposal_voting_power,
+                payload.amount.clone(),
                 vessel_id,
             )?;
-            if vessel_harbor.is_some() {
-                let vessel_harbor = vessel_harbor.unwrap();
-
-                if vessel_harbor == payload.proposal_id {
-                    let portion = voting_power
-                        .checked_div(total_proposal_voting_power)
-                        .map_err(|_| ContractError::CustomError {
-                            msg: "Division by zero in voting power calculation".to_string(),
-                        })?
-                        .saturating_mul(Decimal::from_ratio(payload.amount.amount, 1u128));
-                    amount_to_distribute = amount_to_distribute.saturating_add(portion);
-                }
-            }
-        } else {
-            // Vessel is under hydromancer control, we don't care if it was used or not, it take a portion of hydromancer rewards
+            amount_to_distribute =
+                amount_to_distribute.saturating_add(proposal_vessel_rewards.clone());
+            state::save_vessel_tribute_claim(
+                deps.storage,
+                vessel_id,
+                payload.tribute_id,
+                Coin {
+                    denom: payload.amount.denom.clone(),
+                    amount: proposal_vessel_rewards.to_uint_floor(),
+                },
+            )?;
         }
     }
+    let mut response = Response::new();
+    if !amount_to_distribute.is_zero() {
+        let send_msg = BankMsg::Send {
+            to_address: payload.vessels_owner.to_string(),
+            amount: vec![Coin {
+                denom: payload.amount.denom.clone(),
+                amount: amount_to_distribute.to_uint_floor(),
+            }],
+        };
+        response = response.add_message(send_msg);
+    }
 
-    Ok(Response::new().add_attribute("action", "handle_claim_tribute_reply"))
+    Ok(response.add_attribute("action", "handle_claim_tribute_reply"))
 }
 
 pub fn handle_refresh_time_weighted_shares_reply(

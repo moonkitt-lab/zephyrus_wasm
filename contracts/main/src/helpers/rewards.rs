@@ -1,22 +1,25 @@
 use std::collections::HashMap;
 
-use cosmwasm_std::{to_json_binary, Addr, Coin, Decimal, Storage, SubMsg, Uint128, WasmMsg};
+use cosmwasm_std::{
+    to_json_binary, Addr, Coin, Decimal, DepsMut, Storage, SubMsg, Uint128, WasmMsg,
+};
 use hydro_interface::msgs::{DenomInfoResponse, ExecuteMsg as HydroExecuteMsg};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::{
     msgs::{
-        ClaimTributeReplyPayload, HydroLockId, HydroProposalId, HydromancerId, RoundId,
-        CLAIM_TRIBUTE_REPLY_ID,
+        ClaimTributeReplyPayload, HydroLockId, HydroProposalId, HydromancerId, RoundId, TrancheId,
+        TributeId, CLAIM_TRIBUTE_REPLY_ID,
     },
-    state::Constants,
+    state::{Constants, HydromancerTribute},
 };
 
-use crate::{errors::ContractError, state};
+use crate::{errors::ContractError, helpers::hydro_queries::query_hydro_proposal, state};
 
 pub fn build_claim_tribute_sub_msg(
     round_id: u64,
     tranche_id: u64,
     vessel_ids: &Vec<u64>,
+    owner: &Addr,
     constants: &Constants,
     contract_address: &Addr,
     balances: &Vec<Coin>,
@@ -48,6 +51,7 @@ pub fn build_claim_tribute_sub_msg(
         tranche_id: tranche_id,
         amount: outstanding_tribute.amount.clone(),
         balance_before_claim,
+        vessels_owner: owner.clone(),
         vessel_ids: vessel_ids.clone(),
     };
     let sub_msg: SubMsg<NeutronMsg> =
@@ -132,7 +136,12 @@ pub fn calcul_voting_power_of_vessel(
     round_id: RoundId,
     token_info_provider: &HashMap<String, DenomInfoResponse>,
 ) -> Result<Decimal, ContractError> {
-    let vessel_share_info = state::get_vessel_shares_info(storage, round_id, vessel_id)?;
+    // Vessel shares should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
+    let vessel_share_info = state::get_vessel_shares_info(storage, round_id, vessel_id);
+    if vessel_share_info.is_err() {
+        return Ok(Decimal::zero());
+    }
+    let vessel_share_info = vessel_share_info.unwrap();
     let token_info = token_info_provider
         .get(&vessel_share_info.token_group_id)
         .ok_or(ContractError::TokenInfoProviderNotFound {
@@ -142,4 +151,133 @@ pub fn calcul_voting_power_of_vessel(
     let voting_power = Decimal::from_ratio(vessel_share_info.time_weighted_shares, 1u128)
         .saturating_mul(token_info.ratio);
     Ok(voting_power)
+}
+
+pub fn calcul_rewards_amount_for_vessel_on_proposal(
+    deps: &DepsMut<'_>,
+    round_id: RoundId,
+    tranche_id: TrancheId,
+    proposal_id: HydroProposalId,
+    tribute_id: TributeId,
+    constants: &zephyrus_core::state::Constants,
+    token_info_provider: &HashMap<String, hydro_interface::msgs::DenomInfoResponse>,
+    total_proposal_voting_power: Decimal,
+    proposal_rewards: Coin,
+    vessel_id: u64,
+) -> Result<Decimal, ContractError> {
+    let vessel = state::get_vessel(deps.storage, vessel_id)?;
+    let voting_power =
+        calcul_voting_power_of_vessel(deps.storage, vessel_id, round_id, token_info_provider)?;
+
+    if vessel.is_under_user_control() {
+        let vessel_harbor =
+            state::get_harbor_of_vessel(deps.storage, tranche_id, round_id, vessel_id)?;
+        if vessel_harbor.is_some() {
+            let vessel_harbor = vessel_harbor.unwrap();
+
+            if vessel_harbor == proposal_id {
+                let portion = voting_power
+                    .checked_div(total_proposal_voting_power)
+                    .map_err(|_| ContractError::CustomError {
+                        msg: "Division by zero in voting power calculation".to_string(),
+                    })?
+                    .saturating_mul(Decimal::from_ratio(proposal_rewards.amount, 1u128));
+                return Ok(portion);
+            }
+        }
+        Ok(Decimal::zero())
+    } else {
+        // Vessel is under hydromancer control, we don't care if it was used or not, it take a portion of hydromancer rewards
+        let vessel_shares = state::get_vessel_shares_info(deps.storage, round_id, vessel_id)?;
+        let proposal =
+            query_hydro_proposal(&deps.as_ref(), constants, round_id, tranche_id, proposal_id)?;
+        if proposal.deployment_duration <= vessel_shares.locked_rounds {
+            let total_hydromancer_locked_rounds_voting_power =
+                calcul_total_voting_power_of_hydromancer_for_locked_rounds(
+                    deps.storage,
+                    vessel.hydromancer_id.unwrap(),
+                    round_id,
+                    proposal.deployment_duration,
+                    token_info_provider,
+                )?;
+            let rewards_allocated_to_hydromancer = state::get_hydromancer_rewards_by_tribute(
+                deps.storage,
+                vessel.hydromancer_id.unwrap(),
+                round_id,
+                tribute_id,
+            )?;
+
+            if let Some(rewards_allocated_to_hydromancer) = rewards_allocated_to_hydromancer {
+                let portion = voting_power
+                    .checked_div(total_hydromancer_locked_rounds_voting_power)
+                    .map_err(|_| ContractError::CustomError {
+                        msg: "Division by zero in voting power calculation".to_string(),
+                    })?
+                    .saturating_mul(Decimal::from_ratio(
+                        rewards_allocated_to_hydromancer.rewards_for_users.amount,
+                        1u128,
+                    ));
+                return Ok(portion);
+            }
+        }
+
+        Ok(Decimal::zero())
+    }
+}
+
+pub fn allocate_rewards_to_hydromancer(
+    deps: &mut DepsMut<'_>,
+    payload: &ClaimTributeReplyPayload,
+    token_info_provider: &HashMap<String, hydro_interface::msgs::DenomInfoResponse>,
+    total_proposal_voting_power: Decimal,
+    hydromancer_id: u64,
+) -> Result<(), ContractError> {
+    let hydromancer_voting_power = calcul_total_voting_power_of_hydromancer_on_proposal(
+        deps.storage,
+        hydromancer_id,
+        payload.proposal_id,
+        payload.round_id,
+        token_info_provider,
+    )?;
+    let hydromancer_portion = hydromancer_voting_power
+        .checked_div(total_proposal_voting_power)
+        .map_err(|_| ContractError::CustomError {
+            msg: "Division by zero in voting power calculation".to_string(),
+        })?;
+    let total_hydromancer_reward = Decimal::from_ratio(payload.amount.amount.clone(), 1u128)
+        .saturating_mul(hydromancer_portion);
+
+    let hydromancer = state::get_hydromancer(deps.storage, hydromancer_id)?;
+    let hydromancer_commission =
+        total_hydromancer_reward.saturating_mul(hydromancer.commission_rate);
+    let mut rewards_for_users = total_hydromancer_reward
+        .saturating_sub(hydromancer_commission)
+        .to_uint_floor();
+    let hydromancer_commission = hydromancer_commission.to_uint_floor();
+
+    let rest = payload
+        .amount
+        .amount
+        .saturating_sub(hydromancer_commission)
+        .saturating_sub(rewards_for_users);
+    // we add the rest to users rewards
+    rewards_for_users = rewards_for_users.checked_add(rest).unwrap();
+
+    state::add_new_rewards_to_hydromancer(
+        deps.storage,
+        hydromancer_id,
+        payload.round_id,
+        payload.tribute_id,
+        HydromancerTribute {
+            rewards_for_users: Coin {
+                denom: payload.amount.denom.clone(),
+                amount: rewards_for_users,
+            },
+            commission_for_hydromancer: Coin {
+                denom: payload.amount.denom.clone(),
+                amount: hydromancer_commission,
+            },
+        },
+    )?;
+    Ok(())
 }

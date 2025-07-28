@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::Addr;
+use cosmwasm_std::{Addr, Coin};
 
 use crate::msgs::UserControl;
 
@@ -48,4 +48,10 @@ pub struct VesselHarbor {
 pub struct HydroConfig {
     pub hydro_contract_address: Addr,
     pub hydro_tribute_contract_address: Addr,
+}
+
+#[cw_serde]
+pub struct HydromancerTribute {
+    pub rewards_for_users: Coin,
+    pub commission_for_hydromancer: Coin,
 }

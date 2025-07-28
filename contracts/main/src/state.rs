@@ -4,7 +4,10 @@ use cw_storage_plus::{Bound, Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{
     msgs::{HydroProposalId, RoundId, TrancheId, TributeId, UserId},
-    state::{Constants, HydroLockId, HydromancerId, Vessel, VesselHarbor, VesselSharesInfo},
+    state::{
+        Constants, HydroLockId, HydromancerId, HydromancerTribute, Vessel, VesselHarbor,
+        VesselSharesInfo,
+    },
 };
 
 use crate::errors::ContractError;
@@ -78,8 +81,14 @@ const VESSEL_SHARES_INFO: Map<(RoundId, HydroLockId), VesselSharesInfo> =
 const HYDROMANCER_TWS_COMPLETED_PER_ROUND: Map<(RoundId, HydromancerId), bool> =
     Map::new("hydromancer_tws_completed_per_round");
 
-const HYDROMANCER_REWARDS_BY_TRIBUTE: Map<(HydromancerId, RoundId, TributeId), Coin> =
+const HYDROMANCER_REWARDS_BY_TRIBUTE: Map<(HydromancerId, RoundId, TributeId), HydromancerTribute> =
     Map::new("hydromancer_rewards_by_tribute");
+
+// Importantly, the VESSEL_TRIBUTE_CLAIMS for a lock_id and tribute_id being present at all means the user has claimed that tribute.
+// VESSEL_TRIBUTE_CLAIMS: key(hydro_lock_id, tribute_id) -> amount_claimed
+// Kept for historical information
+pub const VESSEL_TRIBUTE_CLAIMS: Map<(HydroLockId, TributeId), Coin> =
+    Map::new("vessel_tribute_claims");
 
 // Insert new rewards to hydromancer
 // If the hydromancer already has a reward for the tribute => error
@@ -89,16 +98,45 @@ pub fn add_new_rewards_to_hydromancer(
     hydromancer_id: HydromancerId,
     round_id: RoundId,
     tribute_id: TributeId,
-    reward: Coin,
+    hydromancer_tribute: HydromancerTribute,
 ) -> StdResult<()> {
     let tribute_reward =
         HYDROMANCER_REWARDS_BY_TRIBUTE.may_load(storage, (hydromancer_id, round_id, tribute_id))?;
     if tribute_reward.is_some() {
         return Err(StdError::generic_err("Tribute reward already exists"));
     }
-    HYDROMANCER_REWARDS_BY_TRIBUTE.save(storage, (hydromancer_id, round_id, tribute_id), &reward)
+    HYDROMANCER_REWARDS_BY_TRIBUTE.save(
+        storage,
+        (hydromancer_id, round_id, tribute_id),
+        &hydromancer_tribute,
+    )
 }
 
+pub fn save_vessel_tribute_claim(
+    storage: &mut dyn Storage,
+    hydro_lock_id: HydroLockId,
+    tribute_id: TributeId,
+    amount: Coin,
+) -> StdResult<()> {
+    VESSEL_TRIBUTE_CLAIMS.save(storage, (hydro_lock_id, tribute_id), &amount)
+}
+
+pub fn is_vessel_tribute_claimed(
+    storage: &dyn Storage,
+    hydro_lock_id: HydroLockId,
+    tribute_id: TributeId,
+) -> bool {
+    VESSEL_TRIBUTE_CLAIMS.has(storage, (hydro_lock_id, tribute_id))
+}
+
+pub fn get_hydromancer_rewards_by_tribute(
+    storage: &dyn Storage,
+    hydromancer_id: HydromancerId,
+    round_id: RoundId,
+    tribute_id: TributeId,
+) -> StdResult<Option<HydromancerTribute>> {
+    HYDROMANCER_REWARDS_BY_TRIBUTE.may_load(storage, (hydromancer_id, round_id, tribute_id))
+}
 pub fn initialize_sequences(storage: &mut dyn Storage) -> StdResult<()> {
     USER_NEXT_ID.save(storage, &0)?;
     HYDROMANCER_NEXT_ID.save(storage, &0)

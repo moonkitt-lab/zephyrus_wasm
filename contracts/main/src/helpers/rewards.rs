@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use cosmwasm_std::{
-    to_json_binary, Addr, Coin, Decimal, DepsMut, Storage, SubMsg, Uint128, WasmMsg,
+    to_json_binary, Addr, BankMsg, Coin, Decimal, DepsMut, Storage, SubMsg, Uint128, WasmMsg,
 };
 use hydro_interface::msgs::{DenomInfoResponse, ExecuteMsg as HydroExecuteMsg};
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -13,7 +13,14 @@ use zephyrus_core::{
     state::{Constants, HydromancerTribute},
 };
 
-use crate::{errors::ContractError, helpers::hydro_queries::query_hydro_proposal, state};
+use crate::{
+    errors::ContractError,
+    helpers::hydro_queries::{
+        query_hydro_derivative_token_info_providers, query_hydro_proposal,
+        query_hydro_proposal_tributes, query_hydro_round_all_proposals,
+    },
+    state,
+};
 
 pub fn build_claim_tribute_sub_msg(
     round_id: u64,
@@ -283,7 +290,7 @@ pub fn allocate_rewards_to_hydromancer(
 }
 
 pub fn calculate_rewards_for_vessels_on_tribute(
-    deps: DepsMut<'_>,
+    deps: &mut DepsMut<'_>,
     vessel_ids: Vec<u64>,
     tribute_id: TributeId,
     tranche_id: TrancheId,
@@ -298,7 +305,7 @@ pub fn calculate_rewards_for_vessels_on_tribute(
     for vessel_id in vessel_ids.clone() {
         if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
             let proposal_vessel_rewards = calcul_rewards_amount_for_vessel_on_proposal(
-                &deps,
+                deps,
                 round_id,
                 tranche_id,
                 proposal_id,
@@ -323,4 +330,80 @@ pub fn calculate_rewards_for_vessels_on_tribute(
         }
     }
     Ok(amount_to_distribute)
+}
+
+pub fn distribute_rewards_for_all_round_proposals(
+    mut deps: DepsMut<'_>,
+    sender: Addr,
+    round_id: u64,
+    tranche_id: u64,
+    vessel_ids: Vec<u64>,
+    constants: Constants,
+    tributes_process_in_reply: BTreeSet<u64>,
+) -> Result<Vec<BankMsg>, ContractError> {
+    let token_info_provider =
+        query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, round_id)?;
+    let all_round_proposals =
+        query_hydro_round_all_proposals(&deps.as_ref(), &constants, round_id, tranche_id)?;
+    let mut messages: Vec<BankMsg> = vec![];
+    for proposal in all_round_proposals {
+        let proposal_tributes = query_hydro_proposal_tributes(
+            &deps.as_ref(),
+            &constants,
+            round_id,
+            proposal.proposal_id,
+        )?;
+        let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
+            deps.storage,
+            proposal.proposal_id,
+            round_id,
+            &token_info_provider,
+        )?;
+        for tribute in proposal_tributes {
+            // tributes that have been just claimed will be processed in the reply handler, so we skip them here
+            if tributes_process_in_reply.contains(&tribute.tribute_id) {
+                continue;
+            }
+            // Cumulate rewards for each vessel
+            let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
+                &mut deps,
+                vessel_ids.clone(),
+                tribute.tribute_id,
+                tribute.tranche_id,
+                tribute.round_id,
+                tribute.proposal_id,
+                tribute.funds.clone(),
+                constants.clone(),
+                token_info_provider.clone(),
+                total_proposal_voting_power,
+            )?;
+            if !amount_to_distribute.is_zero() {
+                let send_msg = BankMsg::Send {
+                    to_address: sender.to_string(),
+                    amount: vec![Coin {
+                        denom: tribute.funds.denom.clone(),
+                        amount: amount_to_distribute.to_uint_floor(),
+                    }],
+                };
+                messages.push(send_msg);
+            }
+        }
+    }
+    Ok(messages)
+}
+
+pub fn calcul_protocol_comm_and_rest(
+    payload: &ClaimTributeReplyPayload,
+    constants: &zephyrus_core::state::Constants,
+) -> (Uint128, Coin) {
+    // deduct commission from the amount
+    let commission_amount = Decimal::from_ratio(payload.amount.amount, 1u128)
+        .saturating_mul(constants.commission_rate)
+        .to_uint_ceil();
+    let total_for_users = payload.amount.amount.saturating_sub(commission_amount);
+    let user_funds = Coin {
+        denom: payload.amount.denom.clone(),
+        amount: total_for_users,
+    };
+    (commission_amount, user_funds)
 }

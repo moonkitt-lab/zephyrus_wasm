@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage, Uint128};
+use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage};
 use cw_storage_plus::{Bound, Item, Map};
 use std::collections::BTreeSet;
 use zephyrus_core::{

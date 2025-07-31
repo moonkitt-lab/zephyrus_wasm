@@ -1,5 +1,5 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Coin};
+use cosmwasm_std::{Addr, Coin, Decimal};
 
 use crate::msgs::UserControl;
 
@@ -35,6 +35,8 @@ pub struct Constants {
     pub default_hydromancer_id: HydromancerId,
     pub paused_contract: bool,
     pub hydro_config: HydroConfig,
+    pub commission_rate: Decimal,
+    pub commission_recipient: Addr,
 }
 
 #[cw_serde]

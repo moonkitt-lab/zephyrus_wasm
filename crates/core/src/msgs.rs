@@ -16,9 +16,11 @@ pub struct InstantiateMsg {
     pub hydro_contract_address: String,
     pub tribute_contract_address: String,
     pub whitelist_admins: Vec<String>,
+    pub commission_rate: Decimal,
     pub default_hydromancer_name: String,
     pub default_hydromancer_commission_rate: Decimal,
     pub default_hydromancer_address: String,
+    pub commission_recipient: String,
 }
 
 #[cw_serde]
@@ -86,6 +88,12 @@ pub enum ExecuteMsg {
         round_id: u64,
         tranche_id: u64,
         vessel_ids: Vec<u64>,
+    },
+    UpdateCommissionRate {
+        new_commission_rate: Decimal,
+    },
+    UpdateCommissionRecipient {
+        new_commission_recipient: String,
     },
 }
 

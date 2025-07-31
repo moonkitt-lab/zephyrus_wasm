@@ -21,6 +21,8 @@ mod tests {
                 hydro_contract_address: make_valid_addr("hydro"),
                 hydro_tribute_contract_address: make_valid_addr("tribute"),
             },
+            commission_rate: "0.1".parse().unwrap(),
+            commission_recipient: make_valid_addr("commission_recipient"),
         }
     }
 

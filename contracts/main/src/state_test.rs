@@ -43,6 +43,8 @@ mod tests {
                 hydro_contract_address: make_valid_addr("hydro"),
                 hydro_tribute_contract_address: make_valid_addr("tribute"),
             },
+            commission_rate: "0.1".parse().unwrap(),
+            commission_recipient: make_valid_addr("commission_recipient"),
         };
         update_constants(storage, constants).unwrap();
 
@@ -67,6 +69,8 @@ mod tests {
                 hydro_contract_address: make_valid_addr("hydro_test"),
                 hydro_tribute_contract_address: make_valid_addr("tribute_test"),
             },
+            commission_rate: "0.1".parse().unwrap(),
+            commission_recipient: make_valid_addr("commission_recipient"),
         };
 
         let result = update_constants(deps.as_mut().storage, constants.clone());

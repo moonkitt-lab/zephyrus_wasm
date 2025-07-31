@@ -1,25 +1,24 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankQuery, Binary, Coin,
-    DepsMut, Env, MessageInfo, QueryRequest, Response as CwResponse, StdResult, SubMsg, Uint128,
+    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankQuery, Binary, Decimal,
+    DepsMut, Env, MessageInfo, QueryRequest, Response as CwResponse, StdError, StdResult, SubMsg,
     WasmMsg,
 };
 use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups};
 
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::msgs::{
-    ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, ExecuteMsg, InstantiateMsg,
-    MigrateMsg, RefreshTimeWeightedSharesReplyPayload, TrancheId, VesselInfo, VesselsToHarbor,
-    VoteReplyPayload, CLAIM_TRIBUTE_REPLY_ID, DECOMMISSION_REPLY_ID,
-    REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
+    DecommissionVesselsReplyPayload, ExecuteMsg, InstantiateMsg, MigrateMsg,
+    RefreshTimeWeightedSharesReplyPayload, TrancheId, VesselInfo, VesselsToHarbor,
+    VoteReplyPayload, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
 };
 use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
-use crate::helpers::hydro_queries::{
-    query_hydro_derivative_token_info_providers, query_hydro_outstanding_tribute_claims,
+use crate::helpers::hydro_queries::query_hydro_outstanding_tribute_claims;
+use crate::helpers::rewards::{
+    build_claim_tribute_sub_msg, distribute_rewards_for_all_round_proposals,
 };
-use crate::helpers::rewards::build_claim_tribute_sub_msg;
 use crate::helpers::tws::reset_vessel_vote;
 use crate::helpers::validation::validate_user_controls_vessel;
 use crate::{
@@ -74,7 +73,15 @@ pub fn instantiate(
     };
 
     let hydromancer_address = deps.api.addr_validate(&msg.default_hydromancer_address)?;
-
+    let commission_recipient = deps.api.addr_validate(&msg.commission_recipient)?;
+    // Validate commission rate is less than 1 (100%)
+    if msg.commission_rate >= Decimal::one()
+        || msg.default_hydromancer_commission_rate >= Decimal::one()
+    {
+        return Err(StdError::generic_err(
+            "Commission rate must be less than 1 (100%)",
+        ));
+    }
     let default_hydromancer_id = state::insert_new_hydromancer(
         deps.storage,
         hydromancer_address,
@@ -86,7 +93,10 @@ pub fn instantiate(
         default_hydromancer_id,
         paused_contract: false,
         hydro_config,
+        commission_rate: msg.commission_rate,
+        commission_recipient,
     };
+
     state::update_constants(deps.storage, constant)?;
 
     Ok(Response::default())
@@ -151,7 +161,52 @@ pub fn execute(
             tranche_id,
             vessel_ids,
         } => execute_claim(deps, env, info, round_id, tranche_id, vessel_ids),
+        ExecuteMsg::UpdateCommissionRate {
+            new_commission_rate,
+        } => execute_update_commission_rate(deps, info, new_commission_rate),
+        ExecuteMsg::UpdateCommissionRecipient {
+            new_commission_recipient,
+        } => execute_update_commission_recipient(deps, info, new_commission_recipient),
     }
+}
+
+fn execute_update_commission_rate(
+    deps: DepsMut,
+    info: MessageInfo,
+    new_commission_rate: Decimal,
+) -> Result<Response, ContractError> {
+    validate_admin_address(deps.storage, &info.sender)?;
+
+    // Validate new commission rate is less than 1 (100%)
+    if new_commission_rate > Decimal::one() {
+        return Err(ContractError::CustomError {
+            msg: "Commission rate must be less than 1 (100%)".to_string(),
+        });
+    }
+
+    let mut constants = state::get_constants(deps.storage)?;
+    constants.commission_rate = new_commission_rate;
+    state::update_constants(deps.storage, constants)?;
+    Ok(Response::default()
+        .add_attribute("action", "change_commission_rate")
+        .add_attribute("new_commission_rate", new_commission_rate.to_string()))
+}
+
+fn execute_update_commission_recipient(
+    deps: DepsMut,
+    info: MessageInfo,
+    new_commission_recipient: String,
+) -> Result<Response, ContractError> {
+    validate_admin_address(deps.storage, &info.sender)?;
+
+    let commission_recipient = deps.api.addr_validate(&new_commission_recipient)?;
+    let mut constants = state::get_constants(deps.storage)?;
+    constants.commission_recipient = commission_recipient;
+    state::update_constants(deps.storage, constants)?;
+
+    Ok(Response::default()
+        .add_attribute("action", "change_commission_recipient")
+        .add_attribute("new_commission_recipient", new_commission_recipient))
 }
 
 fn execute_claim(
@@ -174,9 +229,8 @@ fn execute_claim(
         round_id,
         tranche_id,
     );
-    // TODO: For each outstanding_tribute, create a submessage to claim it
-    // TODO: Handle the reply verifying that the claim was successful with the correct amount
-    // TODO: Then for each vessel, cumulate rewards to send to the user
+
+    let mut tributes_process_in_reply = BTreeSet::new();
     let mut response = Response::new().add_attribute("action", "claim");
     if outstanding_tributes.is_ok() {
         let outstanding_tributes = outstanding_tributes.unwrap();
@@ -192,9 +246,8 @@ fn execute_claim(
                 &balances,
                 &outstanding_tribute,
             )?;
-
+            tributes_process_in_reply.insert(outstanding_tribute.tribute_id);
             response = response.add_submessage(sub_msg);
-
             // Update virtual balances for checking purposes
             if let Some(balance) = balances
                 .iter_mut()
@@ -210,8 +263,19 @@ fn execute_claim(
             }
         }
     }
-
-    Ok(Response::default())
+    let messages = distribute_rewards_for_all_round_proposals(
+        deps,
+        info.sender.clone(),
+        round_id,
+        tranche_id,
+        vessel_ids,
+        constants,
+        tributes_process_in_reply,
+    )?;
+    if messages.len() > 0 {
+        response = response.add_messages(messages);
+    }
+    Ok(response)
 }
 
 fn execute_unvote(

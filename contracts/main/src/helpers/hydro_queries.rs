@@ -7,9 +7,10 @@ use cosmwasm_std::{Deps, Env, StdError, StdResult};
 use hydro_interface::msgs::{
     CurrentRoundResponse, DenomInfoResponse, DerivativeTokenInfoProviderQueryMsg,
     HydroConstantsResponse, HydroQueryMsg, LockupWithPerTrancheInfo, LockupsSharesResponse,
-    OutstandingTributeClaimsResponse, Proposal, ProposalResponse, RoundProposalsResponse,
-    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider,
-    TokenInfoProvidersResponse, TranchesResponse,
+    OutstandingTributeClaimsResponse, Proposal, ProposalResponse, ProposalTributesResponse,
+    RoundProposalsResponse, SpecificUserLockupsResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse,
+    TranchesResponse, Tribute, TributeQueryMsg,
 };
 use zephyrus_core::msgs::{RoundId, TrancheId};
 use zephyrus_core::state::Constants;
@@ -179,16 +180,15 @@ pub fn query_hydro_proposal(
 pub fn query_hydro_round_all_proposals(
     deps: &Deps,
     constants: &Constants,
-    round_id: u64,
-    tranche_id: u64,
+    round_id: RoundId,
+    tranche_id: TrancheId,
 ) -> Result<Vec<Proposal>, ContractError> {
     let mut all_proposals = Vec::new();
     let mut start_from = 0u32;
     let limit = 100u32;
-    let max_iterations = 100; // Éviter les boucles infinies
-    let mut iteration = 0;
+    let mut finished = false;
 
-    while iteration < max_iterations {
+    while !finished {
         let response: RoundProposalsResponse = deps.querier.query_wasm_smart(
             constants.hydro_config.hydro_contract_address.clone(),
             &HydroQueryMsg::RoundProposals {
@@ -202,18 +202,45 @@ pub fn query_hydro_round_all_proposals(
         all_proposals.extend(response.proposals.clone());
 
         if response.proposals.len() < limit as usize {
-            break;
+            finished = true;
         }
 
         start_from += limit;
-        iteration += 1;
-    }
-
-    if iteration >= max_iterations {
-        return Err(ContractError::CustomError {
-            msg: "Too many proposals to fetch".to_string(),
-        });
     }
 
     Ok(all_proposals)
+}
+
+pub fn query_hydro_proposal_tributes(
+    deps: &Deps,
+    constants: &Constants,
+    round_id: u64,
+    proposal_id: u64,
+) -> StdResult<Vec<Tribute>> {
+    let mut finished = false;
+    let mut all_tributes: Vec<Tribute> = Vec::new();
+    let mut start_from = 0u32;
+    let limit = 100u32;
+
+    while !finished {
+        let proposal_tributes: ProposalTributesResponse = deps.querier.query_wasm_smart(
+            constants.hydro_config.hydro_contract_address.to_string(),
+            &TributeQueryMsg::ProposalTributes {
+                round_id,
+                proposal_id,
+                start_from,
+                limit,
+            },
+        )?;
+
+        all_tributes.extend(proposal_tributes.tributes.clone());
+
+        if proposal_tributes.tributes.len() < limit as usize {
+            finished = true;
+        }
+
+        start_from += limit;
+    }
+
+    Ok(all_tributes)
 }

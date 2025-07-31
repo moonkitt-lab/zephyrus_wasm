@@ -1,29 +1,23 @@
 use cosmwasm_std::{
-    entry_point, from_json, AllBalanceResponse, BankMsg, BankQuery, Coin, Decimal, DepsMut, Env,
-    QueryRequest, Reply, Response as CwResponse, StdError, Uint128,
+    entry_point, from_json, AllBalanceResponse, BankMsg, BankQuery, Coin, DepsMut, Env,
+    QueryRequest, Reply, Response as CwResponse, StdError,
 };
 use std::collections::HashMap;
 
 use neutron_sdk::bindings::msg::NeutronMsg;
 
 use zephyrus_core::msgs::{
-    ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, HydroProposalId, HydromancerId,
-    RefreshTimeWeightedSharesReplyPayload, RoundId, TrancheId, TributeId, VoteReplyPayload,
-    CLAIM_TRIBUTE_REPLY_ID, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID,
-    VOTE_REPLY_ID,
+    ClaimTributeReplyPayload, DecommissionVesselsReplyPayload, HydromancerId,
+    RefreshTimeWeightedSharesReplyPayload, RoundId, VoteReplyPayload, CLAIM_TRIBUTE_REPLY_ID,
+    DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
 };
 use zephyrus_core::state::VesselHarbor;
 
-use crate::helpers::hydro_queries::{
-    query_hydro_derivative_token_info_providers, query_hydro_proposal,
-};
+use crate::helpers::hydro_queries::query_hydro_derivative_token_info_providers;
 use crate::helpers::rewards::{
-    allocate_rewards_to_hydromancer, calcul_rewards_amount_for_vessel_on_proposal,
-    calcul_total_voting_power_of_hydromancer_for_locked_rounds,
-    calcul_total_voting_power_of_hydromancer_on_proposal, calcul_total_voting_power_on_proposal,
-    calcul_voting_power_of_vessel, calculate_rewards_for_vessels_on_tribute,
+    allocate_rewards_to_hydromancer, calcul_protocol_comm_and_rest,
+    calcul_total_voting_power_on_proposal, calculate_rewards_for_vessels_on_tribute,
 };
-use crate::helpers::validation::validate_user_owns_vessels;
 use crate::{
     errors::ContractError,
     helpers::{
@@ -87,14 +81,13 @@ pub fn handle_claim_tribute_reply(
         .balance_before_claim
         .amount
         .strict_add(payload.amount.amount.clone());
-
+    // Check if the amount reveived is correct
     if balance_query.amount != balance_expected {
         return Err(ContractError::InsufficientTributeReceived {
             tribute_id: payload.tribute_id,
         });
     }
 
-    // TODO: Calcul and store portion of rewards for each hydromancer
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, payload.round_id)?;
     let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
@@ -114,20 +107,24 @@ pub fn handle_claim_tribute_reply(
         )?;
     }
 
+    let (commission_amount, users_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
+
     // Cumulate rewards for each vessel
     let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
-        deps,
+        &mut deps,
         payload.vessel_ids.clone(),
         payload.tribute_id,
         payload.tranche_id,
         payload.round_id,
         payload.proposal_id,
-        payload.amount.clone(),
-        constants,
+        users_funds,
+        constants.clone(),
         token_info_provider,
         total_proposal_voting_power,
     )?;
     let mut response = Response::new();
+
+    // Send rewards to vessels owner
     if !amount_to_distribute.is_zero() {
         let send_msg = BankMsg::Send {
             to_address: payload.vessels_owner.to_string(),
@@ -138,7 +135,17 @@ pub fn handle_claim_tribute_reply(
         };
         response = response.add_message(send_msg);
     }
-
+    // Send commission to recipient
+    if commission_amount.u128() > 0 {
+        let send_msg = BankMsg::Send {
+            to_address: constants.commission_recipient.to_string(),
+            amount: vec![Coin {
+                denom: payload.amount.denom.clone(),
+                amount: commission_amount,
+            }],
+        };
+        response = response.add_message(send_msg);
+    }
     Ok(response.add_attribute("action", "handle_claim_tribute_reply"))
 }
 

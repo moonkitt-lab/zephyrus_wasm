@@ -234,7 +234,10 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
 
 pub fn allocate_rewards_to_hydromancer(
     deps: &mut DepsMut<'_>,
-    payload: &ClaimTributeReplyPayload,
+    proposal_id: HydroProposalId,
+    round_id: RoundId,
+    tribute_id: TributeId,
+    funds: Coin,
     token_info_provider: &HashMap<String, hydro_interface::msgs::DenomInfoResponse>,
     total_proposal_voting_power: Decimal,
     hydromancer_id: u64,
@@ -242,8 +245,8 @@ pub fn allocate_rewards_to_hydromancer(
     let hydromancer_voting_power = calcul_total_voting_power_of_hydromancer_on_proposal(
         deps.storage,
         hydromancer_id,
-        payload.proposal_id,
-        payload.round_id,
+        proposal_id,
+        round_id,
         token_info_provider,
     )?;
     let hydromancer_portion = hydromancer_voting_power
@@ -251,8 +254,8 @@ pub fn allocate_rewards_to_hydromancer(
         .map_err(|_| ContractError::CustomError {
             msg: "Division by zero in voting power calculation".to_string(),
         })?;
-    let total_hydromancer_reward = Decimal::from_ratio(payload.amount.amount.clone(), 1u128)
-        .saturating_mul(hydromancer_portion);
+    let total_hydromancer_reward =
+        Decimal::from_ratio(funds.amount.clone(), 1u128).saturating_mul(hydromancer_portion);
 
     let hydromancer = state::get_hydromancer(deps.storage, hydromancer_id)?;
     let hydromancer_commission =
@@ -262,8 +265,7 @@ pub fn allocate_rewards_to_hydromancer(
         .to_uint_floor();
     let hydromancer_commission = hydromancer_commission.to_uint_floor();
 
-    let rest = payload
-        .amount
+    let rest = funds
         .amount
         .saturating_sub(hydromancer_commission)
         .saturating_sub(rewards_for_users);
@@ -273,15 +275,15 @@ pub fn allocate_rewards_to_hydromancer(
     state::add_new_rewards_to_hydromancer(
         deps.storage,
         hydromancer_id,
-        payload.round_id,
-        payload.tribute_id,
+        round_id,
+        tribute_id,
         HydromancerTribute {
             rewards_for_users: Coin {
-                denom: payload.amount.denom.clone(),
+                denom: funds.denom.clone(),
                 amount: rewards_for_users,
             },
             commission_for_hydromancer: Coin {
-                denom: payload.amount.denom.clone(),
+                denom: funds.denom.clone(),
                 amount: hydromancer_commission,
             },
         },
@@ -387,6 +389,16 @@ pub fn distribute_rewards_for_all_round_proposals(
                 };
                 messages.push(send_msg);
             }
+            // Process the case that sender is an hydromancer and send its commission to the sender
+            let hydromancer_rewards_send_msg = process_hydromancer_claiming_rewards(
+                &mut deps,
+                sender.clone(),
+                round_id,
+                tribute.tribute_id,
+            )?;
+            if let Some(send_msg) = hydromancer_rewards_send_msg {
+                messages.push(send_msg);
+            }
         }
     }
     Ok(messages)
@@ -406,4 +418,39 @@ pub fn calcul_protocol_comm_and_rest(
         amount: total_for_users,
     };
     (commission_amount, user_funds)
+}
+
+pub fn process_hydromancer_claiming_rewards(
+    deps: &mut DepsMut<'_>,
+    sender: Addr,
+    round_id: RoundId,
+    tribute_id: TributeId,
+) -> Result<Option<BankMsg>, ContractError> {
+    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, sender.clone()).ok();
+    if let Some(hydromancer_id) = hydromancer_id {
+        if !state::is_hydromancer_tribute_claimed(deps.storage, hydromancer_id, tribute_id) {
+            // Sender is an hydromancer, send its commission to the sender
+            let hydromancer_tribute = state::get_hydromancer_rewards_by_tribute(
+                deps.storage,
+                hydromancer_id,
+                round_id,
+                tribute_id,
+            )?;
+            if let Some(hydromancer_tribute) = hydromancer_tribute {
+                let send_to_hydromancer_msg = BankMsg::Send {
+                    to_address: sender.to_string(),
+                    amount: vec![hydromancer_tribute.commission_for_hydromancer.clone()],
+                };
+
+                state::save_hydromancer_tribute_claim(
+                    deps.storage,
+                    hydromancer_id,
+                    tribute_id,
+                    hydromancer_tribute.commission_for_hydromancer,
+                )?;
+                return Ok(Some(send_to_hydromancer_msg));
+            }
+        }
+    }
+    Ok(None)
 }

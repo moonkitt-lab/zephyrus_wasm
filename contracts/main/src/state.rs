@@ -90,6 +90,9 @@ const HYDROMANCER_REWARDS_BY_TRIBUTE: Map<(HydromancerId, RoundId, TributeId), H
 pub const VESSEL_TRIBUTE_CLAIMS: Map<(HydroLockId, TributeId), Coin> =
     Map::new("vessel_tribute_claims");
 
+pub const HYDROMANCER_TRIBUTE_CLAIMS: Map<(HydromancerId, TributeId), Coin> =
+    Map::new("hydromancer_tribute_claims");
+
 // Insert new rewards to hydromancer
 // If the hydromancer already has a reward for the tribute => error
 // If the hydromancer doesn't have a reward for the tribute => insert new reward
@@ -127,6 +130,23 @@ pub fn is_vessel_tribute_claimed(
     tribute_id: TributeId,
 ) -> bool {
     VESSEL_TRIBUTE_CLAIMS.has(storage, (hydro_lock_id, tribute_id))
+}
+
+pub fn save_hydromancer_tribute_claim(
+    storage: &mut dyn Storage,
+    hydromancer_id: HydromancerId,
+    tribute_id: TributeId,
+    amount: Coin,
+) -> StdResult<()> {
+    HYDROMANCER_TRIBUTE_CLAIMS.save(storage, (hydromancer_id, tribute_id), &amount)
+}
+
+pub fn is_hydromancer_tribute_claimed(
+    storage: &dyn Storage,
+    hydromancer_id: HydromancerId,
+    tribute_id: TributeId,
+) -> bool {
+    HYDROMANCER_TRIBUTE_CLAIMS.has(storage, (hydromancer_id, tribute_id))
 }
 
 pub fn get_hydromancer_rewards_by_tribute(

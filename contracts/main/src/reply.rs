@@ -17,6 +17,7 @@ use crate::helpers::hydro_queries::query_hydro_derivative_token_info_providers;
 use crate::helpers::rewards::{
     allocate_rewards_to_hydromancer, calcul_protocol_comm_and_rest,
     calcul_total_voting_power_on_proposal, calculate_rewards_for_vessels_on_tribute,
+    process_hydromancer_claiming_rewards,
 };
 use crate::{
     errors::ContractError,
@@ -87,7 +88,7 @@ pub fn handle_claim_tribute_reply(
             tribute_id: payload.tribute_id,
         });
     }
-
+    let (commission_amount, users_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, payload.round_id)?;
     let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
@@ -100,14 +101,15 @@ pub fn handle_claim_tribute_reply(
     for hydromancer_id in hydromancer_ids {
         allocate_rewards_to_hydromancer(
             &mut deps,
-            &payload,
+            payload.proposal_id,
+            payload.round_id,
+            payload.tribute_id,
+            users_funds.clone(),
             &token_info_provider,
             total_proposal_voting_power,
             hydromancer_id,
         )?;
     }
-
-    let (commission_amount, users_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
 
     // Cumulate rewards for each vessel
     let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
@@ -144,6 +146,16 @@ pub fn handle_claim_tribute_reply(
                 amount: commission_amount,
             }],
         };
+        response = response.add_message(send_msg);
+    }
+    // Process the case that sender is an hydromancer and send its commission to the sender
+    let hydromancer_rewards_send_msg = process_hydromancer_claiming_rewards(
+        &mut deps,
+        payload.vessels_owner.clone(),
+        payload.round_id,
+        payload.tribute_id,
+    )?;
+    if let Some(send_msg) = hydromancer_rewards_send_msg {
         response = response.add_message(send_msg);
     }
     Ok(response.add_attribute("action", "handle_claim_tribute_reply"))

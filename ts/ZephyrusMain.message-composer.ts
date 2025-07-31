@@ -84,6 +84,25 @@ export interface ZephyrusMainMsg {
     hydromancerId: number;
     trancheId: number;
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  claim: ({
+    roundId,
+    trancheId,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    vesselIds: number[];
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  updateCommissionRate: ({
+    newCommissionRate
+  }: {
+    newCommissionRate: Decimal;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  updateCommissionRecipient: ({
+    newCommissionRecipient
+  }: {
+    newCommissionRecipient: string;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   sender: string;
@@ -103,6 +122,9 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.userVote = this.userVote.bind(this);
     this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
+    this.claim = this.claim.bind(this);
+    this.updateCommissionRate = this.updateCommissionRate.bind(this);
+    this.updateCommissionRecipient = this.updateCommissionRecipient.bind(this);
   }
   takeControl = ({
     vesselIds
@@ -344,6 +366,69 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
             hydro_lock_ids: hydroLockIds,
             hydromancer_id: hydromancerId,
             tranche_id: trancheId
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  claim = ({
+    roundId,
+    trancheId,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    vesselIds: number[];
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          claim: {
+            round_id: roundId,
+            tranche_id: trancheId,
+            vessel_ids: vesselIds
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  updateCommissionRate = ({
+    newCommissionRate
+  }: {
+    newCommissionRate: Decimal;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          update_commission_rate: {
+            new_commission_rate: newCommissionRate
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  updateCommissionRecipient = ({
+    newCommissionRecipient
+  }: {
+    newCommissionRecipient: string;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          update_commission_recipient: {
+            new_commission_recipient: newCommissionRecipient
           }
         })),
         funds: _funds

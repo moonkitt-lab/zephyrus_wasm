@@ -188,6 +188,25 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     hydromancerId: number;
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  claim: ({
+    roundId,
+    trancheId,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    vesselIds: number[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  updateCommissionRate: ({
+    newCommissionRate
+  }: {
+    newCommissionRate: Decimal;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  updateCommissionRecipient: ({
+    newCommissionRecipient
+  }: {
+    newCommissionRecipient: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
   client: SigningCosmWasmClient;
@@ -210,6 +229,9 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.userVote = this.userVote.bind(this);
     this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
+    this.claim = this.claim.bind(this);
+    this.updateCommissionRate = this.updateCommissionRate.bind(this);
+    this.updateCommissionRecipient = this.updateCommissionRecipient.bind(this);
   }
   takeControl = async ({
     vesselIds
@@ -358,6 +380,45 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
         hydro_lock_ids: hydroLockIds,
         hydromancer_id: hydromancerId,
         tranche_id: trancheId
+      }
+    }, fee, memo, _funds);
+  };
+  claim = async ({
+    roundId,
+    trancheId,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    vesselIds: number[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      claim: {
+        round_id: roundId,
+        tranche_id: trancheId,
+        vessel_ids: vesselIds
+      }
+    }, fee, memo, _funds);
+  };
+  updateCommissionRate = async ({
+    newCommissionRate
+  }: {
+    newCommissionRate: Decimal;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_commission_rate: {
+        new_commission_rate: newCommissionRate
+      }
+    }, fee, memo, _funds);
+  };
+  updateCommissionRecipient = async ({
+    newCommissionRecipient
+  }: {
+    newCommissionRecipient: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_commission_recipient: {
+        new_commission_recipient: newCommissionRecipient
       }
     }, fee, memo, _funds);
   };

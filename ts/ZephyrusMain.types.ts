@@ -6,6 +6,8 @@
 
 export type Decimal = string;
 export interface InstantiateMsg {
+  commission_rate: Decimal;
+  commission_recipient: string;
   default_hydromancer_address: string;
   default_hydromancer_commission_rate: Decimal;
   default_hydromancer_name: string;
@@ -63,6 +65,20 @@ export type ExecuteMsg = {
     hydromancer_id: number;
     tranche_id: number;
   };
+} | {
+  claim: {
+    round_id: number;
+    tranche_id: number;
+    vessel_ids: number[];
+  };
+} | {
+  update_commission_rate: {
+    new_commission_rate: Decimal;
+  };
+} | {
+  update_commission_recipient: {
+    new_commission_recipient: string;
+  };
 };
 export type Binary = string;
 export interface VesselsToHarbor {
@@ -102,6 +118,8 @@ export interface ConstantsResponse {
   constants: Constants;
 }
 export interface Constants {
+  commission_rate: Decimal;
+  commission_recipient: Addr;
   default_hydromancer_id: number;
   hydro_config: HydroConfig;
   paused_contract: boolean;

@@ -22,14 +22,15 @@ use crate::{
     state,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_claim_tribute_sub_msg(
     round_id: u64,
     tranche_id: u64,
-    vessel_ids: &Vec<u64>,
+    vessel_ids: &[u64],
     owner: &Addr,
     constants: &Constants,
     contract_address: &Addr,
-    balances: &Vec<Coin>,
+    balances: &[Coin],
     outstanding_tribute: &hydro_interface::msgs::TributeClaim,
 ) -> Result<SubMsg<NeutronMsg>, ContractError> {
     let claim_msg = HydroExecuteMsg::ClaimTribute {
@@ -54,12 +55,12 @@ pub fn build_claim_tribute_sub_msg(
     let payload = ClaimTributeReplyPayload {
         proposal_id: outstanding_tribute.proposal_id,
         tribute_id: outstanding_tribute.tribute_id,
-        round_id: round_id,
-        tranche_id: tranche_id,
+        round_id,
+        tranche_id,
         amount: outstanding_tribute.amount.clone(),
         balance_before_claim,
         vessels_owner: owner.clone(),
-        vessel_ids: vessel_ids.clone(),
+        vessel_ids: vessel_ids.to_owned(),
     };
     let sub_msg: SubMsg<NeutronMsg> =
         SubMsg::reply_on_success(execute_claim_msg, CLAIM_TRIBUTE_REPLY_ID)
@@ -81,7 +82,7 @@ pub fn calcul_total_voting_power_of_hydromancer_on_proposal(
         let token_info = token_info_provider.get(&token_group_id).ok_or(
             ContractError::TokenInfoProviderNotFound {
                 token_group_id: token_group_id.clone(),
-                round_id: round_id,
+                round_id,
             },
         )?;
         total_voting_power = total_voting_power
@@ -107,7 +108,7 @@ pub fn calcul_total_voting_power_of_hydromancer_for_locked_rounds(
         let token_info = token_info_provider.get(&token_group_id).ok_or(
             ContractError::TokenInfoProviderNotFound {
                 token_group_id: token_group_id.clone(),
-                round_id: round_id,
+                round_id,
             },
         )?;
         total_voting_power = total_voting_power
@@ -128,7 +129,7 @@ pub fn calcul_total_voting_power_on_proposal(
         let token_info = token_info_provider.get(&token_group_id).ok_or(
             ContractError::TokenInfoProviderNotFound {
                 token_group_id: token_group_id.clone(),
-                round_id: round_id,
+                round_id,
             },
         )?;
         total_voting_power = total_voting_power
@@ -153,13 +154,14 @@ pub fn calcul_voting_power_of_vessel(
         .get(&vessel_share_info.token_group_id)
         .ok_or(ContractError::TokenInfoProviderNotFound {
             token_group_id: vessel_share_info.token_group_id.clone(),
-            round_id: round_id,
+            round_id,
         })?;
     let voting_power = Decimal::from_ratio(vessel_share_info.time_weighted_shares, 1u128)
         .saturating_mul(token_info.ratio);
     Ok(voting_power)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn calcul_rewards_amount_for_vessel_on_proposal(
     deps: &DepsMut<'_>,
     round_id: RoundId,
@@ -232,6 +234,7 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn allocate_rewards_to_hydromancer(
     deps: &mut DepsMut<'_>,
     proposal_id: HydroProposalId,
@@ -255,7 +258,7 @@ pub fn allocate_rewards_to_hydromancer(
             msg: "Division by zero in voting power calculation".to_string(),
         })?;
     let total_hydromancer_reward =
-        Decimal::from_ratio(funds.amount.clone(), 1u128).saturating_mul(hydromancer_portion);
+        Decimal::from_ratio(funds.amount, 1u128).saturating_mul(hydromancer_portion);
 
     let hydromancer = state::get_hydromancer(deps.storage, hydromancer_id)?;
     let hydromancer_commission =
@@ -290,7 +293,7 @@ pub fn allocate_rewards_to_hydromancer(
     )?;
     Ok(())
 }
-
+#[allow(clippy::too_many_arguments)]
 pub fn calculate_rewards_for_vessels_on_tribute(
     deps: &mut DepsMut<'_>,
     vessel_ids: Vec<u64>,
@@ -318,8 +321,7 @@ pub fn calculate_rewards_for_vessels_on_tribute(
                 tribute_rewards.clone(),
                 vessel_id,
             )?;
-            amount_to_distribute =
-                amount_to_distribute.saturating_add(proposal_vessel_rewards.clone());
+            amount_to_distribute = amount_to_distribute.saturating_add(proposal_vessel_rewards);
             state::save_vessel_tribute_claim(
                 deps.storage,
                 vessel_id,

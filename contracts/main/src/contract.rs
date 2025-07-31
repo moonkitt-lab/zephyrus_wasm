@@ -254,9 +254,7 @@ fn execute_claim(
                 .find(|balance| balance.denom == outstanding_tribute.amount.denom)
             {
                 // Utilisateur trouvé, modifier le solde
-                balance.amount = balance
-                    .amount
-                    .strict_add(outstanding_tribute.amount.amount.clone());
+                balance.amount = balance.amount.strict_add(outstanding_tribute.amount.amount);
             } else {
                 // Utilisateur non trouvé, l'ajouter
                 balances.push(outstanding_tribute.amount.clone());
@@ -272,7 +270,7 @@ fn execute_claim(
         constants,
         tributes_process_in_reply,
     )?;
-    if messages.len() > 0 {
+    if !messages.is_empty() {
         response = response.add_messages(messages);
     }
     Ok(response)

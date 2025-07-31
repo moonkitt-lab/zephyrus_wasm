@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::iter::Map;
 
 use crate::errors::ContractError;
 use crate::helpers::vectors::join_u64_ids;

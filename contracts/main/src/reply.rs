@@ -81,7 +81,7 @@ pub fn handle_claim_tribute_reply(
     let balance_expected = payload
         .balance_before_claim
         .amount
-        .strict_add(payload.amount.amount.clone());
+        .strict_add(payload.amount.amount);
     // Check if the amount reveived is correct
     if balance_query.amount != balance_expected {
         return Err(ContractError::InsufficientTributeReceived {

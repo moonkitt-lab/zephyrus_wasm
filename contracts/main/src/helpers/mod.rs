@@ -2,6 +2,7 @@ pub mod auto_maintenance;
 pub mod hydro_queries;
 pub mod ibc;
 pub mod rewards;
+pub mod tribute_queries;
 pub mod tws;
 pub mod validation;
 pub mod vectors;

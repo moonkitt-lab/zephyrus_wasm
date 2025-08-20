@@ -17,8 +17,9 @@ use crate::{
     errors::ContractError,
     helpers::hydro_queries::{
         query_hydro_derivative_token_info_providers, query_hydro_proposal,
-        query_hydro_proposal_tributes, query_hydro_round_all_proposals,
+        query_hydro_round_all_proposals,
     },
+    helpers::tribute_queries::query_tribute_proposal_tributes,
     state,
 };
 
@@ -351,7 +352,7 @@ pub fn distribute_rewards_for_all_round_proposals(
         query_hydro_round_all_proposals(&deps.as_ref(), &constants, round_id, tranche_id)?;
     let mut messages: Vec<BankMsg> = vec![];
     for proposal in all_round_proposals {
-        let proposal_tributes = query_hydro_proposal_tributes(
+        let proposal_tributes = query_tribute_proposal_tributes(
             &deps.as_ref(),
             &constants,
             round_id,

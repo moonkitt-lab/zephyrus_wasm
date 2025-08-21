@@ -12,7 +12,7 @@ use crate::{
         },
         rewards::{
             calcul_total_voting_power_on_proposal, calculate_hydromancer_claiming_rewards,
-            calculate_rewards_for_vessels_on_tribute, process_hydromancer_claiming_rewards,
+            calculate_rewards_for_vessels_on_tribute,
         },
         tribute_queries::query_tribute_proposal_tributes,
         validation::validate_no_duplicate_ids,

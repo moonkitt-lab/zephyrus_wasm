@@ -153,6 +153,13 @@ pub enum QueryMsg {
         round_id: u64,
         lock_ids: Vec<u64>,
     },
+    #[returns(VesselsRewardsResponse)]
+    VesselsRewards {
+        user_address: String,
+        round_id: u64,
+        tranche_id: u64,
+        vessel_ids: Vec<u64>,
+    },
 }
 
 #[cw_serde]
@@ -196,4 +203,11 @@ pub struct ClaimTributeReplyPayload {
     pub balance_before_claim: Coin,
     pub vessels_owner: Addr,
     pub vessel_ids: Vec<u64>,
+}
+
+#[cw_serde]
+pub struct VesselsRewardsResponse {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub rewards: Vec<Coin>,
 }

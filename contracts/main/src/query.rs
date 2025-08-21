@@ -1,11 +1,24 @@
-use cosmwasm_std::{entry_point, to_json_binary, Binary, Deps, Env, StdError, StdResult};
+use cosmwasm_std::{entry_point, to_json_binary, Binary, Coin, Deps, Env, StdError, StdResult};
 
 use zephyrus_core::msgs::{
     ConstantsResponse, QueryMsg, VesselHarborInfo, VesselHarborResponse, VesselsResponse,
-    VotingPowerResponse,
+    VesselsRewardsResponse, VotingPowerResponse,
 };
 
-use crate::{helpers::validation::validate_no_duplicate_ids, state};
+use crate::{
+    helpers::{
+        hydro_queries::{
+            query_hydro_derivative_token_info_providers, query_hydro_round_all_proposals,
+        },
+        rewards::{
+            calcul_total_voting_power_on_proposal, calculate_hydromancer_claiming_rewards,
+            calculate_rewards_for_vessels_on_tribute, process_hydromancer_claiming_rewards,
+        },
+        tribute_queries::query_tribute_proposal_tributes,
+        validation::validate_no_duplicate_ids,
+    },
+    state,
+};
 
 const MAX_PAGINATION_LIMIT: usize = 1000;
 const DEFAULT_PAGINATION_LIMIT: usize = 100;
@@ -35,6 +48,18 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             round_id,
             lock_ids,
         } => to_json_binary(&query_vessels_harbor(deps, tranche_id, round_id, lock_ids)?),
+        QueryMsg::VesselsRewards {
+            user_address,
+            round_id,
+            tranche_id,
+            vessel_ids,
+        } => to_json_binary(&query_vessels_rewards(
+            deps,
+            user_address,
+            round_id,
+            tranche_id,
+            vessel_ids,
+        )?),
     }
 }
 
@@ -136,5 +161,80 @@ fn query_vessels_harbor(
 
     Ok(VesselHarborResponse {
         vessels_harbor_info,
+    })
+}
+
+// Query rewards for a user (if it's an hydromancer, it will be the commission) and vessels on a tranche and round, don't control if user own vessels to let an hydromancer query all rewards of its votes
+pub fn query_vessels_rewards(
+    deps: Deps,
+    user_address: String,
+    round_id: u64,
+    tranche_id: u64,
+    vessel_ids: Vec<u64>,
+) -> StdResult<VesselsRewardsResponse> {
+    let user_address = deps.api.addr_validate(user_address.as_str())?;
+    let constants = state::get_constants(deps.storage)?;
+    let token_info_provider =
+        query_hydro_derivative_token_info_providers(&deps, &constants, round_id)
+            .map_err(|e| StdError::generic_err(e.to_string()))?;
+    let all_round_proposals =
+        query_hydro_round_all_proposals(&deps, &constants, round_id, tranche_id)
+            .map_err(|e| StdError::generic_err(e.to_string()))?;
+
+    let mut coins: Vec<Coin> = vec![];
+    for proposal in all_round_proposals {
+        let proposal_tributes =
+            query_tribute_proposal_tributes(&deps, &constants, round_id, proposal.proposal_id)
+                .map_err(|e| StdError::generic_err(e.to_string()))?;
+        let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
+            deps.storage,
+            proposal.proposal_id,
+            round_id,
+            &token_info_provider,
+        )
+        .map_err(|e| StdError::generic_err(e.to_string()))?;
+
+        for tribute in proposal_tributes {
+            // Cumulate rewards for each vessel
+            let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
+                deps,
+                vessel_ids.clone(),
+                tribute.tribute_id,
+                tribute.tranche_id,
+                tribute.round_id,
+                tribute.proposal_id,
+                tribute.funds.clone(),
+                constants.clone(),
+                token_info_provider.clone(),
+                total_proposal_voting_power,
+            )
+            .map_err(|e| StdError::generic_err(e.to_string()))?;
+
+            let floored_amount = amount_to_distribute.to_uint_floor();
+            if !floored_amount.is_zero() {
+                let coin = Coin {
+                    denom: tribute.funds.denom.clone(),
+                    amount: floored_amount,
+                };
+                coins.push(coin);
+            }
+
+            // Process the case that sender is an hydromancer and send its commission to the sender
+            let hydromancer_rewards = calculate_hydromancer_claiming_rewards(
+                deps,
+                user_address.clone(),
+                round_id,
+                tribute.tribute_id,
+            )
+            .map_err(|e| StdError::generic_err(e.to_string()))?;
+            if let Some(hydromancer_rewards) = hydromancer_rewards {
+                coins.push(hydromancer_rewards);
+            }
+        }
+    }
+    Ok(VesselsRewardsResponse {
+        round_id,
+        tranche_id,
+        rewards: coins,
     })
 }

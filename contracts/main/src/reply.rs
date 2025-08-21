@@ -16,7 +16,7 @@ use zephyrus_core::state::VesselHarbor;
 use crate::helpers::hydro_queries::query_hydro_derivative_token_info_providers;
 use crate::helpers::rewards::{
     allocate_rewards_to_hydromancer, calcul_protocol_comm_and_rest,
-    calcul_total_voting_power_on_proposal, calculate_rewards_for_vessels_on_tribute,
+    calcul_total_voting_power_on_proposal, distribute_rewards_for_vessels_on_tribute,
     process_hydromancer_claiming_rewards,
 };
 use crate::{
@@ -146,7 +146,7 @@ pub fn handle_claim_tribute_reply(
         payload.vessel_ids.len()
     ));
     // Cumulate rewards for each vessel
-    let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
+    let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
         &mut deps,
         payload.vessel_ids.clone(),
         payload.tribute_id,

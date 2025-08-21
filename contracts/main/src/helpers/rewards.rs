@@ -1,7 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 
 use cosmwasm_std::{
-    to_json_binary, Addr, Api, BankMsg, Coin, Decimal, DepsMut, Storage, SubMsg, Uint128, WasmMsg,
+    to_json_binary, Addr, Api, BankMsg, Coin, Decimal, Deps, DepsMut, Storage, SubMsg, Uint128,
+    WasmMsg,
 };
 use hydro_interface::msgs::{DenomInfoResponse, ExecuteMsg as HydroExecuteMsg};
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -173,7 +174,7 @@ pub fn calcul_voting_power_of_vessel(
 
 #[allow(clippy::too_many_arguments)]
 pub fn calcul_rewards_amount_for_vessel_on_proposal(
-    deps: &DepsMut<'_>,
+    deps: Deps<'_>,
     round_id: RoundId,
     tranche_id: TrancheId,
     proposal_id: HydroProposalId,
@@ -245,8 +246,7 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
         ));
         // Vessel is under hydromancer control, we don't care if it was used or not, it take a portion of hydromancer rewards
         let vessel_shares = state::get_vessel_shares_info(deps.storage, round_id, vessel_id)?;
-        let proposal =
-            query_hydro_proposal(&deps.as_ref(), constants, round_id, tranche_id, proposal_id)?;
+        let proposal = query_hydro_proposal(&deps, constants, round_id, tranche_id, proposal_id)?;
 
         deps.api.debug(&format!(
             "ZEPH078: Vessel {} locked_rounds: {}, proposal duration: {}",
@@ -368,7 +368,7 @@ pub fn allocate_rewards_to_hydromancer(
     Ok(())
 }
 #[allow(clippy::too_many_arguments)]
-pub fn calculate_rewards_for_vessels_on_tribute(
+pub fn distribute_rewards_for_vessels_on_tribute(
     deps: &mut DepsMut<'_>,
     vessel_ids: Vec<u64>,
     tribute_id: TributeId,
@@ -392,7 +392,7 @@ pub fn calculate_rewards_for_vessels_on_tribute(
             ));
 
             let proposal_vessel_rewards = calcul_rewards_amount_for_vessel_on_proposal(
-                deps,
+                deps.as_ref(),
                 round_id,
                 tranche_id,
                 proposal_id,
@@ -436,6 +436,71 @@ pub fn calculate_rewards_for_vessels_on_tribute(
 
     deps.api.debug(&format!(
         "ZEPH065: Total amount to distribute: {}",
+        amount_to_distribute
+    ));
+    Ok(amount_to_distribute)
+}
+
+// READONLY method This function is used to calculate the rewards for the vessels on a tribute
+#[allow(clippy::too_many_arguments)]
+pub fn calculate_rewards_for_vessels_on_tribute(
+    deps: Deps<'_>,
+    vessel_ids: Vec<u64>,
+    tribute_id: TributeId,
+    tranche_id: TrancheId,
+    round_id: RoundId,
+    proposal_id: HydroProposalId,
+    tribute_rewards: Coin,
+    constants: zephyrus_core::state::Constants,
+    token_info_provider: HashMap<String, hydro_interface::msgs::DenomInfoResponse>,
+    total_proposal_voting_power: Decimal,
+) -> Result<Decimal, ContractError> {
+    deps.api.debug(&format!("ZEPH060:READONLY Calculating vessel rewards - tribute_id: {}, proposal_id: {}, vessels: {:?}, rewards: {:?}", 
+        tribute_id, proposal_id, vessel_ids, tribute_rewards));
+
+    let mut amount_to_distribute = Decimal::zero();
+    for vessel_id in vessel_ids.clone() {
+        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
+            deps.api.debug(&format!(
+                "ZEPH061: Processing unclaimed vessel {}",
+                vessel_id
+            ));
+
+            let proposal_vessel_rewards = calcul_rewards_amount_for_vessel_on_proposal(
+                deps,
+                round_id,
+                tranche_id,
+                proposal_id,
+                tribute_id,
+                &constants,
+                &token_info_provider,
+                total_proposal_voting_power,
+                tribute_rewards.clone(),
+                vessel_id,
+            )?;
+
+            deps.api.debug(&format!(
+                "ZEPH062:READONLY  Vessel {} reward amount: {}",
+                vessel_id, proposal_vessel_rewards
+            ));
+
+            amount_to_distribute = amount_to_distribute.saturating_add(proposal_vessel_rewards);
+
+            let floored_vessel_reward = proposal_vessel_rewards.to_uint_floor();
+            deps.api.debug(&format!(
+                "ZEPH063:READONLY Saving vessel {} claim: {} {}",
+                vessel_id, floored_vessel_reward, tribute_rewards.denom
+            ));
+        } else {
+            deps.api.debug(&format!(
+                "ZEPH064:READONLY Vessel {} already claimed tribute {}",
+                vessel_id, tribute_id
+            ));
+        }
+    }
+
+    deps.api.debug(&format!(
+        "ZEPH065:READONLY Total amount to distribute: {}",
         amount_to_distribute
     ));
     Ok(amount_to_distribute)
@@ -509,7 +574,7 @@ pub fn distribute_rewards_for_all_round_proposals(
             ));
 
             // Cumulate rewards for each vessel
-            let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
+            let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
                 &mut deps,
                 vessel_ids.clone(),
                 tribute.tribute_id,
@@ -662,5 +727,38 @@ pub fn process_hydromancer_claiming_rewards(
             .debug(&format!("ZEPH098: Sender {} is not a hydromancer", sender));
     }
     deps.api.debug("ZEPH099: No hydromancer commission to send");
+    Ok(None)
+}
+
+// READONLY method This function is used to calculate the rewards for the hydromancer on a tribute
+pub fn calculate_hydromancer_claiming_rewards(
+    deps: Deps<'_>,
+    sender: Addr,
+    round_id: RoundId,
+    tribute_id: TributeId,
+) -> Result<Option<Coin>, ContractError> {
+    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, sender.clone()).ok();
+    if let Some(hydromancer_id) = hydromancer_id {
+        if !state::is_hydromancer_tribute_claimed(deps.storage, hydromancer_id, tribute_id) {
+            // Sender is an hydromancer, send its commission to the sender
+            let hydromancer_tribute = state::get_hydromancer_rewards_by_tribute(
+                deps.storage,
+                hydromancer_id,
+                round_id,
+                tribute_id,
+            )?;
+            if let Some(hydromancer_tribute) = hydromancer_tribute {
+                // Check if commission amount is greater than zero
+                if !hydromancer_tribute
+                    .commission_for_hydromancer
+                    .amount
+                    .is_zero()
+                {
+                    let coin = hydromancer_tribute.commission_for_hydromancer.clone();
+                    return Ok(Some(coin));
+                }
+            }
+        }
+    }
     Ok(None)
 }

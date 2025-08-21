@@ -140,18 +140,21 @@ pub fn query_hydro_derivative_token_info_providers(
 
     for provider in token_info_providers.providers {
         if let TokenInfoProvider::Derivative(derivative) = provider {
-            for (round, denom_info) in derivative.cache {
-                if round == round_id {
-                    providers.insert(denom_info.token_group_id.clone(), denom_info);
-                } else {
-                    // DenomInfo is not cached for the round in hydro, query the provider contract to get the denom info for the round
-                    let denom_info: DenomInfoResponse = deps.querier.query_wasm_smart(
+            // Try to find cached denom info for the round
+            let cached_denom_info = derivative.cache.get(&round_id);
+
+            let denom_info = match cached_denom_info {
+                Some(denom_info) => denom_info.clone(),
+                None => {
+                    // Cache is empty or doesn't contain the round, query the provider contract directly
+                    deps.querier.query_wasm_smart(
                         derivative.contract.clone(),
                         &DerivativeTokenInfoProviderQueryMsg::DenomInfo { round_id },
-                    )?;
-                    providers.insert(denom_info.token_group_id.clone(), denom_info);
+                    )?
                 }
-            }
+            };
+
+            providers.insert(denom_info.token_group_id.clone(), denom_info);
         }
     }
     Ok(providers)

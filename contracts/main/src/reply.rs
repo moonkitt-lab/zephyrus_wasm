@@ -74,6 +74,9 @@ pub fn handle_claim_tribute_reply(
     env: Env,
     payload: ClaimTributeReplyPayload,
 ) -> Result<Response, ContractError> {
+    deps.api.debug(&format!("ZEPH020: Starting claim tribute reply handler - tribute_id: {}, proposal_id: {}, amount: {:?}", 
+        payload.tribute_id, payload.proposal_id, payload.amount));
+
     let constants = state::get_constants(deps.storage)?;
     let balance_query = deps
         .querier
@@ -82,13 +85,29 @@ pub fn handle_claim_tribute_reply(
         .balance_before_claim
         .amount
         .strict_add(payload.amount.amount);
+
+    deps.api.debug(&format!(
+        "ZEPH021: Balance check - actual: {}, expected: {}, before_claim: {}",
+        balance_query.amount, balance_expected, payload.balance_before_claim.amount
+    ));
+
     // Check if the amount reveived is correct
     if balance_query.amount != balance_expected {
+        deps.api.debug(&format!(
+            "ZEPH022: ERROR - Balance mismatch! tribute_id: {}",
+            payload.tribute_id
+        ));
         return Err(ContractError::InsufficientTributeReceived {
             tribute_id: payload.tribute_id,
         });
     }
+
     let (commission_amount, users_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
+    deps.api.debug(&format!(
+        "ZEPH023: Commission calculation - commission: {}, users_funds: {:?}",
+        commission_amount, users_funds
+    ));
+
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, payload.round_id)?;
     let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
@@ -97,7 +116,18 @@ pub fn handle_claim_tribute_reply(
         payload.round_id,
         &token_info_provider,
     )?;
+
+    deps.api.debug(&format!(
+        "ZEPH024: Total proposal voting power: {}",
+        total_proposal_voting_power
+    ));
+
     let hydromancer_ids = state::get_all_hydromancers(deps.storage)?;
+    deps.api.debug(&format!(
+        "ZEPH025: Allocating rewards to {} hydromancers",
+        hydromancer_ids.len()
+    ));
+
     for hydromancer_id in hydromancer_ids {
         allocate_rewards_to_hydromancer(
             &mut deps,
@@ -111,6 +141,10 @@ pub fn handle_claim_tribute_reply(
         )?;
     }
 
+    deps.api.debug(&format!(
+        "ZEPH026: Calculating rewards for {} vessels",
+        payload.vessel_ids.len()
+    ));
     // Cumulate rewards for each vessel
     let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
         &mut deps,
@@ -126,19 +160,39 @@ pub fn handle_claim_tribute_reply(
     )?;
     let mut response = Response::new();
 
+    deps.api.debug(&format!(
+        "ZEPH027: Amount to distribute: {}",
+        amount_to_distribute
+    ));
     // Send rewards to vessels owner
-    if !amount_to_distribute.is_zero() {
+    let floored_amount = amount_to_distribute.to_uint_floor();
+    deps.api
+        .debug(&format!("ZEPH028: Floored amount: {}", floored_amount));
+
+    if !floored_amount.is_zero() {
+        deps.api.debug(&format!(
+            "ZEPH029: Sending {} {} to vessel owner {}",
+            floored_amount, payload.amount.denom, payload.vessels_owner
+        ));
         let send_msg = BankMsg::Send {
             to_address: payload.vessels_owner.to_string(),
             amount: vec![Coin {
                 denom: payload.amount.denom.clone(),
-                amount: amount_to_distribute.to_uint_floor(),
+                amount: floored_amount,
             }],
         };
         response = response.add_message(send_msg);
+    } else {
+        deps.api
+            .debug("ZEPH030: No rewards to send to vessel owner (floored amount is zero)");
     }
+
     // Send commission to recipient
     if commission_amount.u128() > 0 {
+        deps.api.debug(&format!(
+            "ZEPH031: Sending commission {} {} to {}",
+            commission_amount, payload.amount.denom, constants.commission_recipient
+        ));
         let send_msg = BankMsg::Send {
             to_address: constants.commission_recipient.to_string(),
             amount: vec![Coin {
@@ -147,7 +201,10 @@ pub fn handle_claim_tribute_reply(
             }],
         };
         response = response.add_message(send_msg);
+    } else {
+        deps.api.debug("ZEPH032: No commission to send");
     }
+
     // Process the case that sender is an hydromancer and send its commission to the sender
     let hydromancer_rewards_send_msg = process_hydromancer_claiming_rewards(
         &mut deps,
@@ -156,8 +213,14 @@ pub fn handle_claim_tribute_reply(
         payload.tribute_id,
     )?;
     if let Some(send_msg) = hydromancer_rewards_send_msg {
+        deps.api.debug("ZEPH033: Sending hydromancer commission");
         response = response.add_message(send_msg);
+    } else {
+        deps.api.debug("ZEPH034: No hydromancer commission to send");
     }
+
+    deps.api
+        .debug("ZEPH035: Claim tribute reply handler completed successfully");
     Ok(response.add_attribute("action", "handle_claim_tribute_reply"))
 }
 

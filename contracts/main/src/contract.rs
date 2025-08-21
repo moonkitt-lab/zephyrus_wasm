@@ -217,10 +217,18 @@ fn execute_claim(
     tranche_id: u64,
     vessel_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
+    deps.api.debug(&format!("ZEPH001: Starting claim execution - sender: {}, round_id: {}, tranche_id: {}, vessel_ids: {:?}", 
+        info.sender, round_id, tranche_id, vessel_ids));
+
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
     validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
+
+    deps.api
+        .debug("ZEPH002: Validations passed, querying outstanding tributes");
+
     let contract_address = env.contract.address.clone();
+
     // Check if zephyrus has outstanding tributes to claim
     let outstanding_tributes = query_hydro_outstanding_tribute_claims(
         &deps.as_ref(),
@@ -234,8 +242,25 @@ fn execute_claim(
     let mut response = Response::new().add_attribute("action", "claim");
     if outstanding_tributes.is_ok() {
         let outstanding_tributes = outstanding_tributes.unwrap();
+        deps.api.debug(&format!(
+            "ZEPH003: Found {} outstanding tributes to claim",
+            outstanding_tributes.claims.len()
+        ));
+
         let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
+        deps.api.debug(&format!(
+            "ZEPH004: Current contract balances: {:?}",
+            balances
+        ));
+
         for outstanding_tribute in outstanding_tributes.claims {
+            deps.api.debug(&format!(
+                "ZEPH005: Processing tribute_id: {}, proposal_id: {}, amount: {:?}",
+                outstanding_tribute.tribute_id,
+                outstanding_tribute.proposal_id,
+                outstanding_tribute.amount
+            ));
+
             let sub_msg = build_claim_tribute_sub_msg(
                 round_id,
                 tranche_id,
@@ -245,22 +270,45 @@ fn execute_claim(
                 &contract_address,
                 &balances,
                 &outstanding_tribute,
+                deps.api,
             )?;
             tributes_process_in_reply.insert(outstanding_tribute.tribute_id);
             response = response.add_submessage(sub_msg);
+
             // Update virtual balances for checking purposes
             if let Some(balance) = balances
                 .iter_mut()
                 .find(|balance| balance.denom == outstanding_tribute.amount.denom)
             {
-                // Utilisateur trouvé, modifier le solde
-                balance.amount = balance.amount.strict_add(outstanding_tribute.amount.amount);
+                // balance found, add to the balance
+                balance.amount = balance
+                    .amount
+                    .checked_add(outstanding_tribute.amount.amount)
+                    .map_err(|e| ContractError::Std(e.into()))?;
+                deps.api.debug(&format!(
+                    "ZEPH006: Updated existing balance for {}: {}",
+                    outstanding_tribute.amount.denom, balance.amount
+                ));
             } else {
-                // Utilisateur non trouvé, l'ajouter
+                // balance not found, add it
                 balances.push(outstanding_tribute.amount.clone());
+                deps.api.debug(&format!(
+                    "ZEPH007: Added new balance for {}: {}",
+                    outstanding_tribute.amount.denom, outstanding_tribute.amount.amount
+                ));
             }
         }
+    } else {
+        deps.api.debug(&format!(
+            "ZEPH008: No outstanding tributes found or query failed: {:?}",
+            outstanding_tributes.err()
+        ));
     }
+
+    deps.api.debug(&format!(
+        "ZEPH009: Distributing rewards for {} vessels",
+        vessel_ids.len()
+    ));
     let messages = distribute_rewards_for_all_round_proposals(
         deps,
         info.sender.clone(),
@@ -270,9 +318,11 @@ fn execute_claim(
         constants,
         tributes_process_in_reply,
     )?;
+
     if !messages.is_empty() {
         response = response.add_messages(messages);
     }
+
     Ok(response)
 }
 

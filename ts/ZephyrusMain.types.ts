@@ -112,6 +112,13 @@ export type QueryMsg = {
     round_id: number;
     tranche_id: number;
   };
+} | {
+  vessels_rewards: {
+    round_id: number;
+    tranche_id: number;
+    user_address: string;
+    vessel_ids: number[];
+  };
 };
 export type Addr = string;
 export interface ConstantsResponse {
@@ -154,6 +161,16 @@ export interface VesselHarbor {
   hydro_lock_id: number;
   steerer_id: number;
   user_control: boolean;
+}
+export type Uint128 = string;
+export interface VesselsRewardsResponse {
+  rewards: Coin[];
+  round_id: number;
+  tranche_id: number;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
 }
 export interface VotingPowerResponse {
   voting_power: number;

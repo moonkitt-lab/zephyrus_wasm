@@ -5,8 +5,8 @@
 */
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
-import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
+import { StdFee } from "@cosmjs/amino";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, Uint128, VesselsRewardsResponse, Coin, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -38,6 +38,17 @@ export interface ZephyrusMainReadOnlyInterface {
     roundId: number;
     trancheId: number;
   }) => Promise<VesselHarborResponse>;
+  vesselsRewards: ({
+    roundId,
+    trancheId,
+    userAddress,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    userAddress: string;
+    vesselIds: number[];
+  }) => Promise<VesselsRewardsResponse>;
 }
 export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   client: CosmWasmClient;
@@ -50,6 +61,7 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
     this.vesselsByHydromancer = this.vesselsByHydromancer.bind(this);
     this.constants = this.constants.bind(this);
     this.vesselsHarbor = this.vesselsHarbor.bind(this);
+    this.vesselsRewards = this.vesselsRewards.bind(this);
   }
   votingPower = async (): Promise<VotingPowerResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -109,6 +121,26 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
         lock_ids: lockIds,
         round_id: roundId,
         tranche_id: trancheId
+      }
+    });
+  };
+  vesselsRewards = async ({
+    roundId,
+    trancheId,
+    userAddress,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    userAddress: string;
+    vesselIds: number[];
+  }): Promise<VesselsRewardsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      vessels_rewards: {
+        round_id: roundId,
+        tranche_id: trancheId,
+        user_address: userAddress,
+        vessel_ids: vesselIds
       }
     });
   };

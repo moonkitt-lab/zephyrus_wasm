@@ -25,3 +25,6 @@ mod validation_test;
 
 #[cfg(test)]
 mod vessel_assignment_test;
+
+#[cfg(test)]
+mod rewards_test;

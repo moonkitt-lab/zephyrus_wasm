@@ -4,18 +4,18 @@ use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};
 use crate::{
     contract::{execute, instantiate},
     errors::ContractError,
-    reply::handle_vote_reply,
+    reply::{handle_claim_tribute_reply, handle_vote_reply},
     state::{self},
 };
 use cosmwasm_std::{from_json, CosmosMsg, DepsMut, ReplyOn, WasmMsg};
 use cosmwasm_std::{
     testing::{message_info, mock_env, MockApi},
-    to_json_binary, Addr, Binary, Decimal, MessageInfo,
+    to_json_binary, Addr, Binary, Coin, Decimal, MessageInfo,
 };
 use hydro_interface::msgs::ExecuteMsg as HydroExecuteMsg;
 use zephyrus_core::msgs::{
-    Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg, RefreshTimeWeightedSharesReplyPayload, VesselInfo,
-    VesselsToHarbor, VoteReplyPayload,
+    ClaimTributeReplyPayload, Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg,
+    RefreshTimeWeightedSharesReplyPayload, VesselInfo, VesselsToHarbor, VoteReplyPayload,
 };
 use zephyrus_core::state::{Vessel, VesselHarbor};
 
@@ -2288,4 +2288,135 @@ fn decommission_vessels_succeed() {
         decommission_msg,
     );
     assert!(result.is_ok());
+}
+
+#[test]
+fn claim_rewards_fail_unauthorized_vessel() {
+    let mut deps = mock_dependencies();
+    init_contract(deps.as_mut());
+
+    let alice_address = make_valid_addr("alice");
+    let bob_address = make_valid_addr("bob");
+
+    // Create user but don't give them any vessels
+    let _user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("Should create user id");
+
+    // Try to claim rewards for a vessel that doesn't exist
+    let claim_msg = ExecuteMsg::Claim {
+        round_id: deps.querier.get_current_round(),
+        tranche_id: 1,
+        vessel_ids: vec![999], // Non-existent vessel
+    };
+
+    let res = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        claim_msg,
+    );
+
+    // Should fail because user doesn't own the vessel
+    assert!(res.is_err());
+    assert_eq!(res.unwrap_err(), ContractError::Unauthorized);
+}
+
+#[test]
+fn claim_rewards_fail_wrong_owner() {
+    let mut deps = mock_dependencies();
+    init_contract(deps.as_mut());
+
+    let constants = state::get_constants(deps.as_mut().storage).unwrap();
+    let alice_address = make_valid_addr("alice");
+    let bob_address = make_valid_addr("bob");
+
+    // Create both users
+    let _alice_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("Should create user id");
+    let _bob_id = state::insert_new_user(deps.as_mut().storage, bob_address.clone())
+        .expect("Should create user id");
+
+    let default_hydromancer_id = state::get_constants(deps.as_mut().storage)
+        .unwrap()
+        .default_hydromancer_id;
+
+    // Create vessel owned by Alice
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "0".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: default_hydromancer_id,
+            class_period: 3_000_000,
+        })
+        .unwrap(),
+    });
+
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: constants.hydro_config.hydro_contract_address.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok());
+
+    // Bob tries to claim rewards for Alice's vessel
+    let claim_msg = ExecuteMsg::Claim {
+        round_id: deps.querier.get_current_round(),
+        tranche_id: 1,
+        vessel_ids: vec![0],
+    };
+
+    let res = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: bob_address.clone(),
+            funds: vec![],
+        },
+        claim_msg,
+    );
+
+    // Should fail because Bob doesn't own the vessel
+    assert!(res.is_err());
+    assert_eq!(res.unwrap_err(), ContractError::Unauthorized);
+}
+
+#[test]
+fn handle_claim_tribute_reply_insufficient_balance() {
+    let mut deps = mock_dependencies();
+    init_contract(deps.as_mut());
+
+    let alice_address = make_valid_addr("alice");
+    let _user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("Should create user id");
+
+    // Create payload with incorrect balance (amount + balance_before_claim doesn't match actual balance)
+    let payload = ClaimTributeReplyPayload {
+        proposal_id: 1,
+        tribute_id: 1,
+        round_id: deps.querier.get_current_round(),
+        tranche_id: 1,
+        amount: Coin::new(1000u128, "uatom"),
+        balance_before_claim: Coin::new(500u128, "uatom"), // This would expect 1500 total
+        vessels_owner: alice_address.clone(),
+        vessel_ids: vec![0],
+    };
+
+    // Test handle_claim_tribute_reply with insufficient balance
+    let res = handle_claim_tribute_reply(deps.as_mut(), mock_env(), payload);
+
+    // Should fail due to insufficient tribute received
+    assert!(res.is_err());
+    assert_eq!(
+        res.unwrap_err(),
+        ContractError::InsufficientTributeReceived { tribute_id: 1 }
+    );
 }

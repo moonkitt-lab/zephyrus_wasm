@@ -205,7 +205,8 @@ fn test_calcul_protocol_comm_and_rest() {
     };
     let constants = create_mock_constants();
 
-    let (commission_amount, user_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
+    let (commission_amount, user_funds) =
+        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     // Verify commission calculation (5% of 1000 = 50)
     assert_eq!(commission_amount, Uint128::new(50));
@@ -244,7 +245,8 @@ fn test_calcul_protocol_comm_and_rest_zero_amount() {
     };
     let constants = create_mock_constants();
 
-    let (commission_amount, user_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
+    let (commission_amount, user_funds) =
+        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     assert_eq!(commission_amount, Uint128::zero());
     assert_eq!(user_funds.amount, Uint128::zero());
@@ -266,7 +268,8 @@ fn test_calcul_protocol_comm_and_rest_high_commission() {
         vessel_ids: vec![1u64, 2u64],
     };
 
-    let (commission_amount, user_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
+    let (commission_amount, user_funds) =
+        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     assert_eq!(commission_amount, Uint128::new(1000));
     assert_eq!(user_funds.amount, Uint128::zero());
@@ -287,7 +290,8 @@ fn test_calcul_protocol_comm_and_rest_different_denom() {
     };
     let constants = create_mock_constants();
 
-    let (commission_amount, user_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
+    let (commission_amount, user_funds) =
+        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     assert_eq!(commission_amount, Uint128::new(50));
     assert_eq!(user_funds.amount, Uint128::new(950));
@@ -376,7 +380,8 @@ fn test_calcul_protocol_comm_and_rest_large_amount() {
     };
     let constants = create_mock_constants();
 
-    let (commission_amount, user_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
+    let (commission_amount, user_funds) =
+        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     // Should handle large amounts without overflow
     assert!(commission_amount > Uint128::zero());

@@ -102,7 +102,8 @@ pub fn handle_claim_tribute_reply(
         });
     }
 
-    let (commission_amount, users_funds) = calcul_protocol_comm_and_rest(&payload, &constants);
+    let (commission_amount, users_funds) =
+        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
     deps.api.debug(&format!(
         "ZEPH023: Commission calculation - commission: {}, users_funds: {:?}",
         commission_amount, users_funds
@@ -153,7 +154,7 @@ pub fn handle_claim_tribute_reply(
         payload.tranche_id,
         payload.round_id,
         payload.proposal_id,
-        users_funds,
+        users_funds.clone(),
         constants.clone(),
         token_info_provider,
         total_proposal_voting_power,
@@ -218,7 +219,7 @@ pub fn handle_claim_tribute_reply(
     } else {
         deps.api.debug("ZEPH034: No hydromancer commission to send");
     }
-
+    state::mark_tribute_processed(deps.storage, payload.tribute_id, payload.amount.clone())?;
     deps.api
         .debug("ZEPH035: Claim tribute reply handler completed successfully");
     Ok(response.add_attribute("action", "handle_claim_tribute_reply"))

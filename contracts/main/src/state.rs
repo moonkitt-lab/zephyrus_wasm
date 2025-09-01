@@ -93,6 +93,28 @@ pub const VESSEL_TRIBUTE_CLAIMS: Map<(HydroLockId, TributeId), Coin> =
 pub const HYDROMANCER_TRIBUTE_CLAIMS: Map<(HydromancerId, TributeId), Coin> =
     Map::new("hydromancer_tribute_claims");
 
+// Track if a tribute has been claimed on hydro and processed by zephyrus
+pub const TRIBUTE_PROCESSED: Map<TributeId, Coin> = Map::new("tribute_processed");
+
+pub fn is_tribute_processed(storage: &dyn Storage, tribute_id: TributeId) -> bool {
+    TRIBUTE_PROCESSED.has(storage, tribute_id)
+}
+
+pub fn mark_tribute_processed(
+    storage: &mut dyn Storage,
+    tribute_id: TributeId,
+    coin: Coin,
+) -> StdResult<()> {
+    TRIBUTE_PROCESSED.save(storage, tribute_id, &coin)
+}
+
+pub fn get_tribute_processed(
+    storage: &dyn Storage,
+    tribute_id: TributeId,
+) -> StdResult<Option<Coin>> {
+    TRIBUTE_PROCESSED.may_load(storage, tribute_id)
+}
+
 // Insert new rewards to hydromancer
 // If the hydromancer already has a reward for the tribute => error
 // If the hydromancer doesn't have a reward for the tribute => insert new reward

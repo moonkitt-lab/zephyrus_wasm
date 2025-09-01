@@ -206,8 +206,15 @@ pub struct ClaimTributeReplyPayload {
 }
 
 #[cw_serde]
+pub struct RewardInfo {
+    pub coin: Coin,
+    pub proposal_id: u64,
+    pub tribute_id: u64,
+}
+
+#[cw_serde]
 pub struct VesselsRewardsResponse {
     pub round_id: u64,
     pub tranche_id: u64,
-    pub rewards: Vec<Coin>,
+    pub rewards: Vec<RewardInfo>,
 }

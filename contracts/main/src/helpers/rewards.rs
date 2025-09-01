@@ -634,16 +634,16 @@ pub fn distribute_rewards_for_all_round_proposals(
 }
 
 pub fn calcul_protocol_comm_and_rest(
-    payload: &ClaimTributeReplyPayload,
+    amount: Coin,
     constants: &zephyrus_core::state::Constants,
 ) -> (Uint128, Coin) {
     // deduct commission from the amount
-    let commission_amount = Decimal::from_ratio(payload.amount.amount, 1u128)
+    let commission_amount = Decimal::from_ratio(amount.amount, 1u128)
         .saturating_mul(constants.commission_rate)
         .to_uint_ceil();
-    let total_for_users = payload.amount.amount.saturating_sub(commission_amount);
+    let total_for_users = amount.amount.saturating_sub(commission_amount);
     let user_funds = Coin {
-        denom: payload.amount.denom.clone(),
+        denom: amount.denom.clone(),
         amount: total_for_users,
     };
     (commission_amount, user_funds)

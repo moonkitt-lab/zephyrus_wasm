@@ -1,17 +1,14 @@
-use cosmwasm_std::{
-    entry_point, to_json_binary, Binary, Coin, Deps, Env, StdError, StdResult, Uint128,
-};
+use cosmwasm_std::{entry_point, to_json_binary, Binary, Coin, Deps, Env, StdError, StdResult};
 
 use zephyrus_core::msgs::{
-    ClaimTributeReplyPayload, ConstantsResponse, QueryMsg, RewardInfo, VesselHarborInfo,
-    VesselHarborResponse, VesselsResponse, VesselsRewardsResponse, VotingPowerResponse,
+    ConstantsResponse, QueryMsg, RewardInfo, VesselHarborInfo, VesselHarborResponse,
+    VesselsResponse, VesselsRewardsResponse, VotingPowerResponse,
 };
 
 use crate::{
     helpers::{
         hydro_queries::{
-            query_hydro_derivative_token_info_providers, query_hydro_outstanding_tribute_claims,
-            query_hydro_round_all_proposals,
+            query_hydro_derivative_token_info_providers, query_hydro_round_all_proposals,
         },
         rewards::{
             calcul_protocol_comm_and_rest, calcul_total_voting_power_on_proposal,
@@ -234,7 +231,7 @@ pub fn query_vessels_rewards(
                 };
 
                 rewards_info = Some(RewardInfo {
-                    coin: coin,
+                    coin,
                     tribute_id: tribute.tribute_id,
                     proposal_id: proposal.proposal_id,
                 });

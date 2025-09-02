@@ -164,9 +164,14 @@ export interface VesselHarbor {
 }
 export type Uint128 = string;
 export interface VesselsRewardsResponse {
-  rewards: Coin[];
+  rewards: RewardInfo[];
   round_id: number;
   tranche_id: number;
+}
+export interface RewardInfo {
+  coin: Coin;
+  proposal_id: number;
+  tribute_id: number;
 }
 export interface Coin {
   amount: Uint128;

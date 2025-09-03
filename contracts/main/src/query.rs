@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use cosmwasm_std::{
-    entry_point, to_json_binary, Binary, Coin, Deps, Env, StdError, StdResult, Uint128,
-};
+use cosmwasm_std::{entry_point, to_json_binary, Binary, Coin, Deps, Env, StdError, StdResult};
 
 use zephyrus_core::{
     msgs::{

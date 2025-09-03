@@ -195,8 +195,10 @@ pub fn query_vessels_rewards(
             .map_err(|e| StdError::generic_err(e.to_string()))?;
 
     let mut coins: Vec<RewardInfo> = vec![];
+    // Query outstanding tributes on hydro, it will be used to calculate rewards for tributes that have not been processed
     let outstanding_tributes =
         query_hydro_outstanding_tribute_claims(&deps, env, &constants, round_id, tranche_id);
+    // Handle all porposals and for each handle all tributes
     for proposal in all_round_proposals {
         let proposal_tributes =
             query_tribute_proposal_tributes(&deps, &constants, round_id, proposal.proposal_id)
@@ -214,6 +216,7 @@ pub fn query_vessels_rewards(
             let mut data_loader: Box<dyn DataLoader> = Box::new(StateDataLoader {});
             let zephyrus_rewards;
             if !tribute_processed {
+                // Tribute has not been processed yet, we will search in outstanding tributes if it exists
                 if let Ok(outstanding_tributes) = &outstanding_tributes {
                     let outstanding_tribute = outstanding_tributes
                         .claims
@@ -231,6 +234,7 @@ pub fn query_vessels_rewards(
                     ));
                 }
             } else {
+                // Tribute has been already claimed by zephyrus on hydro, we will get the rewards from the state
                 zephyrus_rewards = state::get_tribute_processed(deps.storage, tribute.tribute_id)?
                     .expect("Tribute has been processed, Rewards should exist here");
             }
@@ -239,6 +243,7 @@ pub fn query_vessels_rewards(
                 calcul_protocol_comm_and_rest(zephyrus_rewards.clone(), &constants);
 
             if !tribute_processed {
+                // as tribute has not been processed yet, we will need to calculate rewards for hydromancers
                 let hydromancer_ids = state::get_all_hydromancers(deps.storage)?;
                 let mut hydromancer_rewards: HashMap<
                     (HydromancerId, RoundId, TributeId),
@@ -260,6 +265,7 @@ pub fn query_vessels_rewards(
                         hydromancer_tribute,
                     );
                 }
+                // we will use an in memory data loader to calculate rewards for users instead of using the state data loader
                 data_loader = Box::new(InMemoryDataLoader {
                     hydromancer_tributes: hydromancer_rewards,
                 });
@@ -296,7 +302,7 @@ pub fn query_vessels_rewards(
                 });
             }
 
-            // Process the case that sender is an hydromancer and send its commission to the sender
+            // Process the case that sender is an hydromancer and add its commission to claimable rewards
             let hydromancer_rewards = calculate_hydromancer_claiming_rewards(
                 deps,
                 user_address.clone(),

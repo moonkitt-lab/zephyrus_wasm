@@ -16,11 +16,14 @@ use zephyrus_core::{
 
 use crate::{
     errors::ContractError,
-    helpers::hydro_queries::{
-        query_hydro_derivative_token_info_providers, query_hydro_proposal,
-        query_hydro_round_all_proposals,
+    helpers::{
+        hydro_queries::{
+            query_hydro_derivative_token_info_providers, query_hydro_proposal,
+            query_hydro_round_all_proposals,
+        },
+        hydromancer_tribute_data_loader::{DataLoader, StateDataLoader},
+        tribute_queries::query_tribute_proposal_tributes,
     },
-    helpers::tribute_queries::query_tribute_proposal_tributes,
     state,
 };
 
@@ -184,6 +187,7 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
     total_proposal_voting_power: Decimal,
     proposal_rewards: Coin,
     vessel_id: u64,
+    data_loader: &dyn DataLoader,
 ) -> Result<Decimal, ContractError> {
     deps.api.debug(&format!("ZEPH070: Calculating vessel reward - vessel_id: {}, proposal_id: {}, total_power: {}, rewards: {:?}", 
         vessel_id, proposal_id, total_proposal_voting_power, proposal_rewards));
@@ -262,7 +266,7 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
                     proposal.deployment_duration,
                     token_info_provider,
                 )?;
-            let rewards_allocated_to_hydromancer = state::get_hydromancer_rewards_by_tribute(
+            let rewards_allocated_to_hydromancer = data_loader.load_hydromancer_tribute(
                 deps.storage,
                 vessel.hydromancer_id.unwrap(),
                 round_id,
@@ -310,15 +314,14 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
 
 #[allow(clippy::too_many_arguments)]
 pub fn allocate_rewards_to_hydromancer(
-    deps: &mut DepsMut<'_>,
+    deps: Deps<'_>,
     proposal_id: HydroProposalId,
     round_id: RoundId,
-    tribute_id: TributeId,
     funds: Coin,
     token_info_provider: &HashMap<String, hydro_interface::msgs::DenomInfoResponse>,
     total_proposal_voting_power: Decimal,
     hydromancer_id: u64,
-) -> Result<(), ContractError> {
+) -> Result<HydromancerTribute, ContractError> {
     let hydromancer_voting_power = calcul_total_voting_power_of_hydromancer_on_proposal(
         deps.storage,
         hydromancer_id,
@@ -349,23 +352,16 @@ pub fn allocate_rewards_to_hydromancer(
     // we add the rest to users rewards
     rewards_for_users = rewards_for_users.checked_add(rest).unwrap();
 
-    state::add_new_rewards_to_hydromancer(
-        deps.storage,
-        hydromancer_id,
-        round_id,
-        tribute_id,
-        HydromancerTribute {
-            rewards_for_users: Coin {
-                denom: funds.denom.clone(),
-                amount: rewards_for_users,
-            },
-            commission_for_hydromancer: Coin {
-                denom: funds.denom.clone(),
-                amount: hydromancer_commission,
-            },
+    Ok(HydromancerTribute {
+        rewards_for_users: Coin {
+            denom: funds.denom.clone(),
+            amount: rewards_for_users,
         },
-    )?;
-    Ok(())
+        commission_for_hydromancer: Coin {
+            denom: funds.denom.clone(),
+            amount: hydromancer_commission,
+        },
+    })
 }
 #[allow(clippy::too_many_arguments)]
 pub fn distribute_rewards_for_vessels_on_tribute(
@@ -402,6 +398,7 @@ pub fn distribute_rewards_for_vessels_on_tribute(
                 total_proposal_voting_power,
                 tribute_rewards.clone(),
                 vessel_id,
+                &StateDataLoader {},
             )?;
 
             deps.api.debug(&format!(
@@ -454,6 +451,7 @@ pub fn calculate_rewards_for_vessels_on_tribute(
     constants: zephyrus_core::state::Constants,
     token_info_provider: HashMap<String, hydro_interface::msgs::DenomInfoResponse>,
     total_proposal_voting_power: Decimal,
+    data_loader: &dyn DataLoader,
 ) -> Result<Decimal, ContractError> {
     deps.api.debug(&format!("ZEPH060:READONLY Calculating vessel rewards - tribute_id: {}, proposal_id: {}, vessels: {:?}, rewards: {:?}", 
         tribute_id, proposal_id, vessel_ids, tribute_rewards));
@@ -477,6 +475,7 @@ pub fn calculate_rewards_for_vessels_on_tribute(
                 total_proposal_voting_power,
                 tribute_rewards.clone(),
                 vessel_id,
+                data_loader,
             )?;
 
             deps.api.debug(&format!(
@@ -736,12 +735,13 @@ pub fn calculate_hydromancer_claiming_rewards(
     sender: Addr,
     round_id: RoundId,
     tribute_id: TributeId,
+    data_loader: &dyn DataLoader,
 ) -> Result<Option<Coin>, ContractError> {
     let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, sender.clone()).ok();
     if let Some(hydromancer_id) = hydromancer_id {
         if !state::is_hydromancer_tribute_claimed(deps.storage, hydromancer_id, tribute_id) {
             // Sender is an hydromancer, send its commission to the sender
-            let hydromancer_tribute = state::get_hydromancer_rewards_by_tribute(
+            let hydromancer_tribute = data_loader.load_hydromancer_tribute(
                 deps.storage,
                 hydromancer_id,
                 round_id,

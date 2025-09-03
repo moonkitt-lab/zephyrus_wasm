@@ -1,18 +1,29 @@
-use cosmwasm_std::{entry_point, to_json_binary, Binary, Coin, Deps, Env, StdError, StdResult};
+use std::collections::HashMap;
 
-use zephyrus_core::msgs::{
-    ConstantsResponse, QueryMsg, RewardInfo, VesselHarborInfo, VesselHarborResponse,
-    VesselsResponse, VesselsRewardsResponse, VotingPowerResponse,
+use cosmwasm_std::{
+    entry_point, to_json_binary, Binary, Coin, Deps, Env, StdError, StdResult, Uint128,
+};
+
+use zephyrus_core::{
+    msgs::{
+        ConstantsResponse, HydromancerId, QueryMsg, RewardInfo, RoundId, TributeId,
+        VesselHarborInfo, VesselHarborResponse, VesselsResponse, VesselsRewardsResponse,
+        VotingPowerResponse,
+    },
+    state::HydromancerTribute,
 };
 
 use crate::{
     helpers::{
         hydro_queries::{
-            query_hydro_derivative_token_info_providers, query_hydro_round_all_proposals,
+            query_hydro_derivative_token_info_providers, query_hydro_outstanding_tribute_claims,
+            query_hydro_round_all_proposals,
         },
+        hydromancer_tribute_data_loader::{DataLoader, InMemoryDataLoader, StateDataLoader},
         rewards::{
-            calcul_protocol_comm_and_rest, calcul_total_voting_power_on_proposal,
-            calculate_hydromancer_claiming_rewards, calculate_rewards_for_vessels_on_tribute,
+            allocate_rewards_to_hydromancer, calcul_protocol_comm_and_rest,
+            calcul_total_voting_power_on_proposal, calculate_hydromancer_claiming_rewards,
+            calculate_rewards_for_vessels_on_tribute,
         },
         tribute_queries::query_tribute_proposal_tributes,
         validation::validate_no_duplicate_ids,
@@ -55,6 +66,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             vessel_ids,
         } => to_json_binary(&query_vessels_rewards(
             deps,
+            env,
             user_address,
             round_id,
             tranche_id,
@@ -167,6 +179,7 @@ fn query_vessels_harbor(
 // Query rewards for a user (if it's an hydromancer, it will be the commission) and vessels on a tranche and round, don't control if user own vessels to let an hydromancer query all rewards of its votes
 pub fn query_vessels_rewards(
     deps: Deps,
+    env: Env,
     user_address: String,
     round_id: u64,
     tranche_id: u64,
@@ -182,7 +195,8 @@ pub fn query_vessels_rewards(
             .map_err(|e| StdError::generic_err(e.to_string()))?;
 
     let mut coins: Vec<RewardInfo> = vec![];
-
+    let outstanding_tributes =
+        query_hydro_outstanding_tribute_claims(&deps, env, &constants, round_id, tranche_id);
     for proposal in all_round_proposals {
         let proposal_tributes =
             query_tribute_proposal_tributes(&deps, &constants, round_id, proposal.proposal_id)
@@ -197,15 +211,59 @@ pub fn query_vessels_rewards(
 
         for tribute in proposal_tributes {
             let tribute_processed = state::is_tribute_processed(deps.storage, tribute.tribute_id);
+            let mut data_loader: Box<dyn DataLoader> = Box::new(StateDataLoader {});
+            let zephyrus_rewards;
             if !tribute_processed {
-                continue;
+                if let Ok(outstanding_tributes) = &outstanding_tributes {
+                    let outstanding_tribute = outstanding_tributes
+                        .claims
+                        .iter()
+                        .find(|t| t.tribute_id == tribute.tribute_id);
+                    if let Some(outstanding_tribute) = outstanding_tribute {
+                        zephyrus_rewards = outstanding_tribute.amount.clone();
+                    } else {
+                        // there is no outstanding tribute for this tribute, so there not yet rewards to distribute we can skip
+                        continue;
+                    }
+                } else {
+                    return Err(StdError::generic_err(
+                        "Error querying outstanding claims on hydro",
+                    ));
+                }
+            } else {
+                zephyrus_rewards = state::get_tribute_processed(deps.storage, tribute.tribute_id)?
+                    .expect("Tribute has been processed, Rewards should exist here");
             }
-
-            let zephyrus_rewards = state::get_tribute_processed(deps.storage, tribute.tribute_id)?
-                .expect("Tribute has been processed, Rewards should exist here");
 
             let (_, users_funds) =
                 calcul_protocol_comm_and_rest(zephyrus_rewards.clone(), &constants);
+
+            if !tribute_processed {
+                let hydromancer_ids = state::get_all_hydromancers(deps.storage)?;
+                let mut hydromancer_rewards: HashMap<
+                    (HydromancerId, RoundId, TributeId),
+                    HydromancerTribute,
+                > = HashMap::new();
+                for hydromancer_id in hydromancer_ids {
+                    let hydromancer_tribute = allocate_rewards_to_hydromancer(
+                        deps,
+                        proposal.proposal_id,
+                        round_id,
+                        users_funds.clone(),
+                        &token_info_provider,
+                        total_proposal_voting_power,
+                        hydromancer_id,
+                    )
+                    .map_err(|e| StdError::generic_err(e.to_string()))?;
+                    hydromancer_rewards.insert(
+                        (hydromancer_id, round_id, tribute.tribute_id),
+                        hydromancer_tribute,
+                    );
+                }
+                data_loader = Box::new(InMemoryDataLoader {
+                    hydromancer_tributes: hydromancer_rewards,
+                });
+            }
 
             // Cumulate rewards for each vessel
             let amount_to_distribute = calculate_rewards_for_vessels_on_tribute(
@@ -219,6 +277,7 @@ pub fn query_vessels_rewards(
                 constants.clone(),
                 token_info_provider.clone(),
                 total_proposal_voting_power,
+                &*data_loader,
             )
             .map_err(|e| StdError::generic_err(e.to_string()))?;
 
@@ -243,6 +302,7 @@ pub fn query_vessels_rewards(
                 user_address.clone(),
                 round_id,
                 tribute.tribute_id,
+                &*data_loader,
             )
             .map_err(|e| StdError::generic_err(e.to_string()))?;
             if let Some(hydromancer_rewards) = hydromancer_rewards {

@@ -1,5 +1,6 @@
 pub mod auto_maintenance;
 pub mod hydro_queries;
+pub mod hydromancer_tribute_data_loader;
 pub mod ibc;
 pub mod rewards;
 pub mod tribute_queries;

@@ -9,7 +9,10 @@ use zephyrus_core::{
     state::{Constants, Vessel},
 };
 
-use crate::{helpers::rewards::*, state, testing::make_valid_addr};
+use crate::{
+    helpers::hydromancer_tribute_data_loader::DataLoader, helpers::rewards::*, state,
+    testing::make_valid_addr,
+};
 
 // Helper function to create mock constants
 fn create_mock_constants() -> Constants {
@@ -22,6 +25,21 @@ fn create_mock_constants() -> Constants {
         commission_recipient: Addr::unchecked("commission_recipient"),
         default_hydromancer_id: 1u64,
         paused_contract: false,
+    }
+}
+
+// Mock DataLoader for testing
+struct MockDataLoader;
+
+impl DataLoader for MockDataLoader {
+    fn load_hydromancer_tribute(
+        &self,
+        _storage: &dyn cosmwasm_std::Storage,
+        _hydromancer_id: u64,
+        _round_id: u64,
+        _tribute_id: u64,
+    ) -> cosmwasm_std::StdResult<Option<zephyrus_core::state::HydromancerTribute>> {
+        Ok(None)
     }
 }
 
@@ -175,6 +193,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal() {
     let proposal_rewards = Coin::new(1000u128, "uatom");
     let vessel_id = 1u64;
 
+    let mock_data_loader = MockDataLoader;
     let result = calcul_rewards_amount_for_vessel_on_proposal(
         deps.as_ref(),
         round_id,
@@ -186,6 +205,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal() {
         total_proposal_voting_power,
         proposal_rewards,
         vessel_id,
+        &mock_data_loader,
     );
 
     assert!(result.is_err() || result.is_ok());
@@ -224,8 +244,14 @@ fn test_calculate_hydromancer_claiming_rewards() {
     let round_id = 1u64;
     let tribute_id = 1u64;
 
-    let result =
-        calculate_hydromancer_claiming_rewards(deps.as_ref(), sender, round_id, tribute_id);
+    let mock_data_loader = MockDataLoader;
+    let result = calculate_hydromancer_claiming_rewards(
+        deps.as_ref(),
+        sender,
+        round_id,
+        tribute_id,
+        &mock_data_loader,
+    );
 
     assert!(result.is_err() || result.is_ok());
 }
@@ -313,6 +339,7 @@ fn test_voting_power_calculation_with_zero_total() {
     let proposal_rewards = Coin::new(1000u128, "uatom");
     let vessel_id = 1u64;
 
+    let mock_data_loader = MockDataLoader;
     let result = calcul_rewards_amount_for_vessel_on_proposal(
         deps.as_ref(),
         round_id,
@@ -324,6 +351,7 @@ fn test_voting_power_calculation_with_zero_total() {
         total_proposal_voting_power,
         proposal_rewards,
         vessel_id,
+        &mock_data_loader,
     );
 
     // Should return an error due to division by zero
@@ -345,6 +373,7 @@ fn test_calculate_rewards_for_vessels_on_tribute_empty_list() {
     let token_info_provider = create_mock_token_info_provider();
     let total_proposal_voting_power = Decimal::percent(100);
 
+    let mock_data_loader = MockDataLoader;
     let result = calculate_rewards_for_vessels_on_tribute(
         deps.as_ref(),
         vessel_ids,
@@ -356,6 +385,7 @@ fn test_calculate_rewards_for_vessels_on_tribute_empty_list() {
         constants,
         token_info_provider,
         total_proposal_voting_power,
+        &mock_data_loader,
     );
 
     // Should return zero rewards for empty vessel list
@@ -559,8 +589,14 @@ fn test_calculate_hydromancer_claiming_rewards_not_hydromancer() {
     let round_id = 1u64;
     let tribute_id = 1u64;
 
-    let result =
-        calculate_hydromancer_claiming_rewards(deps.as_ref(), sender, round_id, tribute_id);
+    let mock_data_loader = MockDataLoader;
+    let result = calculate_hydromancer_claiming_rewards(
+        deps.as_ref(),
+        sender,
+        round_id,
+        tribute_id,
+        &mock_data_loader,
+    );
 
     assert!(result.is_ok());
     if let Ok(rewards) = result {
@@ -666,6 +702,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
     let proposal_rewards = Coin::new(1000u128, "uatom");
     let vessel_id = 1u64;
 
+    let mock_data_loader = MockDataLoader;
     let result = calcul_rewards_amount_for_vessel_on_proposal(
         deps.as_ref(),
         round_id,
@@ -677,6 +714,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
         total_proposal_voting_power,
         proposal_rewards,
         vessel_id,
+        &mock_data_loader,
     );
 
     // Should handle vessels that don't exist
@@ -698,6 +736,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal_vessel_not_found() {
     let proposal_rewards = Coin::new(1000u128, "uatom");
     let vessel_id = 999u64; // Non-existent vessel
 
+    let mock_data_loader = MockDataLoader;
     let result = calcul_rewards_amount_for_vessel_on_proposal(
         deps.as_ref(),
         round_id,
@@ -709,6 +748,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal_vessel_not_found() {
         total_proposal_voting_power,
         proposal_rewards,
         vessel_id,
+        &mock_data_loader,
     );
 
     // Should fail due to vessel not found
@@ -747,10 +787,9 @@ fn test_allocate_rewards_to_hydromancer_with_real_data() {
     let total_proposal_voting_power = Decimal::from_ratio(2000u128, 1u128); // 2000 total power
 
     let result = allocate_rewards_to_hydromancer(
-        &mut deps.as_mut(),
+        deps.as_ref(),
         proposal_id,
         round_id,
-        tribute_id,
         funds,
         &token_info_provider,
         total_proposal_voting_power,
@@ -783,10 +822,9 @@ fn test_allocate_rewards_to_hydromancer_division_by_zero() {
     let total_proposal_voting_power = Decimal::zero(); // This will cause division by zero
 
     let result = allocate_rewards_to_hydromancer(
-        &mut deps.as_mut(),
+        deps.as_ref(),
         proposal_id,
         round_id,
-        tribute_id,
         funds,
         &token_info_provider,
         total_proposal_voting_power,

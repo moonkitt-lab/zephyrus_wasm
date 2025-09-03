@@ -130,15 +130,21 @@ pub fn handle_claim_tribute_reply(
     ));
 
     for hydromancer_id in hydromancer_ids {
-        allocate_rewards_to_hydromancer(
-            &mut deps,
+        let hydromancer_tribute = allocate_rewards_to_hydromancer(
+            deps.as_ref(),
             payload.proposal_id,
             payload.round_id,
-            payload.tribute_id,
             users_funds.clone(),
             &token_info_provider,
             total_proposal_voting_power,
             hydromancer_id,
+        )?;
+        state::add_new_rewards_to_hydromancer(
+            deps.storage,
+            hydromancer_id,
+            payload.round_id,
+            payload.tribute_id,
+            hydromancer_tribute,
         )?;
     }
 

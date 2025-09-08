@@ -86,16 +86,20 @@ pub fn handle_claim_tribute_reply(
         .amount
         .strict_add(payload.amount.amount);
 
+    // Get total amount distributed by previous tributes in this batch
+    let total_distributed = state::get_total_distributed_amount(deps.storage, &payload.amount.denom)?;
+    let balance_expected_adjusted = balance_expected.saturating_sub(total_distributed);
+
     deps.api.debug(&format!(
-        "ZEPH021: Balance check - actual: {}, expected: {}, before_claim: {}",
-        balance_query.amount, balance_expected, payload.balance_before_claim.amount
+        "ZEPH021: Balance check - actual: {}, expected: {}, before_claim: {}, total_distributed: {}, adjusted_expected: {}",
+        balance_query.amount, balance_expected, payload.balance_before_claim.amount, total_distributed, balance_expected_adjusted
     ));
 
-    // Check if the amount reveived is correct
-    if balance_query.amount != balance_expected {
+    // Check if the amount received is correct, accounting for previous distributions
+    if balance_query.amount != balance_expected_adjusted {
         deps.api.debug(&format!(
-            "ZEPH022: ERROR - Balance mismatch! tribute_id: {}",
-            payload.tribute_id
+            "ZEPH022: ERROR - Balance mismatch! tribute_id: {}, actual: {}, expected_adjusted: {}",
+            payload.tribute_id, balance_query.amount, balance_expected_adjusted
         ));
         return Err(ContractError::InsufficientTributeReceived {
             tribute_id: payload.tribute_id,
@@ -219,12 +223,42 @@ pub fn handle_claim_tribute_reply(
         payload.round_id,
         payload.tribute_id,
     )?;
-    if let Some(send_msg) = hydromancer_rewards_send_msg {
+
+    // Record total distributed amount for this tribute to track for future tributes in same batch
+    let mut total_distributed_amount = floored_amount.checked_add(commission_amount)
+        .map_err(|e| ContractError::Std(e.into()))?;
+    
+    // Add hydromancer rewards if any and add to response
+    if let Some(ref send_msg) = hydromancer_rewards_send_msg {
         deps.api.debug("ZEPH033: Sending hydromancer commission");
-        response = response.add_message(send_msg);
+        response = response.add_message(send_msg.clone());
+        
+        // Extract amount from hydromancer message for tracking
+        if let BankMsg::Send { amount, .. } = send_msg {
+            if let Some(hydro_coin) = amount.iter().find(|c| c.denom == payload.amount.denom) {
+                total_distributed_amount = total_distributed_amount.checked_add(hydro_coin.amount)
+                    .map_err(|e| ContractError::Std(e.into()))?;
+            }
+        }
     } else {
         deps.api.debug("ZEPH034: No hydromancer commission to send");
     }
+    
+    if !total_distributed_amount.is_zero() {
+        state::record_tribute_distribution(
+            deps.storage, 
+            payload.tribute_id, 
+            Coin {
+                denom: payload.amount.denom.clone(),
+                amount: total_distributed_amount,
+            }
+        )?;
+        deps.api.debug(&format!(
+            "ZEPH034.5: Recorded distribution of {} {} for tribute_id: {}",
+            total_distributed_amount, payload.amount.denom, payload.tribute_id
+        ));
+    }
+
     state::mark_tribute_processed(deps.storage, payload.tribute_id, payload.amount.clone())?;
     deps.api
         .debug("ZEPH035: Claim tribute reply handler completed successfully");

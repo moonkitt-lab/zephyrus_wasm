@@ -210,7 +210,7 @@ fn execute_update_commission_recipient(
 }
 
 fn execute_claim(
-    deps: DepsMut,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     round_id: u64,
@@ -310,7 +310,7 @@ fn execute_claim(
         vessel_ids.len()
     ));
     let messages = distribute_rewards_for_all_round_proposals(
-        deps,
+        deps.branch(),
         info.sender.clone(),
         round_id,
         tranche_id,
@@ -322,6 +322,9 @@ fn execute_claim(
     if !messages.is_empty() {
         response = response.add_messages(messages);
     }
+
+    // Clear temporary distribution tracking data after successful batch completion
+    state::clear_distribution_tracking(deps.storage)?;
 
     Ok(response)
 }

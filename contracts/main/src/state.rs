@@ -96,6 +96,10 @@ pub const HYDROMANCER_TRIBUTE_CLAIMS: Map<(HydromancerId, TributeId), Coin> =
 // Track if a tribute has been claimed on hydro and processed by zephyrus
 pub const TRIBUTE_PROCESSED: Map<TributeId, Coin> = Map::new("tribute_processed");
 
+// Temporary storage for tracking distributed amounts during current transaction batch
+// Key: tribute_id, Value: total amount distributed (vessel rewards + commission + hydromancer rewards)
+pub const TRIBUTE_DISTRIBUTED_AMOUNTS: Map<TributeId, Coin> = Map::new("tribute_distributed_amounts");
+
 pub fn is_tribute_processed(storage: &dyn Storage, tribute_id: TributeId) -> bool {
     TRIBUTE_PROCESSED.has(storage, tribute_id)
 }
@@ -993,4 +997,65 @@ pub fn has_vessel_shares_info(
     hydro_lock_id: HydroLockId,
 ) -> bool {
     VESSEL_SHARES_INFO.has(storage, (round_id, hydro_lock_id))
+}
+
+// Helper functions for tracking distributed amounts during transaction batch
+
+pub fn record_tribute_distribution(
+    storage: &mut dyn Storage,
+    tribute_id: TributeId,
+    amount: Coin,
+) -> Result<(), ContractError> {
+    let current_distributed = TRIBUTE_DISTRIBUTED_AMOUNTS
+        .may_load(storage, tribute_id)?
+        .unwrap_or_else(|| Coin {
+            denom: amount.denom.clone(),
+            amount: cosmwasm_std::Uint128::zero(),
+        });
+    
+    if current_distributed.denom != amount.denom {
+        return Err(ContractError::CustomError {
+            msg: format!("Denomination mismatch: expected {}, got {}", current_distributed.denom, amount.denom),
+        });
+    }
+    
+    let new_distributed = Coin {
+        denom: amount.denom,
+        amount: current_distributed.amount.checked_add(amount.amount)
+            .map_err(|e| ContractError::Std(StdError::overflow(e)))?,
+    };
+    
+    TRIBUTE_DISTRIBUTED_AMOUNTS.save(storage, tribute_id, &new_distributed)?;
+    Ok(())
+}
+
+pub fn get_total_distributed_amount(
+    storage: &dyn Storage,
+    denom: &str,
+) -> Result<cosmwasm_std::Uint128, ContractError> {
+    let mut total = cosmwasm_std::Uint128::zero();
+    
+    // Sum up all distributions in the current batch for the given denomination
+    for item in TRIBUTE_DISTRIBUTED_AMOUNTS.range(storage, None, None, cosmwasm_std::Order::Ascending) {
+        let (_, distributed_coin) = item?;
+        if distributed_coin.denom == denom {
+            total = total.checked_add(distributed_coin.amount)
+                .map_err(|e| ContractError::Std(StdError::overflow(e)))?;
+        }
+    }
+    
+    Ok(total)
+}
+
+pub fn clear_distribution_tracking(storage: &mut dyn Storage) -> Result<(), ContractError> {
+    // Clear all temporary distribution tracking data
+    let keys: Vec<TributeId> = TRIBUTE_DISTRIBUTED_AMOUNTS
+        .keys(storage, None, None, cosmwasm_std::Order::Ascending)
+        .collect::<Result<Vec<_>, _>>()?;
+        
+    for key in keys {
+        TRIBUTE_DISTRIBUTED_AMOUNTS.remove(storage, key);
+    }
+    
+    Ok(())
 }

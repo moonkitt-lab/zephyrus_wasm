@@ -98,7 +98,8 @@ pub const TRIBUTE_PROCESSED: Map<TributeId, Coin> = Map::new("tribute_processed"
 
 // Temporary storage for tracking distributed amounts during current transaction batch
 // Key: tribute_id, Value: total amount distributed (vessel rewards + commission + hydromancer rewards)
-pub const TRIBUTE_DISTRIBUTED_AMOUNTS: Map<TributeId, Coin> = Map::new("tribute_distributed_amounts");
+pub const TRIBUTE_DISTRIBUTED_AMOUNTS: Map<TributeId, Coin> =
+    Map::new("tribute_distributed_amounts");
 
 pub fn is_tribute_processed(storage: &dyn Storage, tribute_id: TributeId) -> bool {
     TRIBUTE_PROCESSED.has(storage, tribute_id)
@@ -1012,19 +1013,24 @@ pub fn record_tribute_distribution(
             denom: amount.denom.clone(),
             amount: cosmwasm_std::Uint128::zero(),
         });
-    
+
     if current_distributed.denom != amount.denom {
         return Err(ContractError::CustomError {
-            msg: format!("Denomination mismatch: expected {}, got {}", current_distributed.denom, amount.denom),
+            msg: format!(
+                "Denomination mismatch: expected {}, got {}",
+                current_distributed.denom, amount.denom
+            ),
         });
     }
-    
+
     let new_distributed = Coin {
         denom: amount.denom,
-        amount: current_distributed.amount.checked_add(amount.amount)
+        amount: current_distributed
+            .amount
+            .checked_add(amount.amount)
             .map_err(|e| ContractError::Std(StdError::overflow(e)))?,
     };
-    
+
     TRIBUTE_DISTRIBUTED_AMOUNTS.save(storage, tribute_id, &new_distributed)?;
     Ok(())
 }
@@ -1034,16 +1040,19 @@ pub fn get_total_distributed_amount(
     denom: &str,
 ) -> Result<cosmwasm_std::Uint128, ContractError> {
     let mut total = cosmwasm_std::Uint128::zero();
-    
+
     // Sum up all distributions in the current batch for the given denomination
-    for item in TRIBUTE_DISTRIBUTED_AMOUNTS.range(storage, None, None, cosmwasm_std::Order::Ascending) {
+    for item in
+        TRIBUTE_DISTRIBUTED_AMOUNTS.range(storage, None, None, cosmwasm_std::Order::Ascending)
+    {
         let (_, distributed_coin) = item?;
         if distributed_coin.denom == denom {
-            total = total.checked_add(distributed_coin.amount)
+            total = total
+                .checked_add(distributed_coin.amount)
                 .map_err(|e| ContractError::Std(StdError::overflow(e)))?;
         }
     }
-    
+
     Ok(total)
 }
 
@@ -1052,10 +1061,10 @@ pub fn clear_distribution_tracking(storage: &mut dyn Storage) -> Result<(), Cont
     let keys: Vec<TributeId> = TRIBUTE_DISTRIBUTED_AMOUNTS
         .keys(storage, None, None, cosmwasm_std::Order::Ascending)
         .collect::<Result<Vec<_>, _>>()?;
-        
+
     for key in keys {
         TRIBUTE_DISTRIBUTED_AMOUNTS.remove(storage, key);
     }
-    
+
     Ok(())
 }

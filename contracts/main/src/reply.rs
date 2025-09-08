@@ -87,7 +87,8 @@ pub fn handle_claim_tribute_reply(
         .strict_add(payload.amount.amount);
 
     // Get total amount distributed by previous tributes in this batch
-    let total_distributed = state::get_total_distributed_amount(deps.storage, &payload.amount.denom)?;
+    let total_distributed =
+        state::get_total_distributed_amount(deps.storage, &payload.amount.denom)?;
     let balance_expected_adjusted = balance_expected.saturating_sub(total_distributed);
 
     deps.api.debug(&format!(
@@ -225,33 +226,35 @@ pub fn handle_claim_tribute_reply(
     )?;
 
     // Record total distributed amount for this tribute to track for future tributes in same batch
-    let mut total_distributed_amount = floored_amount.checked_add(commission_amount)
+    let mut total_distributed_amount = floored_amount
+        .checked_add(commission_amount)
         .map_err(|e| ContractError::Std(e.into()))?;
-    
+
     // Add hydromancer rewards if any and add to response
     if let Some(ref send_msg) = hydromancer_rewards_send_msg {
         deps.api.debug("ZEPH033: Sending hydromancer commission");
         response = response.add_message(send_msg.clone());
-        
+
         // Extract amount from hydromancer message for tracking
         if let BankMsg::Send { amount, .. } = send_msg {
             if let Some(hydro_coin) = amount.iter().find(|c| c.denom == payload.amount.denom) {
-                total_distributed_amount = total_distributed_amount.checked_add(hydro_coin.amount)
+                total_distributed_amount = total_distributed_amount
+                    .checked_add(hydro_coin.amount)
                     .map_err(|e| ContractError::Std(e.into()))?;
             }
         }
     } else {
         deps.api.debug("ZEPH034: No hydromancer commission to send");
     }
-    
+
     if !total_distributed_amount.is_zero() {
         state::record_tribute_distribution(
-            deps.storage, 
-            payload.tribute_id, 
+            deps.storage,
+            payload.tribute_id,
             Coin {
                 denom: payload.amount.denom.clone(),
                 amount: total_distributed_amount,
-            }
+            },
         )?;
         deps.api.debug(&format!(
             "ZEPH034.5: Recorded distribution of {} {} for tribute_id: {}",

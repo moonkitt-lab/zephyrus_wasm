@@ -115,7 +115,7 @@ pub fn handle_claim_tribute_reply(
     ));
 
     println!(
-        "ZEPH_DEBUG_REPLY_COMMISSION: tribute_id={}, total_amount={:?}, commission={}, users_funds={:?}",
+        "ZEPH112: REPLY_COMMISSION: tribute_id={}, total_amount={:?}, commission={}, users_funds={:?}",
         payload.tribute_id, payload.amount, commission_amount, users_funds
     );
 
@@ -163,7 +163,7 @@ pub fn handle_claim_tribute_reply(
         payload.vessel_ids.len()
     ));
     // Cumulate rewards for each vessel
-    println!("ZEPH_DEBUG_REPLY_BEFORE_DISTRIBUTE: tribute_id={}, vessels={:?}, users_funds={:?}, total_proposal_voting_power={}", 
+    println!("ZEPH113: REPLY_BEFORE_DISTRIBUTE: tribute_id={}, vessels={:?}, users_funds={:?}, total_proposal_voting_power={}", 
         payload.tribute_id, payload.vessel_ids, users_funds, total_proposal_voting_power);
 
     let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
@@ -180,7 +180,7 @@ pub fn handle_claim_tribute_reply(
     )?;
 
     println!(
-        "ZEPH_DEBUG_REPLY_AFTER_DISTRIBUTE: tribute_id={}, amount_to_distribute={}",
+        "ZEPH114: REPLY_AFTER_DISTRIBUTE: tribute_id={}, amount_to_distribute={}",
         payload.tribute_id, amount_to_distribute
     );
     let mut response = Response::new();
@@ -195,7 +195,7 @@ pub fn handle_claim_tribute_reply(
         .debug(&format!("ZEPH028: Floored amount: {}", floored_amount));
 
     println!(
-        "ZEPH_DEBUG_REPLY_SEND: tribute_id={}, amount_decimal={}, amount_floored={}, owner={}",
+        "ZEPH115: REPLY_SEND: tribute_id={}, amount_decimal={}, amount_floored={}, owner={}",
         payload.tribute_id, amount_to_distribute, floored_amount, payload.vessels_owner
     );
 

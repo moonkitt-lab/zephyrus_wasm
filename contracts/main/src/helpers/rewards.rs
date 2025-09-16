@@ -116,7 +116,7 @@ pub fn calcul_total_voting_power_of_hydromancer_for_locked_rounds(
         state::get_hydromancer_time_weighted_shares_by_round(storage, round_id, hydromancer_id)?;
     let mut total_voting_power = Decimal::zero();
     
-    println!("ZEPH_DEBUG_HYDROMANCER_TWS: hydromancer_id={}, round_id={}, locked_rounds={}, total_entries={}", 
+    println!("ZEPH102: HYDROMANCER_TWS: hydromancer_id={}, round_id={}, locked_rounds={}, total_entries={}", 
         hydromancer_id, round_id, locked_rounds, list_tws.len());
     
     for ((locked_round, token_group_id), tws) in &list_tws {
@@ -130,18 +130,18 @@ pub fn calcul_total_voting_power_of_hydromancer_for_locked_rounds(
         let voting_power_contribution = Decimal::from_ratio(*tws, 1u128).saturating_mul(token_info.ratio);
         
         if *locked_round < locked_rounds {
-            println!("ZEPH_DEBUG_HYDROMANCER_TWS_SKIP: hydromancer_id={}, locked_round={}, required={}, token_group_id={}, tws={}, contribution={} (SKIPPED)", 
+            println!("ZEPH103: HYDROMANCER_TWS_SKIP: hydromancer_id={}, locked_round={}, required={}, token_group_id={}, tws={}, contribution={} (SKIPPED)", 
                 hydromancer_id, locked_round, locked_rounds, token_group_id, tws, voting_power_contribution);
             continue;
         }
         
         total_voting_power = total_voting_power.saturating_add(voting_power_contribution);
         
-        println!("ZEPH_DEBUG_HYDROMANCER_TWS_ADD: hydromancer_id={}, locked_round={}, token_group_id={}, tws={}, ratio={}, contribution={}, total_so_far={}", 
+        println!("ZEPH104: HYDROMANCER_TWS_ADD: hydromancer_id={}, locked_round={}, token_group_id={}, tws={}, ratio={}, contribution={}, total_so_far={}", 
             hydromancer_id, locked_round, token_group_id, tws, token_info.ratio, voting_power_contribution, total_voting_power);
     }
     
-    println!("ZEPH_DEBUG_HYDROMANCER_TWS_FINAL: hydromancer_id={}, total_voting_power={}", hydromancer_id, total_voting_power);
+    println!("ZEPH105: HYDROMANCER_TWS_FINAL: hydromancer_id={}, total_voting_power={}", hydromancer_id, total_voting_power);
     Ok(total_voting_power)
 }
 
@@ -166,11 +166,11 @@ pub fn calcul_total_voting_power_on_proposal(
         total_voting_power = total_voting_power.saturating_add(voting_power_contribution);
         
         // DEBUG: Log each contribution
-        println!("ZEPH_DEBUG_TWS_PROPOSAL: proposal_id={}, token_group_id={}, tws={}, ratio={}, contribution={}, total_so_far={}", 
+        println!("ZEPH100: TWS_PROPOSAL: proposal_id={}, token_group_id={}, tws={}, ratio={}, contribution={}, total_so_far={}", 
             proposal_id, token_group_id, tws, token_info.ratio, voting_power_contribution, total_voting_power);
     }
     
-    println!("ZEPH_DEBUG_TWS_PROPOSAL_FINAL: proposal_id={}, total_voting_power={}", proposal_id, total_voting_power);
+    println!("ZEPH101: TWS_PROPOSAL_FINAL: proposal_id={}, total_voting_power={}", proposal_id, total_voting_power);
     Ok(total_voting_power)
 }
 
@@ -183,7 +183,7 @@ pub fn calcul_voting_power_of_vessel(
     // Vessel shares should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
     let vessel_share_info = state::get_vessel_shares_info(storage, round_id, vessel_id);
     if vessel_share_info.is_err() {
-        println!("ZEPH_DEBUG_VESSEL_TWS: vessel_id={}, round_id={}, ERROR: no shares found", vessel_id, round_id);
+        println!("ZEPH106: VESSEL_TWS: vessel_id={}, round_id={}, ERROR: no shares found", vessel_id, round_id);
         return Ok(Decimal::zero());
     }
     let vessel_share_info = vessel_share_info.unwrap();
@@ -196,7 +196,7 @@ pub fn calcul_voting_power_of_vessel(
     let voting_power = Decimal::from_ratio(vessel_share_info.time_weighted_shares, 1u128)
         .saturating_mul(token_info.ratio);
     
-    println!("ZEPH_DEBUG_VESSEL_TWS: vessel_id={}, round_id={}, token_group_id={}, tws={}, ratio={}, voting_power={}", 
+    println!("ZEPH107: VESSEL_TWS: vessel_id={}, round_id={}, token_group_id={}, tws={}, ratio={}, voting_power={}", 
         vessel_id, round_id, vessel_share_info.token_group_id, vessel_share_info.time_weighted_shares, token_info.ratio, voting_power);
     
     Ok(voting_power)
@@ -253,7 +253,7 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
                     })?
                     .saturating_mul(Decimal::from_ratio(proposal_rewards.amount, 1u128));
                 
-                println!("ZEPH_DEBUG_VESSEL_USER_REWARD: vessel_id={}, voting_power={}, total_proposal_power={}, proposal_rewards={}, portion={}", 
+                println!("ZEPH108: VESSEL_USER_REWARD: vessel_id={}, voting_power={}, total_proposal_power={}, proposal_rewards={}, portion={}", 
                     vessel_id, voting_power, total_proposal_voting_power, proposal_rewards.amount, portion);
                 
                 deps.api.debug(&format!(
@@ -320,7 +320,7 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
                         1u128,
                     ));
                 
-                println!("ZEPH_DEBUG_VESSEL_HYDROMANCER_REWARD: vessel_id={}, voting_power={}, total_hydromancer_power={}, hydromancer_rewards={}, portion={}", 
+                println!("ZEPH109: VESSEL_HYDROMANCER_REWARD: vessel_id={}, voting_power={}, total_hydromancer_power={}, hydromancer_rewards={}, portion={}", 
                     vessel_id, voting_power, total_hydromancer_locked_rounds_voting_power, 
                     rewards_allocated_to_hydromancer.rewards_for_users.amount, portion);
                 
@@ -416,7 +416,7 @@ pub fn distribute_rewards_for_vessels_on_tribute(
         tribute_id, proposal_id, vessel_ids, tribute_rewards));
 
     let mut amount_to_distribute = Decimal::zero();
-    println!("ZEPH_DEBUG_DISTRIBUTE_START: tribute_id={}, proposal_id={}, vessels={:?}, tribute_rewards={:?}", 
+    println!("ZEPH110: DISTRIBUTE_START: tribute_id={}, proposal_id={}, vessels={:?}, tribute_rewards={:?}", 
         tribute_id, proposal_id, vessel_ids, tribute_rewards);
     
     for vessel_id in vessel_ids.clone() {
@@ -448,7 +448,7 @@ pub fn distribute_rewards_for_vessels_on_tribute(
             amount_to_distribute = amount_to_distribute.saturating_add(proposal_vessel_rewards);
 
             let floored_vessel_reward = proposal_vessel_rewards.to_uint_floor();
-            println!("ZEPH_DEBUG_DISTRIBUTE_VESSEL: vessel_id={}, reward_decimal={}, reward_floored={}, total_so_far={}", 
+            println!("ZEPH111: DISTRIBUTE_VESSEL: vessel_id={}, reward_decimal={}, reward_floored={}, total_so_far={}", 
                 vessel_id, proposal_vessel_rewards, floored_vessel_reward, amount_to_distribute);
             
             deps.api.debug(&format!(

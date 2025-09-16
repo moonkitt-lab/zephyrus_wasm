@@ -416,8 +416,8 @@ pub fn distribute_rewards_for_vessels_on_tribute(
         tribute_id, proposal_id, vessel_ids, tribute_rewards));
 
     let mut amount_to_distribute = Decimal::zero();
-    println!("ZEPH110: DISTRIBUTE_START: tribute_id={}, proposal_id={}, vessels={:?}, tribute_rewards={:?}", 
-        tribute_id, proposal_id, vessel_ids, tribute_rewards);
+    deps.api.debug(&format!("ZEPH110: DISTRIBUTE_START: tribute_id={}, proposal_id={}, vessels={:?}, tribute_rewards={:?}", 
+        tribute_id, proposal_id, vessel_ids, tribute_rewards));
     
     for vessel_id in vessel_ids.clone() {
         if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
@@ -448,8 +448,8 @@ pub fn distribute_rewards_for_vessels_on_tribute(
             amount_to_distribute = amount_to_distribute.saturating_add(proposal_vessel_rewards);
 
             let floored_vessel_reward = proposal_vessel_rewards.to_uint_floor();
-            println!("ZEPH111: DISTRIBUTE_VESSEL: vessel_id={}, reward_decimal={}, reward_floored={}, total_so_far={}", 
-                vessel_id, proposal_vessel_rewards, floored_vessel_reward, amount_to_distribute);
+            deps.api.debug(&format!("ZEPH111: DISTRIBUTE_VESSEL: vessel_id={}, reward_decimal={}, reward_floored={}, total_so_far={}", 
+                vessel_id, proposal_vessel_rewards, floored_vessel_reward, amount_to_distribute));
             
             deps.api.debug(&format!(
                 "ZEPH063: Saving vessel {} claim: {} {}",

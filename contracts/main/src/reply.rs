@@ -74,6 +74,8 @@ pub fn handle_claim_tribute_reply(
     env: Env,
     payload: ClaimTributeReplyPayload,
 ) -> Result<Response, ContractError> {
+    deps.api
+        .debug("ZEPH997: CLAIM_TRIBUTE_REPLY HANDLER CALLED - TEST LOG");
     deps.api.debug(&format!("ZEPH020: Starting claim tribute reply handler - tribute_id: {}, proposal_id: {}, amount: {:?}", 
         payload.tribute_id, payload.proposal_id, payload.amount));
 
@@ -114,10 +116,10 @@ pub fn handle_claim_tribute_reply(
         commission_amount, users_funds
     ));
 
-    println!(
+    deps.api.debug(&format!(
         "ZEPH112: REPLY_COMMISSION: tribute_id={}, total_amount={:?}, commission={}, users_funds={:?}",
         payload.tribute_id, payload.amount, commission_amount, users_funds
-    );
+    ));
 
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, payload.round_id)?;

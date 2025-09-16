@@ -109,6 +109,8 @@ pub fn execute(
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
+    deps.api
+        .debug("ZEPH998: EXECUTE FUNCTION CALLED - TEST LOG");
     match msg {
         ExecuteMsg::AutoMaintain {
             start_from_vessel_id,

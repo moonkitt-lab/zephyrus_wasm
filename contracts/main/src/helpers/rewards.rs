@@ -257,15 +257,17 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
                     "ZEPH073: Vessel {} voted for proposal {}, calculating portion",
                     vessel_id, proposal_id
                 ));
-                let portion = voting_power
+                let vp_ratio = voting_power
                     .checked_div(total_proposal_voting_power)
                     .map_err(|_| ContractError::CustomError {
                         msg: "Division by zero in voting power calculation".to_string(),
-                    })?
-                    .saturating_mul(Decimal::from_ratio(proposal_rewards.amount, 1u128));
+                    })?;
 
-                println!("ZEPH108: VESSEL_USER_REWARD: vessel_id={}, voting_power={}, total_proposal_power={}, proposal_rewards={}, portion={}", 
-                    vessel_id, voting_power, total_proposal_voting_power, proposal_rewards.amount, portion);
+                let portion =
+                    vp_ratio.saturating_mul(Decimal::from_ratio(proposal_rewards.amount, 1u128));
+
+                deps.api.debug(&format!("ZEPH108: VESSEL_USER_REWARD: vessel_id={}, voting_power={}, total_proposal_power={}, vp_ratio={}, proposal_rewards={}, portion={}", 
+                    vessel_id, voting_power, total_proposal_voting_power, vp_ratio, proposal_rewards.amount, portion));
 
                 deps.api.debug(&format!(
                     "ZEPH074: Vessel {} portion: {}",
@@ -321,18 +323,19 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
             ));
 
             if let Some(rewards_allocated_to_hydromancer) = rewards_allocated_to_hydromancer {
-                let portion = voting_power
+                let vp_ratio = voting_power
                     .checked_div(total_hydromancer_locked_rounds_voting_power)
                     .map_err(|_| ContractError::CustomError {
                         msg: "Division by zero in voting power calculation".to_string(),
-                    })?
-                    .saturating_mul(Decimal::from_ratio(
-                        rewards_allocated_to_hydromancer.rewards_for_users.amount,
-                        1u128,
-                    ));
+                    })?;
 
-                deps.api.debug(&format!("ZEPH109: VESSEL_HYDROMANCER_REWARD: vessel_id={}, voting_power={}, total_hydromancer_power={}, hydromancer_rewards={}, portion={}",
-                    vessel_id, voting_power, total_hydromancer_locked_rounds_voting_power,
+                let portion = vp_ratio.saturating_mul(Decimal::from_ratio(
+                    rewards_allocated_to_hydromancer.rewards_for_users.amount,
+                    1u128,
+                ));
+
+                deps.api.debug(&format!("ZEPH109: VESSEL_HYDROMANCER_REWARD: vessel_id={}, voting_power={}, total_hydromancer_power={}, vp_ratio={}, hydromancer_rewards={}, portion={}",
+                    vessel_id, voting_power, total_hydromancer_locked_rounds_voting_power, vp_ratio,
                     rewards_allocated_to_hydromancer.rewards_for_users.amount, portion));
 
                 deps.api.debug(&format!(

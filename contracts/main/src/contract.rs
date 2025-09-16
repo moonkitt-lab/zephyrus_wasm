@@ -57,6 +57,7 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
+    deps.api.debug("ZEPH990: INSTANTIATE CALLED - TEST LOG");
     state::initialize_sequences(deps.storage)?;
 
     let mut whitelist_admins: Vec<Addr> = vec![];
@@ -219,6 +220,7 @@ fn execute_claim(
     tranche_id: u64,
     vessel_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
+    deps.api.debug("ZEPH992: EXECUTE_CLAIM CALLED - TEST LOG");
     deps.api.debug(&format!("ZEPH001: Starting claim execution - sender: {}, round_id: {}, tranche_id: {}, vessel_ids: {:?}", 
         info.sender, round_id, tranche_id, vessel_ids));
 
@@ -381,6 +383,7 @@ fn execute_receive_nft(
     token_id: String,
     msg: Binary,
 ) -> Result<Response, ContractError> {
+    deps.api.debug("ZEPH991: RECEIVE_NFT CALLED - TEST LOG");
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
@@ -749,6 +752,8 @@ fn execute_hydromancer_vote(
     tranche_id: u64,
     vessels_harbors: Vec<VesselsToHarbor>,
 ) -> Result<Response, ContractError> {
+    deps.api
+        .debug("ZEPH994: EXECUTE_HYDROMANCER_VOTE CALLED - TEST LOG");
     let constants = state::get_constants(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -888,6 +893,8 @@ fn execute_take_control(
     info: MessageInfo,
     vessel_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
+    deps.api
+        .debug("ZEPH995: EXECUTE_TAKE_CONTROL CALLED - TEST LOG");
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
     validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
@@ -952,6 +959,8 @@ fn execute_user_vote(
     tranche_id: u64,
     vessels_harbors: Vec<VesselsToHarbor>,
 ) -> Result<Response, ContractError> {
+    deps.api
+        .debug("ZEPH993: EXECUTE_USER_VOTE CALLED - TEST LOG");
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 

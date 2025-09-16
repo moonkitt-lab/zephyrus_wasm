@@ -114,6 +114,11 @@ pub fn handle_claim_tribute_reply(
         commission_amount, users_funds
     ));
 
+    println!(
+        "DEBUG_REPLY_COMMISSION: tribute_id={}, total_amount={:?}, commission={}, users_funds={:?}",
+        payload.tribute_id, payload.amount, commission_amount, users_funds
+    );
+
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, payload.round_id)?;
     let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
@@ -158,6 +163,9 @@ pub fn handle_claim_tribute_reply(
         payload.vessel_ids.len()
     ));
     // Cumulate rewards for each vessel
+    println!("DEBUG_REPLY_BEFORE_DISTRIBUTE: tribute_id={}, vessels={:?}, users_funds={:?}, total_proposal_voting_power={}", 
+        payload.tribute_id, payload.vessel_ids, users_funds, total_proposal_voting_power);
+
     let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
         &mut deps,
         payload.vessel_ids.clone(),
@@ -170,6 +178,11 @@ pub fn handle_claim_tribute_reply(
         token_info_provider,
         total_proposal_voting_power,
     )?;
+
+    println!(
+        "DEBUG_REPLY_AFTER_DISTRIBUTE: tribute_id={}, amount_to_distribute={}",
+        payload.tribute_id, amount_to_distribute
+    );
     let mut response = Response::new();
 
     deps.api.debug(&format!(
@@ -180,6 +193,11 @@ pub fn handle_claim_tribute_reply(
     let floored_amount = amount_to_distribute.to_uint_floor();
     deps.api
         .debug(&format!("ZEPH028: Floored amount: {}", floored_amount));
+
+    println!(
+        "DEBUG_REPLY_SEND: tribute_id={}, amount_decimal={}, amount_floored={}, owner={}",
+        payload.tribute_id, amount_to_distribute, floored_amount, payload.vessels_owner
+    );
 
     if !floored_amount.is_zero() {
         deps.api.debug(&format!(

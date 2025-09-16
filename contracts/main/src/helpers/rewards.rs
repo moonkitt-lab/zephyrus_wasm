@@ -426,6 +426,16 @@ pub fn distribute_rewards_for_vessels_on_tribute(
     deps.api.debug(&format!("ZEPH060: Calculating vessel rewards - tribute_id: {}, proposal_id: {}, vessels: {:?}, rewards: {:?}", 
         tribute_id, proposal_id, vessel_ids, tribute_rewards));
 
+    // Log which vessels are voting on which proposal
+    for vessel_id in &vessel_ids {
+        if let Ok(vessel) = state::get_vessel(deps.storage, *vessel_id) {
+            deps.api.debug(&format!(
+                "ZEPH061: VESSEL_VOTE_INFO: vessel_id={}, owner_id={}, hydromancer_id={:?}",
+                vessel_id, vessel.owner_id, vessel.hydromancer_id
+            ));
+        }
+    }
+
     let mut amount_to_distribute = Decimal::zero();
     deps.api.debug(&format!("ZEPH110: DISTRIBUTE_START: tribute_id={}, proposal_id={}, vessels={:?}, tribute_rewards={:?}", 
         tribute_id, proposal_id, vessel_ids, tribute_rewards));

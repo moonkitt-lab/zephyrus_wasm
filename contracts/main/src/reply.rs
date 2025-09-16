@@ -164,6 +164,13 @@ pub fn handle_claim_tribute_reply(
         "ZEPH026: Calculating rewards for {} vessels",
         payload.vessel_ids.len()
     ));
+
+    // Log vessel ownership for debugging
+    deps.api.debug(&format!(
+        "ZEPH027: VESSEL_OWNERSHIP: tribute_id={}, vessels={:?}, owner={}",
+        payload.tribute_id, payload.vessel_ids, payload.vessels_owner
+    ));
+
     // Cumulate rewards for each vessel
     println!("ZEPH113: REPLY_BEFORE_DISTRIBUTE: tribute_id={}, vessels={:?}, users_funds={:?}, total_proposal_voting_power={}", 
         payload.tribute_id, payload.vessel_ids, users_funds, total_proposal_voting_power);

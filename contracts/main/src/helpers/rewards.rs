@@ -498,8 +498,8 @@ pub fn distribute_rewards_for_vessels_on_tribute(
     }
 
     deps.api.debug(&format!(
-        "ZEPH065: Total amount to distribute: {}",
-        amount_to_distribute
+        "ZEPH0065: Total amount to distribute: {} for vessel_ids: {:?}",
+        amount_to_distribute, vessel_ids
     ));
     Ok(amount_to_distribute)
 }

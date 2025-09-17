@@ -653,8 +653,8 @@ pub fn distribute_rewards_for_all_round_proposals(
             )?;
 
             deps.api.debug(&format!(
-                "ZEPH046: Calculated amount to distribute: {}",
-                amount_to_distribute
+                "ZEPH046: Calculated amount to distribute: {}, for vessel_ids: {:?}",
+                amount_to_distribute, vessel_ids
             ));
 
             let floored_amount = amount_to_distribute.to_uint_floor();

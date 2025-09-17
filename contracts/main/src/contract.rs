@@ -278,8 +278,8 @@ fn execute_claim(
             )?;
             tributes_process_in_reply.insert(outstanding_tribute.tribute_id);
             deps.api.debug(&format!(
-                "ZEPH006bis: Added tribute {} to process in reply",
-                outstanding_tribute.tribute_id
+                "ZEPH006bis: Added tribute {} to process in reply for hydro contract : {} in zephyrus contract : {}",
+                outstanding_tribute.tribute_id, constants.hydro_config.hydro_contract_address, contract_address
             ));
             response = response.add_submessage(sub_msg);
 

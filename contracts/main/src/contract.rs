@@ -463,6 +463,8 @@ fn execute_receive_nft(
     )?;
 
     if current_time_weighted_shares > 0 {
+        deps.api.debug(&format!("ZEPH309: VESSEL_CREATION_ADD_HYDROMANCER_TWS: vessel_id={}, hydromancer_id={}, round={}, token_group_id={}, locked_rounds={}, tws={}", 
+            vessel.hydro_lock_id, vessel_info.hydromancer_id, current_round, token_group_id, locked_rounds, current_time_weighted_shares));
         state::add_time_weighted_shares_to_hydromancer(
             deps.storage,
             vessel_info.hydromancer_id,

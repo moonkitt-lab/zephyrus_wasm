@@ -357,8 +357,22 @@ pub fn handle_refresh_time_weighted_shares_reply(
     }
 
     // Apply all batched changes in single write operations
+    deps.api.debug(&format!(
+        "ZEPH302: APPLYING_HYDROMANCER_TWS_CHANGES: {} changes",
+        hydromancer_tws_changes.len()
+    ));
     apply_hydromancer_tws_changes(deps.storage, hydromancer_tws_changes)?;
+
+    deps.api.debug(&format!(
+        "ZEPH303: APPLYING_PROPOSAL_TWS_CHANGES: {} changes",
+        tws_changes.proposal_changes.len()
+    ));
     apply_proposal_tws_changes(deps.storage, tws_changes.proposal_changes)?;
+
+    deps.api.debug(&format!(
+        "ZEPH304: APPLYING_PROPOSAL_HYDROMANCER_TWS_CHANGES: {} changes",
+        tws_changes.proposal_hydromancer_changes.len()
+    ));
     apply_proposal_hydromancer_tws_changes(deps.storage, tws_changes.proposal_hydromancer_changes)?;
 
     Ok(Response::new()
@@ -425,12 +439,17 @@ pub fn handle_vote_reply(
                                 steerer_id: payload.steerer_id,
                             },
                         )?;
+                        deps.api.debug(&format!("ZEPH305: VOTE_CHANGE_SUB_TWS: vessel_id={}, from_proposal={}, token_group_id={}, tws={}", 
+                            vessel.hydro_lock_id, previous_harbor_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()));
                         state::substract_time_weighted_shares_from_proposal(
                             deps.storage,
                             previous_harbor_id,
                             &vessel_shares_info.token_group_id,
                             vessel_shares_info.time_weighted_shares.u128(),
                         )?;
+
+                        deps.api.debug(&format!("ZEPH306: VOTE_CHANGE_ADD_TWS: vessel_id={}, to_proposal={}, token_group_id={}, tws={}", 
+                            vessel.hydro_lock_id, vessels_to_harbor.harbor_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()));
                         state::add_time_weighted_shares_to_proposal(
                             deps.storage,
                             vessels_to_harbor.harbor_id,
@@ -440,6 +459,8 @@ pub fn handle_vote_reply(
                         // if it's a hydromancer vote, add time weighted shares to proposal for hydromancer
                         if !payload.user_vote && !vessel_shares_info.time_weighted_shares.is_zero()
                         {
+                            deps.api.debug(&format!("ZEPH307: HYDROMANCER_VOTE_ADD_TWS: vessel_id={}, proposal={}, hydromancer={}, token_group_id={}, tws={}", 
+                                vessel.hydro_lock_id, vessels_to_harbor.harbor_id, payload.steerer_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()));
                             state::add_time_weighted_shares_to_proposal_for_hydromancer(
                                 deps.storage,
                                 vessels_to_harbor.harbor_id,
@@ -447,6 +468,9 @@ pub fn handle_vote_reply(
                                 &vessel_shares_info.token_group_id,
                                 vessel_shares_info.time_weighted_shares.u128(),
                             )?;
+
+                            deps.api.debug(&format!("ZEPH308: HYDROMANCER_VOTE_SUB_TWS: vessel_id={}, proposal={}, hydromancer={}, token_group_id={}, tws={}", 
+                                vessel.hydro_lock_id, previous_harbor_id, payload.steerer_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()));
                             state::substract_time_weighted_shares_from_proposal_for_hydromancer(
                                 deps.storage,
                                 previous_harbor_id,

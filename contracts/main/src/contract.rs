@@ -277,6 +277,10 @@ fn execute_claim(
                 deps.api,
             )?;
             tributes_process_in_reply.insert(outstanding_tribute.tribute_id);
+            deps.api.debug(&format!(
+                "ZEPH006bis: Added tribute {} to process in reply",
+                outstanding_tribute.tribute_id
+            ));
             response = response.add_submessage(sub_msg);
 
             // Update virtual balances for checking purposes

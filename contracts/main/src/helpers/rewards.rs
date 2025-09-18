@@ -494,6 +494,11 @@ pub fn distribute_rewards_for_vessels_on_tribute(
                     "ZEPH063bis: Vessel {} mark as claimed for tribute {}",
                     vessel_id, tribute_id
                 ));
+            } else {
+                deps.api.debug(&format!(
+                    "ZEPH063ter: Vessel {} unexpectedly not mark as claimed for tribute {}",
+                    vessel_id, tribute_id
+                ));
             }
         } else {
             deps.api.debug(&format!(

@@ -489,6 +489,12 @@ pub fn distribute_rewards_for_vessels_on_tribute(
                     amount: floored_vessel_reward,
                 },
             )?;
+            if state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
+                deps.api.debug(&format!(
+                    "ZEPH063bis: Vessel {} mark as claimed for tribute {}",
+                    vessel_id, tribute_id
+                ));
+            }
         } else {
             deps.api.debug(&format!(
                 "ZEPH064: Vessel {} already claimed tribute {}",

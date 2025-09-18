@@ -444,7 +444,7 @@ pub fn distribute_rewards_for_vessels_on_tribute(
         tribute_id, proposal_id, vessel_ids, tribute_rewards));
 
     for vessel_id in vessel_ids.clone() {
-        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
+        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id, deps.api) {
             deps.api.debug(&format!(
                 "ZEPH061: Processing unclaimed vessel {}",
                 vessel_id
@@ -488,8 +488,9 @@ pub fn distribute_rewards_for_vessels_on_tribute(
                     denom: tribute_rewards.denom.clone(),
                     amount: floored_vessel_reward,
                 },
+                deps.api,
             )?;
-            if state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
+            if state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id, deps.api) {
                 deps.api.debug(&format!(
                     "ZEPH063bis: Vessel {} mark as claimed for tribute {}",
                     vessel_id, tribute_id
@@ -535,7 +536,7 @@ pub fn calculate_rewards_for_vessels_on_tribute(
 
     let mut amount_to_distribute = Decimal::zero();
     for vessel_id in vessel_ids.clone() {
-        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
+        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id, deps.api) {
             deps.api.debug(&format!(
                 "ZEPH061: Processing unclaimed vessel {}",
                 vessel_id

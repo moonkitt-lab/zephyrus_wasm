@@ -781,7 +781,6 @@ fn test_allocate_rewards_to_hydromancer_with_real_data() {
 
     let proposal_id = 1u64;
     let round_id = 1u64;
-    let tribute_id = 1u64;
     let funds = Coin::new(1000u128, "uatom");
     let token_info_provider = create_mock_token_info_provider();
     let total_proposal_voting_power = Decimal::from_ratio(2000u128, 1u128); // 2000 total power
@@ -816,7 +815,6 @@ fn test_allocate_rewards_to_hydromancer_division_by_zero() {
 
     let proposal_id = 1u64;
     let round_id = 1u64;
-    let tribute_id = 1u64;
     let funds = Coin::new(1000u128, "uatom");
     let token_info_provider = create_mock_token_info_provider();
     let total_proposal_voting_power = Decimal::zero(); // This will cause division by zero
@@ -931,11 +929,13 @@ fn test_distribute_rewards_for_vessels_on_tribute_already_claimed() {
     let total_proposal_voting_power = Decimal::from_ratio(2000u128, 1u128);
 
     // Mark vessels as already claimed
+    let api = deps.api.clone();
     state::save_vessel_tribute_claim(
         deps.as_mut().storage,
         1,
         tribute_id,
         Coin::new(100u128, "uatom"),
+        &api,
     )
     .expect("Should save claim");
 
@@ -944,6 +944,7 @@ fn test_distribute_rewards_for_vessels_on_tribute_already_claimed() {
         2,
         tribute_id,
         Coin::new(200u128, "uatom"),
+        &api,
     )
     .expect("Should save claim");
 

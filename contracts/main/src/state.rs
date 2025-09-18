@@ -147,7 +147,12 @@ pub fn save_vessel_tribute_claim(
     hydro_lock_id: HydroLockId,
     tribute_id: TributeId,
     amount: Coin,
+    api: &dyn cosmwasm_std::Api,
 ) -> StdResult<()> {
+    api.debug(&format!(
+        "ZEPH_SAVE: Saving claim for vessel_id={}, tribute_id={}, amount={}",
+        hydro_lock_id, tribute_id, amount
+    ));
     VESSEL_TRIBUTE_CLAIMS.save(storage, (hydro_lock_id, tribute_id), &amount)
 }
 
@@ -155,8 +160,14 @@ pub fn is_vessel_tribute_claimed(
     storage: &dyn Storage,
     hydro_lock_id: HydroLockId,
     tribute_id: TributeId,
+    api: &dyn cosmwasm_std::Api,
 ) -> bool {
-    VESSEL_TRIBUTE_CLAIMS.has(storage, (hydro_lock_id, tribute_id))
+    let result = VESSEL_TRIBUTE_CLAIMS.has(storage, (hydro_lock_id, tribute_id));
+    api.debug(&format!(
+        "ZEPH_CHECK: Checking claim for vessel_id={}, tribute_id={}, result={}",
+        hydro_lock_id, tribute_id, result
+    ));
+    result
 }
 
 pub fn save_hydromancer_tribute_claim(

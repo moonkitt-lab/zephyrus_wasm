@@ -171,6 +171,7 @@ fn test_calcul_voting_power_of_vessel() {
 
     let result = calcul_voting_power_of_vessel(
         deps.as_ref().storage,
+        deps.as_ref().api,
         vessel_id,
         round_id,
         &token_info_provider,
@@ -535,6 +536,7 @@ fn test_calcul_voting_power_of_vessel_with_shares_error() {
 
     let result = calcul_voting_power_of_vessel(
         deps.as_ref().storage,
+        deps.as_ref().api,
         vessel_id,
         round_id,
         &token_info_provider,
@@ -571,6 +573,7 @@ fn test_calcul_voting_power_of_vessel_token_info_not_found() {
 
     let result = calcul_voting_power_of_vessel(
         deps.as_ref().storage,
+        deps.as_ref().api,
         vessel_id,
         round_id,
         &token_info_provider,

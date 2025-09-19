@@ -184,6 +184,7 @@ pub fn calcul_total_voting_power_on_proposal(
 
 pub fn calcul_voting_power_of_vessel(
     storage: &dyn Storage,
+    api: &dyn Api,
     vessel_id: HydroLockId,
     round_id: RoundId,
     token_info_provider: &HashMap<String, DenomInfoResponse>,
@@ -191,10 +192,10 @@ pub fn calcul_voting_power_of_vessel(
     // Vessel shares should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
     let vessel_share_info = state::get_vessel_shares_info(storage, round_id, vessel_id);
     if vessel_share_info.is_err() {
-        println!(
+        api.debug(&format!(
             "ZEPH106: VESSEL_TWS: vessel_id={}, round_id={}, ERROR: no shares found",
             vessel_id, round_id
-        );
+        ));
         return Ok(Decimal::zero());
     }
     let vessel_share_info = vessel_share_info.unwrap();
@@ -207,8 +208,8 @@ pub fn calcul_voting_power_of_vessel(
     let voting_power = Decimal::from_ratio(vessel_share_info.time_weighted_shares, 1u128)
         .saturating_mul(token_info.ratio);
 
-    println!("ZEPH107: VESSEL_TWS: vessel_id={}, round_id={}, token_group_id={}, tws={}, ratio={}, voting_power={}", 
-        vessel_id, round_id, vessel_share_info.token_group_id, vessel_share_info.time_weighted_shares, token_info.ratio, voting_power);
+    api.debug(&format!("ZEPH107: VESSEL_TWS: vessel_id={}, round_id={}, token_group_id={}, tws={}, ratio={}, voting_power={}", 
+        vessel_id, round_id, vessel_share_info.token_group_id, vessel_share_info.time_weighted_shares, token_info.ratio, voting_power));
 
     Ok(voting_power)
 }
@@ -231,8 +232,13 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
         vessel_id, proposal_id, total_proposal_voting_power, proposal_rewards));
 
     let vessel = state::get_vessel(deps.storage, vessel_id)?;
-    let voting_power =
-        calcul_voting_power_of_vessel(deps.storage, vessel_id, round_id, token_info_provider)?;
+    let voting_power = calcul_voting_power_of_vessel(
+        deps.storage,
+        deps.api,
+        vessel_id,
+        round_id,
+        token_info_provider,
+    )?;
 
     deps.api.debug(&format!(
         "ZEPH071: Vessel {} voting power: {}, user_control: {}",

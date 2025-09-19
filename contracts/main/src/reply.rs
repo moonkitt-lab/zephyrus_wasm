@@ -288,8 +288,8 @@ pub fn handle_claim_tribute_reply(
             total_distributed_amount, payload.amount.denom, payload.tribute_id
         ));
     }
-
-    state::mark_tribute_processed(deps.storage, payload.tribute_id, payload.amount.clone())?;
+    //we mark the processed amount as the users funds, because the users funds are the amount that will be distributed to the vessels, not the tribute amount
+    state::mark_tribute_processed(deps.storage, payload.tribute_id, users_funds.clone())?;
     deps.api
         .debug("ZEPH035: Claim tribute reply handler completed successfully");
     Ok(response.add_attribute("action", "handle_claim_tribute_reply"))

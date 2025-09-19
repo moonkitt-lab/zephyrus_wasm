@@ -655,6 +655,7 @@ pub fn distribute_rewards_for_all_round_proposals(
                 "ZEPH045: Processing tribute_id: {}, amount: {:?}",
                 tribute.tribute_id, tribute.funds
             ));
+            let tribute_funds_after_commission = state::get_tribute_processed(deps.storage, tribute.tribute_id).expect("Tribute processed should exist here, if not it should be processed in the reply handler").expect("Tribute processed should exist here, if not it should be processed in the reply handler");
 
             // Cumulate rewards for each vessel
             let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
@@ -664,7 +665,7 @@ pub fn distribute_rewards_for_all_round_proposals(
                 tribute.tranche_id,
                 tribute.round_id,
                 tribute.proposal_id,
-                tribute.funds.clone(),
+                tribute_funds_after_commission.clone(),
                 constants.clone(),
                 token_info_provider.clone(),
                 total_proposal_voting_power,

@@ -482,6 +482,12 @@ pub fn handle_vote_reply(
                     }
                 }
                 None => {
+                    deps.api.debug(&format!(
+                        "ZEPH124: FIRST_VOTE_DEBUG: vessel_id={}, proposal_id={}, user_vote={}, steerer_id={}, tws={}, is_zero={}",
+                        vessel.hydro_lock_id, vessels_to_harbor.harbor_id, payload.user_vote, payload.steerer_id, 
+                        vessel_shares_info.time_weighted_shares, vessel_shares_info.time_weighted_shares.is_zero()
+                    ));
+                    
                     state::add_vessel_to_harbor(
                         deps.storage,
                         payload.tranche_id,
@@ -500,8 +506,20 @@ pub fn handle_vote_reply(
                         &vessel_shares_info.token_group_id,
                         vessel_shares_info.time_weighted_shares.u128(),
                     )?;
+                    
+                    deps.api.debug(&format!(
+                        "ZEPH125: HYDROMANCER_CONDITION_DEBUG: user_vote={}, tws={}, is_zero={}, condition_result={}",
+                        payload.user_vote, vessel_shares_info.time_weighted_shares, 
+                        vessel_shares_info.time_weighted_shares.is_zero(),
+                        !payload.user_vote && !vessel_shares_info.time_weighted_shares.is_zero()
+                    ));
+                    
                     if !payload.user_vote && !vessel_shares_info.time_weighted_shares.is_zero() {
                         // should always be some, because hydro has accepted the vote
+                        deps.api.debug(&format!(
+                            "ZEPH126: ADDING_HYDROMANCER_TWS: proposal_id={}, hydromancer_id={}, token_group_id={}, tws={}",
+                            vessels_to_harbor.harbor_id, payload.steerer_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()
+                        ));
                         state::add_time_weighted_shares_to_proposal_for_hydromancer(
                             deps.storage,
                             vessels_to_harbor.harbor_id,
@@ -509,6 +527,11 @@ pub fn handle_vote_reply(
                             &vessel_shares_info.token_group_id,
                             vessel_shares_info.time_weighted_shares.u128(),
                         )?;
+                    } else {
+                        deps.api.debug(&format!(
+                            "ZEPH127: SKIPPING_HYDROMANCER_TWS: user_vote={}, tws={}, is_zero={}",
+                            payload.user_vote, vessel_shares_info.time_weighted_shares, vessel_shares_info.time_weighted_shares.is_zero()
+                        ));
                     }
                 }
             }

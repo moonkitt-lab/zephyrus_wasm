@@ -394,8 +394,20 @@ pub fn allocate_rewards_to_hydromancer(
         Decimal::from_ratio(funds.amount, 1u128).saturating_mul(hydromancer_portion);
 
     let hydromancer = state::get_hydromancer(deps.storage, hydromancer_id)?;
+
+    deps.api.debug(&format!(
+        "ZEPH120: COMMISSION_DEBUG: hydromancer_id={}, funds={}, total_hydromancer_reward={}, commission_rate={}",
+        hydromancer_id, funds.amount, total_hydromancer_reward, hydromancer.commission_rate
+    ));
+
     let hydromancer_commission =
         total_hydromancer_reward.saturating_mul(hydromancer.commission_rate);
+
+    deps.api.debug(&format!(
+        "ZEPH121: COMMISSION_DEBUG: hydromancer_commission_decimal={}, hydromancer_commission_uint={}",
+        hydromancer_commission, hydromancer_commission.to_uint_floor()
+    ));
+
     let mut rewards_for_users = total_hydromancer_reward
         .saturating_sub(hydromancer_commission)
         .to_uint_floor();

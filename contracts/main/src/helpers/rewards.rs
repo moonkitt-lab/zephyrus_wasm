@@ -84,6 +84,7 @@ pub fn build_claim_tribute_sub_msg(
 
 pub fn calcul_total_voting_power_of_hydromancer_on_proposal(
     storage: &dyn Storage,
+    api: &dyn Api,
     hydromancer_id: HydromancerId,
     proposal_id: HydroProposalId,
     round_id: RoundId,
@@ -91,6 +92,12 @@ pub fn calcul_total_voting_power_of_hydromancer_on_proposal(
 ) -> Result<Decimal, ContractError> {
     let list_tws =
         state::get_hydromancer_proposal_time_weighted_shares(storage, hydromancer_id, proposal_id)?;
+
+    api.debug(&format!(
+        "ZEPH122: HYDROMANCER_TWS_DEBUG: hydromancer_id={}, proposal_id={}, list_tws={:?}",
+        hydromancer_id, proposal_id, list_tws
+    ));
+
     let mut total_voting_power = Decimal::zero();
     for (token_group_id, tws) in list_tws {
         let token_info = token_info_provider.get(&token_group_id).ok_or(
@@ -99,9 +106,21 @@ pub fn calcul_total_voting_power_of_hydromancer_on_proposal(
                 round_id,
             },
         )?;
+
+        api.debug(&format!(
+            "ZEPH123: TOKEN_INFO_DEBUG: token_group_id={}, tws={}, ratio={}",
+            token_group_id, tws, token_info.ratio
+        ));
+
         total_voting_power = total_voting_power
             .saturating_add(Decimal::from_ratio(tws, 1u128).saturating_mul(token_info.ratio));
     }
+
+    api.debug(&format!(
+        "ZEPH124: TOTAL_VP_DEBUG: hydromancer_id={}, proposal_id={}, total_voting_power={}",
+        hydromancer_id, proposal_id, total_voting_power
+    ));
+
     Ok(total_voting_power)
 }
 
@@ -380,6 +399,7 @@ pub fn allocate_rewards_to_hydromancer(
 ) -> Result<HydromancerTribute, ContractError> {
     let hydromancer_voting_power = calcul_total_voting_power_of_hydromancer_on_proposal(
         deps.storage,
+        deps.api,
         hydromancer_id,
         proposal_id,
         round_id,

@@ -114,6 +114,7 @@ fn test_calcul_total_voting_power_of_hydromancer_on_proposal() {
 
     let result = calcul_total_voting_power_of_hydromancer_on_proposal(
         deps.as_ref().storage,
+        deps.as_ref().api,
         hydromancer_id,
         proposal_id,
         round_id,
@@ -638,6 +639,7 @@ fn test_calcul_total_voting_power_of_hydromancer_on_proposal_with_empty_tws() {
 
     let result = calcul_total_voting_power_of_hydromancer_on_proposal(
         deps.as_ref().storage,
+        deps.as_ref().api,
         hydromancer_id,
         proposal_id,
         round_id,

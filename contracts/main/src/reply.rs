@@ -109,16 +109,16 @@ pub fn handle_claim_tribute_reply(
         });
     }
 
-    let (commission_amount, users_funds) =
+    let (commission_amount, users_and_hydromancers_funds) =
         calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
     deps.api.debug(&format!(
-        "ZEPH023: Commission calculation - commission: {}, users_funds: {:?}",
-        commission_amount, users_funds
+        "ZEPH023: Commission calculation - commission: {}, users_and_hydromancers_funds: {:?}",
+        commission_amount, users_and_hydromancers_funds
     ));
 
     deps.api.debug(&format!(
-        "ZEPH112: REPLY_COMMISSION: tribute_id={}, total_amount={:?}, commission={}, users_funds={:?}",
-        payload.tribute_id, payload.amount, commission_amount, users_funds
+        "ZEPH112: REPLY_COMMISSION: tribute_id={}, total_amount={:?}, commission={}, users_and_hydromancers_funds={:?}",
+        payload.tribute_id, payload.amount, commission_amount, users_and_hydromancers_funds
     ));
 
     let token_info_provider =
@@ -146,7 +146,7 @@ pub fn handle_claim_tribute_reply(
             deps.as_ref(),
             payload.proposal_id,
             payload.round_id,
-            users_funds.clone(),
+            users_and_hydromancers_funds.clone(),
             &token_info_provider,
             total_proposal_voting_power,
             hydromancer_id,
@@ -172,8 +172,8 @@ pub fn handle_claim_tribute_reply(
     ));
 
     // Cumulate rewards for each vessel
-    println!("ZEPH113: REPLY_BEFORE_DISTRIBUTE: tribute_id={}, vessels={:?}, users_funds={:?}, total_proposal_voting_power={}", 
-        payload.tribute_id, payload.vessel_ids, users_funds, total_proposal_voting_power);
+    deps.api.debug(&format!("ZEPH113: REPLY_BEFORE_DISTRIBUTE: tribute_id={}, vessels={:?}, users_and_hydromancers_funds={:?}, total_proposal_voting_power={}", 
+        payload.tribute_id, payload.vessel_ids, users_and_hydromancers_funds, total_proposal_voting_power));
 
     let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
         &mut deps,
@@ -182,16 +182,16 @@ pub fn handle_claim_tribute_reply(
         payload.tranche_id,
         payload.round_id,
         payload.proposal_id,
-        users_funds.clone(),
+        users_and_hydromancers_funds.clone(),
         constants.clone(),
         token_info_provider,
         total_proposal_voting_power,
     )?;
 
-    println!(
+    deps.api.debug(&format!(
         "ZEPH114: REPLY_AFTER_DISTRIBUTE: tribute_id={}, amount_to_distribute={}",
         payload.tribute_id, amount_to_distribute
-    );
+    ));
     let mut response = Response::new();
 
     deps.api.debug(&format!(
@@ -203,10 +203,10 @@ pub fn handle_claim_tribute_reply(
     deps.api
         .debug(&format!("ZEPH028: Floored amount: {}", floored_amount));
 
-    println!(
+    deps.api.debug(&format!(
         "ZEPH115: REPLY_SEND: tribute_id={}, amount_decimal={}, amount_floored={}, owner={}",
         payload.tribute_id, amount_to_distribute, floored_amount, payload.vessels_owner
-    );
+    ));
 
     if !floored_amount.is_zero() {
         deps.api.debug(&format!(
@@ -289,7 +289,11 @@ pub fn handle_claim_tribute_reply(
         ));
     }
     //we mark the processed amount as the users funds, because the users funds are the amount that will be distributed to the vessels, not the tribute amount
-    state::mark_tribute_processed(deps.storage, payload.tribute_id, users_funds.clone())?;
+    state::mark_tribute_processed(
+        deps.storage,
+        payload.tribute_id,
+        users_and_hydromancers_funds.clone(),
+    )?;
     deps.api
         .debug("ZEPH035: Claim tribute reply handler completed successfully");
     Ok(response.add_attribute("action", "handle_claim_tribute_reply"))
@@ -484,10 +488,10 @@ pub fn handle_vote_reply(
                 None => {
                     deps.api.debug(&format!(
                         "ZEPH124: FIRST_VOTE_DEBUG: vessel_id={}, proposal_id={}, user_vote={}, steerer_id={}, tws={}, is_zero={}",
-                        vessel.hydro_lock_id, vessels_to_harbor.harbor_id, payload.user_vote, payload.steerer_id, 
+                        vessel.hydro_lock_id, vessels_to_harbor.harbor_id, payload.user_vote, payload.steerer_id,
                         vessel_shares_info.time_weighted_shares, vessel_shares_info.time_weighted_shares.is_zero()
                     ));
-                    
+
                     state::add_vessel_to_harbor(
                         deps.storage,
                         payload.tranche_id,
@@ -506,14 +510,14 @@ pub fn handle_vote_reply(
                         &vessel_shares_info.token_group_id,
                         vessel_shares_info.time_weighted_shares.u128(),
                     )?;
-                    
+
                     deps.api.debug(&format!(
                         "ZEPH125: HYDROMANCER_CONDITION_DEBUG: user_vote={}, tws={}, is_zero={}, condition_result={}",
-                        payload.user_vote, vessel_shares_info.time_weighted_shares, 
+                        payload.user_vote, vessel_shares_info.time_weighted_shares,
                         vessel_shares_info.time_weighted_shares.is_zero(),
                         !payload.user_vote && !vessel_shares_info.time_weighted_shares.is_zero()
                     ));
-                    
+
                     if !payload.user_vote && !vessel_shares_info.time_weighted_shares.is_zero() {
                         // should always be some, because hydro has accepted the vote
                         deps.api.debug(&format!(
@@ -530,7 +534,9 @@ pub fn handle_vote_reply(
                     } else {
                         deps.api.debug(&format!(
                             "ZEPH127: SKIPPING_HYDROMANCER_TWS: user_vote={}, tws={}, is_zero={}",
-                            payload.user_vote, vessel_shares_info.time_weighted_shares, vessel_shares_info.time_weighted_shares.is_zero()
+                            payload.user_vote,
+                            vessel_shares_info.time_weighted_shares,
+                            vessel_shares_info.time_weighted_shares.is_zero()
                         ));
                     }
                 }

@@ -91,7 +91,7 @@ pub fn calcul_total_voting_power_of_hydromancer_on_proposal(
     token_info_provider: &HashMap<String, DenomInfoResponse>,
 ) -> Result<Decimal, ContractError> {
     let list_tws =
-        state::get_hydromancer_proposal_time_weighted_shares(storage, hydromancer_id, proposal_id)?;
+        state::get_hydromancer_proposal_time_weighted_shares(storage, proposal_id, hydromancer_id)?;
 
     api.debug(&format!(
         "ZEPH122: HYDROMANCER_TWS_DEBUG: hydromancer_id={}, proposal_id={}, list_tws={:?}",
@@ -428,17 +428,11 @@ pub fn allocate_rewards_to_hydromancer(
         hydromancer_commission, hydromancer_commission.to_uint_floor()
     ));
 
-    let mut rewards_for_users = total_hydromancer_reward
+    let rewards_for_users = total_hydromancer_reward
         .saturating_sub(hydromancer_commission)
         .to_uint_floor();
-    let hydromancer_commission = hydromancer_commission.to_uint_floor();
 
-    let rest = funds
-        .amount
-        .saturating_sub(hydromancer_commission)
-        .saturating_sub(rewards_for_users);
-    // we add the rest to users rewards
-    rewards_for_users = rewards_for_users.checked_add(rest).unwrap();
+    let hydromancer_commission = hydromancer_commission.to_uint_floor();
 
     Ok(HydromancerTribute {
         rewards_for_users: Coin {
@@ -451,6 +445,7 @@ pub fn allocate_rewards_to_hydromancer(
         },
     })
 }
+
 #[allow(clippy::too_many_arguments)]
 pub fn distribute_rewards_for_vessels_on_tribute(
     deps: &mut DepsMut<'_>,
@@ -673,11 +668,20 @@ pub fn distribute_rewards_for_all_round_proposals(
             total_proposal_voting_power
         ));
 
+        if total_proposal_voting_power.is_zero() {
+            deps.api.debug(&format!(
+                "ZEPH044.1: Skipping proposal {} (no voting power)",
+                proposal.proposal_id
+            ));
+
+            continue;
+        }
+
         for tribute in proposal_tributes {
             // tributes that have been just claimed will be processed in the reply handler, so we skip them here
             if tributes_process_in_reply.contains(&tribute.tribute_id) {
                 deps.api.debug(&format!(
-                    "ZEPH044: Skipping tribute {} (will be processed in reply)",
+                    "ZEPH044.2: Skipping tribute {} (will be processed in reply)",
                     tribute.tribute_id
                 ));
                 continue;

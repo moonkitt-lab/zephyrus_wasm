@@ -5,7 +5,7 @@ use cosmwasm_std::{
     DepsMut, Env, MessageInfo, QueryRequest, Response as CwResponse, StdError, StdResult, SubMsg,
     WasmMsg,
 };
-use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups};
+use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups, TributeClaim};
 
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::msgs::{
@@ -234,7 +234,7 @@ fn execute_claim(
     let contract_address = env.contract.address.clone();
 
     // Check if zephyrus has outstanding tributes to claim
-    let outstanding_tributes = query_hydro_outstanding_tribute_claims(
+    let outstanding_tributes_result = query_hydro_outstanding_tribute_claims(
         &deps.as_ref(),
         env,
         &constants,
@@ -242,75 +242,108 @@ fn execute_claim(
         tranche_id,
     );
 
-    let mut tributes_process_in_reply = BTreeSet::new();
     let mut response = Response::new().add_attribute("action", "claim");
-    if outstanding_tributes.is_ok() {
-        let outstanding_tributes = outstanding_tributes.unwrap();
+
+    if let Ok(outstanding_tributes) = outstanding_tributes_result {
         deps.api.debug(&format!(
             "ZEPH003: Found {} outstanding tributes to claim",
             outstanding_tributes.claims.len()
         ));
 
-        let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
+        // Note: We still need to process, even if we found 0 outstanding tributes to claim,
+        // because they may have already been claimed previously
+        response = process_outstanding_tribute_claims(
+            deps.branch(),
+            info,
+            round_id,
+            tranche_id,
+            vessel_ids,
+            &constants,
+            &contract_address,
+            outstanding_tributes.claims,
+            response,
+        )?;
+    } else {
         deps.api.debug(&format!(
-            "ZEPH004: Current contract balances: {:?}",
-            balances
+            "ZEPH008: Outstanding tributes query failed: {:?}",
+            outstanding_tributes_result.err()
+        ));
+    }
+
+    // Clear temporary distribution tracking data after successful batch completion
+    state::clear_distribution_tracking(deps.storage)?;
+
+    Ok(response)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_outstanding_tribute_claims(
+    mut deps: DepsMut,
+    info: MessageInfo,
+    round_id: u64,
+    tranche_id: u64,
+    vessel_ids: Vec<u64>,
+    constants: &Constants,
+    contract_address: &Addr,
+    claims: Vec<TributeClaim>,
+    mut response: Response,
+) -> Result<Response, ContractError> {
+    let mut tributes_process_in_reply = BTreeSet::new();
+    let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
+
+    deps.api.debug(&format!(
+        "ZEPH004: Current contract balances: {:?}",
+        balances
+    ));
+
+    for outstanding_tribute in claims {
+        deps.api.debug(&format!(
+            "ZEPH005: Processing tribute_id: {}, proposal_id: {}, amount: {:?}",
+            outstanding_tribute.tribute_id,
+            outstanding_tribute.proposal_id,
+            outstanding_tribute.amount
         ));
 
-        for outstanding_tribute in outstanding_tributes.claims {
-            deps.api.debug(&format!(
-                "ZEPH005: Processing tribute_id: {}, proposal_id: {}, amount: {:?}",
-                outstanding_tribute.tribute_id,
-                outstanding_tribute.proposal_id,
-                outstanding_tribute.amount
-            ));
-
-            let sub_msg = build_claim_tribute_sub_msg(
-                round_id,
-                tranche_id,
-                &vessel_ids,
-                &info.sender,
-                &constants,
-                &contract_address,
-                &balances,
-                &outstanding_tribute,
-                deps.api,
-            )?;
-            tributes_process_in_reply.insert(outstanding_tribute.tribute_id);
-            deps.api.debug(&format!(
+        let sub_msg = build_claim_tribute_sub_msg(
+            round_id,
+            tranche_id,
+            &vessel_ids,
+            &info.sender,
+            constants,
+            contract_address,
+            &balances,
+            &outstanding_tribute,
+            deps.api,
+        )?;
+        tributes_process_in_reply.insert(outstanding_tribute.tribute_id);
+        deps.api.debug(&format!(
                 "ZEPH006bis: Added tribute {} to process in reply for hydro contract : {} in zephyrus contract : {}",
                 outstanding_tribute.tribute_id, constants.hydro_config.hydro_contract_address, contract_address
             ));
-            response = response.add_submessage(sub_msg);
+        response = response.add_submessage(sub_msg);
 
-            // Update virtual balances for checking purposes
-            if let Some(balance) = balances
-                .iter_mut()
-                .find(|balance| balance.denom == outstanding_tribute.amount.denom)
-            {
-                // balance found, add to the balance
-                balance.amount = balance
-                    .amount
-                    .checked_add(outstanding_tribute.amount.amount)
-                    .map_err(|e| ContractError::Std(e.into()))?;
-                deps.api.debug(&format!(
-                    "ZEPH006: Updated existing balance for {}: {}",
-                    outstanding_tribute.amount.denom, balance.amount
-                ));
-            } else {
-                // balance not found, add it
-                balances.push(outstanding_tribute.amount.clone());
-                deps.api.debug(&format!(
-                    "ZEPH007: Added new balance for {}: {}",
-                    outstanding_tribute.amount.denom, outstanding_tribute.amount.amount
-                ));
-            }
+        // Update virtual balances for checking purposes
+        if let Some(balance) = balances
+            .iter_mut()
+            .find(|balance| balance.denom == outstanding_tribute.amount.denom)
+        {
+            // balance found, add to the balance
+            balance.amount = balance
+                .amount
+                .checked_add(outstanding_tribute.amount.amount)
+                .map_err(|e| ContractError::Std(e.into()))?;
+            deps.api.debug(&format!(
+                "ZEPH006: Updated existing balance for {}: {}",
+                outstanding_tribute.amount.denom, balance.amount
+            ));
+        } else {
+            // balance not found, add it
+            balances.push(outstanding_tribute.amount.clone());
+            deps.api.debug(&format!(
+                "ZEPH007: Added new balance for {}: {}",
+                outstanding_tribute.amount.denom, outstanding_tribute.amount.amount
+            ));
         }
-    } else {
-        deps.api.debug(&format!(
-            "ZEPH008: No outstanding tributes found or query failed: {:?}",
-            outstanding_tributes.err()
-        ));
     }
 
     deps.api.debug(&format!(
@@ -323,16 +356,13 @@ fn execute_claim(
         round_id,
         tranche_id,
         vessel_ids,
-        constants,
+        constants.clone(),
         tributes_process_in_reply,
     )?;
 
     if !messages.is_empty() {
         response = response.add_messages(messages);
     }
-
-    // Clear temporary distribution tracking data after successful batch completion
-    state::clear_distribution_tracking(deps.storage)?;
 
     Ok(response)
 }

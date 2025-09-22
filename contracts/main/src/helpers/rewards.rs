@@ -91,7 +91,7 @@ pub fn calcul_total_voting_power_of_hydromancer_on_proposal(
     token_info_provider: &HashMap<String, DenomInfoResponse>,
 ) -> Result<Decimal, ContractError> {
     let list_tws =
-        state::get_hydromancer_proposal_time_weighted_shares(storage, hydromancer_id, proposal_id)?;
+        state::get_hydromancer_proposal_time_weighted_shares(storage, proposal_id, hydromancer_id)?;
 
     api.debug(&format!(
         "ZEPH122: HYDROMANCER_TWS_DEBUG: hydromancer_id={}, proposal_id={}, list_tws={:?}",
@@ -428,17 +428,11 @@ pub fn allocate_rewards_to_hydromancer(
         hydromancer_commission, hydromancer_commission.to_uint_floor()
     ));
 
-    let mut rewards_for_users = total_hydromancer_reward
+    let rewards_for_users = total_hydromancer_reward
         .saturating_sub(hydromancer_commission)
         .to_uint_floor();
-    let hydromancer_commission = hydromancer_commission.to_uint_floor();
 
-    let rest = funds
-        .amount
-        .saturating_sub(hydromancer_commission)
-        .saturating_sub(rewards_for_users);
-    // we add the rest to users rewards
-    rewards_for_users = rewards_for_users.checked_add(rest).unwrap();
+    let hydromancer_commission = hydromancer_commission.to_uint_floor();
 
     Ok(HydromancerTribute {
         rewards_for_users: Coin {
@@ -451,6 +445,7 @@ pub fn allocate_rewards_to_hydromancer(
         },
     })
 }
+
 #[allow(clippy::too_many_arguments)]
 pub fn distribute_rewards_for_vessels_on_tribute(
     deps: &mut DepsMut<'_>,
@@ -673,11 +668,20 @@ pub fn distribute_rewards_for_all_round_proposals(
             total_proposal_voting_power
         ));
 
+        if total_proposal_voting_power.is_zero() {
+            deps.api.debug(&format!(
+                "ZEPH044.1: Skipping proposal {} (no voting power)",
+                proposal.proposal_id
+            ));
+
+            continue;
+        }
+
         for tribute in proposal_tributes {
             // tributes that have been just claimed will be processed in the reply handler, so we skip them here
             if tributes_process_in_reply.contains(&tribute.tribute_id) {
                 deps.api.debug(&format!(
-                    "ZEPH044: Skipping tribute {} (will be processed in reply)",
+                    "ZEPH044.2: Skipping tribute {} (will be processed in reply)",
                     tribute.tribute_id
                 ));
                 continue;
@@ -687,38 +691,45 @@ pub fn distribute_rewards_for_all_round_proposals(
                 "ZEPH045: Processing tribute_id: {}, amount: {:?}",
                 tribute.tribute_id, tribute.funds
             ));
-            let tribute_funds_after_commission = state::get_tribute_processed(deps.storage, tribute.tribute_id).expect("Tribute processed should exist here, if not it should be processed in the reply handler").expect("Tribute processed should exist here, if not it should be processed in the reply handler");
+            let tribute_funds_after_commission =
+                state::get_tribute_processed(deps.storage, tribute.tribute_id)?;
 
-            // Cumulate rewards for each vessel
-            let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
-                &mut deps,
-                vessel_ids.clone(),
-                tribute.tribute_id,
-                tribute.tranche_id,
-                tribute.round_id,
-                tribute.proposal_id,
-                tribute_funds_after_commission.clone(),
-                constants.clone(),
-                token_info_provider.clone(),
-                total_proposal_voting_power,
-            )?;
+            let mut reward_amount = Uint128::zero();
 
-            deps.api.debug(&format!(
-                "ZEPH046: Calculated amount to distribute: {}, for vessel_ids: {:?}",
-                amount_to_distribute, vessel_ids
-            ));
+            // It is possible that there is no tributes yet for this proposal (liquidity not yet deployed)
+            if let Some(tribute_rewards) = tribute_funds_after_commission {
+                // Cumulate rewards for each vessel
+                let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
+                    &mut deps,
+                    vessel_ids.clone(),
+                    tribute.tribute_id,
+                    tribute.tranche_id,
+                    tribute.round_id,
+                    tribute.proposal_id,
+                    tribute_rewards,
+                    constants.clone(),
+                    token_info_provider.clone(),
+                    total_proposal_voting_power,
+                )?;
 
-            let floored_amount = amount_to_distribute.to_uint_floor();
-            if !floored_amount.is_zero() {
+                deps.api.debug(&format!(
+                    "ZEPH046: Calculated amount to distribute: {}, for vessel_ids: {:?}",
+                    amount_to_distribute, vessel_ids
+                ));
+
+                reward_amount = amount_to_distribute.to_uint_floor();
+            }
+
+            if !reward_amount.is_zero() {
                 deps.api.debug(&format!(
                     "ZEPH047: Creating send message for {} {} to {}",
-                    floored_amount, tribute.funds.denom, sender
+                    reward_amount, tribute.funds.denom, sender
                 ));
                 let send_msg = BankMsg::Send {
                     to_address: sender.to_string(),
                     amount: vec![Coin {
                         denom: tribute.funds.denom.clone(),
-                        amount: floored_amount,
+                        amount: reward_amount,
                     }],
                 };
                 messages.push(send_msg);
@@ -746,6 +757,7 @@ pub fn distribute_rewards_for_all_round_proposals(
         "ZEPH050: Reward distribution completed, generated {} messages",
         messages.len()
     ));
+
     Ok(messages)
 }
 

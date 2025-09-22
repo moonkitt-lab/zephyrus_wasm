@@ -2296,7 +2296,7 @@ fn claim_rewards_fail_unauthorized_vessel() {
     init_contract(deps.as_mut());
 
     let alice_address = make_valid_addr("alice");
-    let bob_address = make_valid_addr("bob");
+    let _bob_address = make_valid_addr("bob");
 
     // Create user but don't give them any vessels
     let _user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())

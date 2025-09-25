@@ -221,12 +221,27 @@ pub fn complete_hydromancer_time_weighted_shares(
     constants: &Constants,
     current_round_id: RoundId,
 ) -> Result<(), ContractError> {
-    if !state::is_hydromancer_tws_complete(deps.storage, current_round_id, hydromancer_id) {
+    deps.api.debug(&format!(
+        "ZEPH128: HYDROMANCER_TWS_DEBUG: complete hydromancer tws - hydromancer_id={}, round_id={}, is_complete={}",
+        hydromancer_id, current_round_id, state::is_hydromancer_tws_complete(deps.storage, current_round_id, hydromancer_id)
+    ));
+
+    if state::is_hydromancer_tws_complete(deps.storage, current_round_id, hydromancer_id) {
         return Ok(());
     }
 
+    deps.api.debug(&format!(
+        "ZEPH130: HYDROMANCER_TWS_DEBUG: continuing after is_complete check"
+    ));
+
     // Load all vessels for the hydromancer
     let vessels = state::get_vessels_by_hydromancer(deps.storage, hydromancer_id, 0, usize::MAX)?;
+
+    deps.api.debug(&format!(
+        "ZEPH131: HYDROMANCER_TWS_DEBUG: continuing after loading hydromancer's vessels : count={}, vessel_ids={:?}",
+        vessels.len(),
+        vessels.iter().map(|v| v.hydro_lock_id).collect::<Vec<_>>()
+    ));
 
     // Query lockup shares for all hydromancer's vessels
     let lockups_shares_response = query_hydro_lockups_shares(
@@ -235,9 +250,14 @@ pub fn complete_hydromancer_time_weighted_shares(
         vessels.iter().map(|v| v.hydro_lock_id).collect(),
     )?;
 
+    deps.api.debug(&format!(
+        "ZEPH132: HYDROMANCER_TWS_DEBUG: continuing after querying lockup shares : count={}",
+        lockups_shares_response.lockups_shares_info.len()
+    ));
+
     for lockup_shares in lockups_shares_response.lockups_shares_info {
         deps.api.debug(&format!(
-            "ZEPH125: HYDROMANCER_TWS_DEBUG: hydromancer_id={}, lockup_shares={:?}",
+            "ZEPH129: HYDROMANCER_TWS_DEBUG: hydromancer_id={}, lockup_shares={:?}",
             hydromancer_id, lockup_shares
         ));
         state::save_vessel_shares_info(

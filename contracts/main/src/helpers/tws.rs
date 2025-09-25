@@ -236,6 +236,10 @@ pub fn complete_hydromancer_time_weighted_shares(
     )?;
 
     for lockup_shares in lockups_shares_response.lockups_shares_info {
+        deps.api.debug(&format!(
+            "ZEPH125: HYDROMANCER_TWS_DEBUG: hydromancer_id={}, lockup_shares={:?}",
+            hydromancer_id, lockup_shares
+        ));
         state::save_vessel_shares_info(
             deps.storage,
             lockup_shares.lock_id,

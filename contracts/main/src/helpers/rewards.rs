@@ -174,7 +174,8 @@ pub fn calcul_total_voting_power_on_proposal(
     round_id: RoundId,
     token_info_provider: &HashMap<String, DenomInfoResponse>,
 ) -> Result<Decimal, ContractError> {
-    let list_tws = state::get_proposal_time_weighted_shares(storage, proposal_id)?;
+    let list_tws = state::get_proposal_time_weighted_shares(storage, proposal_id);
+    let list_tws = list_tws.unwrap();
     let mut total_voting_power = Decimal::zero();
 
     // DEBUG: Log all TWS for this proposal
@@ -318,7 +319,18 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
             vessel_id
         ));
         // Vessel is under hydromancer control, we don't care if it was used or not, it take a portion of hydromancer rewards
-        let vessel_shares = state::get_vessel_shares_info(deps.storage, round_id, vessel_id)?;
+
+        // Vessel shares should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
+        let vessel_shares = state::get_vessel_shares_info(deps.storage, round_id, vessel_id);
+        if vessel_shares.is_err() {
+            deps.api.debug(&format!(
+                "ZEPH078: Vessel {} shares not found for hydromancer {}",
+                vessel_id,
+                vessel.hydromancer_id.unwrap()
+            ));
+            return Ok(Decimal::zero());
+        }
+        let vessel_shares = vessel_shares.unwrap();
         let proposal = query_hydro_proposal(&deps, constants, round_id, tranche_id, proposal_id)?;
 
         deps.api.debug(&format!(
@@ -659,7 +671,12 @@ pub fn distribute_rewards_for_all_round_proposals(
             proposal.proposal_id,
             round_id,
             &token_info_provider,
-        )?;
+        );
+        // If the total proposal voting power is not found, we skip the proposal it means that zephyrus did not vote on the proposal
+        if total_proposal_voting_power.is_err() {
+            continue;
+        }
+        let total_proposal_voting_power = total_proposal_voting_power.unwrap();
 
         deps.api.debug(&format!(
             "ZEPH043: Proposal {} has {} tributes, total voting power: {}",

@@ -227,6 +227,9 @@ pub fn complete_hydromancer_time_weighted_shares(
     ));
 
     if state::is_hydromancer_tws_complete(deps.storage, current_round_id, hydromancer_id) {
+        deps.api.debug(&format!(
+            "ZEPH133: HYDROMANCER_TWS_DEBUG: hydromancer tws is already complete"
+        ));
         return Ok(());
     }
 
@@ -260,6 +263,10 @@ pub fn complete_hydromancer_time_weighted_shares(
             "ZEPH129: HYDROMANCER_TWS_DEBUG: hydromancer_id={}, lockup_shares={:?}",
             hydromancer_id, lockup_shares
         ));
+        // if vessel shares info already exists it means that vessel was created and delegated to hydromancer before its vote it's weighted shares are already added, so we skip
+        if state::has_vessel_shares_info(deps.storage, current_round_id, lockup_shares.lock_id) {
+            continue;
+        }
         state::save_vessel_shares_info(
             deps.storage,
             lockup_shares.lock_id,

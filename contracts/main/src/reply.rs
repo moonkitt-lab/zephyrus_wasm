@@ -15,8 +15,8 @@ use zephyrus_core::state::VesselHarbor;
 
 use crate::helpers::hydro_queries::query_hydro_derivative_token_info_providers;
 use crate::helpers::rewards::{
-    allocate_rewards_to_hydromancer, calcul_protocol_comm_and_rest,
-    calcul_total_voting_power_on_proposal, distribute_rewards_for_vessels_on_tribute,
+    allocate_rewards_to_hydromancer, calculate_protocol_comm_and_rest,
+    calculate_total_voting_power_on_proposal, distribute_rewards_for_vessels_on_tribute,
     process_hydromancer_claiming_rewards,
 };
 use crate::{
@@ -110,7 +110,7 @@ pub fn handle_claim_tribute_reply(
     }
 
     let (commission_amount, users_and_hydromancers_funds) =
-        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
+        calculate_protocol_comm_and_rest(payload.amount.clone(), &constants);
     deps.api.debug(&format!(
         "ZEPH023: Commission calculation - commission: {}, users_and_hydromancers_funds: {:?}",
         commission_amount, users_and_hydromancers_funds
@@ -123,7 +123,7 @@ pub fn handle_claim_tribute_reply(
 
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, payload.round_id)?;
-    let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
+    let total_proposal_voting_power = calculate_total_voting_power_on_proposal(
         deps.storage,
         payload.proposal_id,
         payload.round_id,

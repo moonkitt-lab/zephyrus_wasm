@@ -124,7 +124,7 @@ pub fn calculate_total_voting_power_of_hydromancer_on_proposal(
     Ok(total_voting_power)
 }
 
-pub fn calcul_total_voting_power_of_hydromancer_for_locked_rounds(
+pub fn calculate_total_voting_power_of_hydromancer_for_locked_rounds(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
     round_id: RoundId,
@@ -168,7 +168,7 @@ pub fn calcul_total_voting_power_of_hydromancer_for_locked_rounds(
     Ok(total_voting_power)
 }
 
-pub fn calcul_total_voting_power_on_proposal(
+pub fn calculate_total_voting_power_on_proposal(
     storage: &dyn Storage,
     proposal_id: HydroProposalId,
     round_id: RoundId,
@@ -202,7 +202,7 @@ pub fn calcul_total_voting_power_on_proposal(
     Ok(total_voting_power)
 }
 
-pub fn calcul_voting_power_of_vessel(
+pub fn calculate_voting_power_of_vessel(
     storage: &dyn Storage,
     api: &dyn Api,
     vessel_id: HydroLockId,
@@ -235,7 +235,7 @@ pub fn calcul_voting_power_of_vessel(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn calcul_rewards_amount_for_vessel_on_proposal(
+pub fn calculate_rewards_amount_for_vessel_on_proposal(
     deps: Deps<'_>,
     round_id: RoundId,
     tranche_id: TrancheId,
@@ -252,7 +252,7 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
         vessel_id, proposal_id, total_proposal_voting_power, proposal_rewards));
 
     let vessel = state::get_vessel(deps.storage, vessel_id)?;
-    let voting_power = calcul_voting_power_of_vessel(
+    let voting_power = calculate_voting_power_of_vessel(
         deps.storage,
         deps.api,
         vessel_id,
@@ -340,7 +340,7 @@ pub fn calcul_rewards_amount_for_vessel_on_proposal(
 
         if proposal.deployment_duration <= vessel_shares.locked_rounds {
             let total_hydromancer_locked_rounds_voting_power =
-                calcul_total_voting_power_of_hydromancer_for_locked_rounds(
+                calculate_total_voting_power_of_hydromancer_for_locked_rounds(
                     deps.storage,
                     vessel.hydromancer_id.unwrap(),
                     round_id,
@@ -495,7 +495,7 @@ pub fn distribute_rewards_for_vessels_on_tribute(
                 vessel_id
             ));
 
-            let proposal_vessel_rewards = calcul_rewards_amount_for_vessel_on_proposal(
+            let proposal_vessel_rewards = calculate_rewards_amount_for_vessel_on_proposal(
                 deps.as_ref(),
                 round_id,
                 tranche_id,
@@ -587,7 +587,7 @@ pub fn calculate_rewards_for_vessels_on_tribute(
                 vessel_id
             ));
 
-            let proposal_vessel_rewards = calcul_rewards_amount_for_vessel_on_proposal(
+            let proposal_vessel_rewards = calculate_rewards_amount_for_vessel_on_proposal(
                 deps,
                 round_id,
                 tranche_id,
@@ -666,7 +666,7 @@ pub fn distribute_rewards_for_all_round_proposals(
             round_id,
             proposal.proposal_id,
         )?;
-        let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
+        let total_proposal_voting_power = calculate_total_voting_power_on_proposal(
             deps.storage,
             proposal.proposal_id,
             round_id,
@@ -778,7 +778,7 @@ pub fn distribute_rewards_for_all_round_proposals(
     Ok(messages)
 }
 
-pub fn calcul_protocol_comm_and_rest(
+pub fn calculate_protocol_comm_and_rest(
     amount: Coin,
     constants: &zephyrus_core::state::Constants,
 ) -> (Uint128, Coin) {

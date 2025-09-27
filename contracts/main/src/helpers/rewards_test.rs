@@ -125,7 +125,7 @@ fn test_calcul_total_voting_power_of_hydromancer_on_proposal() {
 }
 
 #[test]
-fn test_calcul_total_voting_power_of_hydromancer_for_locked_rounds() {
+fn test_calculate_total_voting_power_of_hydromancer_for_locked_rounds() {
     let deps = mock_dependencies();
 
     let hydromancer_id = 1u64;
@@ -133,7 +133,7 @@ fn test_calcul_total_voting_power_of_hydromancer_for_locked_rounds() {
     let locked_rounds = 2u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_total_voting_power_of_hydromancer_for_locked_rounds(
+    let result = calculate_total_voting_power_of_hydromancer_for_locked_rounds(
         deps.as_ref().storage,
         hydromancer_id,
         round_id,
@@ -152,7 +152,7 @@ fn test_calcul_total_voting_power_on_proposal() {
     let round_id = 1u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_total_voting_power_on_proposal(
+    let result = calculate_total_voting_power_on_proposal(
         deps.as_ref().storage,
         proposal_id,
         round_id,
@@ -163,14 +163,14 @@ fn test_calcul_total_voting_power_on_proposal() {
 }
 
 #[test]
-fn test_calcul_voting_power_of_vessel() {
+fn test_calculate_voting_power_of_vessel() {
     let deps = mock_dependencies();
 
     let vessel_id = 1u64;
     let round_id = 1u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_voting_power_of_vessel(
+    let result = calculate_voting_power_of_vessel(
         deps.as_ref().storage,
         deps.as_ref().api,
         vessel_id,
@@ -182,7 +182,7 @@ fn test_calcul_voting_power_of_vessel() {
 }
 
 #[test]
-fn test_calcul_rewards_amount_for_vessel_on_proposal() {
+fn test_calculate_rewards_amount_for_vessel_on_proposal() {
     let deps = mock_dependencies();
 
     let round_id = 1u64;
@@ -196,7 +196,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calcul_rewards_amount_for_vessel_on_proposal(
+    let result = calculate_rewards_amount_for_vessel_on_proposal(
         deps.as_ref(),
         round_id,
         tranche_id,
@@ -228,7 +228,7 @@ fn test_calcul_protocol_comm_and_rest() {
     let constants = create_mock_constants();
 
     let (commission_amount, user_funds) =
-        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
+        calculate_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     // Verify commission calculation (5% of 1000 = 50)
     assert_eq!(commission_amount, Uint128::new(50));
@@ -274,7 +274,7 @@ fn test_calcul_protocol_comm_and_rest_zero_amount() {
     let constants = create_mock_constants();
 
     let (commission_amount, user_funds) =
-        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
+        calculate_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     assert_eq!(commission_amount, Uint128::zero());
     assert_eq!(user_funds.amount, Uint128::zero());
@@ -297,7 +297,7 @@ fn test_calcul_protocol_comm_and_rest_high_commission() {
     };
 
     let (commission_amount, user_funds) =
-        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
+        calculate_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     assert_eq!(commission_amount, Uint128::new(1000));
     assert_eq!(user_funds.amount, Uint128::zero());
@@ -319,7 +319,7 @@ fn test_calcul_protocol_comm_and_rest_different_denom() {
     let constants = create_mock_constants();
 
     let (commission_amount, user_funds) =
-        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
+        calculate_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     assert_eq!(commission_amount, Uint128::new(50));
     assert_eq!(user_funds.amount, Uint128::new(950));
@@ -342,7 +342,7 @@ fn test_voting_power_calculation_with_zero_total() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calcul_rewards_amount_for_vessel_on_proposal(
+    let result = calculate_rewards_amount_for_vessel_on_proposal(
         deps.as_ref(),
         round_id,
         tranche_id,
@@ -413,7 +413,7 @@ fn test_calcul_protocol_comm_and_rest_large_amount() {
     let constants = create_mock_constants();
 
     let (commission_amount, user_funds) =
-        calcul_protocol_comm_and_rest(payload.amount.clone(), &constants);
+        calculate_protocol_comm_and_rest(payload.amount.clone(), &constants);
 
     // Should handle large amounts without overflow
     assert!(commission_amount > Uint128::zero());
@@ -527,15 +527,15 @@ fn test_build_claim_tribute_sub_msg_with_empty_balances() {
     assert_eq!(sub_msg.id, CLAIM_TRIBUTE_REPLY_ID);
 }
 
-// Test calcul_voting_power_of_vessel with vessel shares error
+// Test calculate_voting_power_of_vessel with vessel shares error
 #[test]
-fn test_calcul_voting_power_of_vessel_with_shares_error() {
+fn test_calculate_voting_power_of_vessel_with_shares_error() {
     let deps = mock_dependencies();
     let vessel_id = 1u64;
     let round_id = 1u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_voting_power_of_vessel(
+    let result = calculate_voting_power_of_vessel(
         deps.as_ref().storage,
         deps.as_ref().api,
         vessel_id,
@@ -550,9 +550,9 @@ fn test_calcul_voting_power_of_vessel_with_shares_error() {
     }
 }
 
-// Test calcul_voting_power_of_vessel with token info not found
+// Test calculate_voting_power_of_vessel with token info not found
 #[test]
-fn test_calcul_voting_power_of_vessel_token_info_not_found() {
+fn test_calculate_voting_power_of_vessel_token_info_not_found() {
     let mut deps = mock_dependencies();
 
     // Create vessel with unknown token group
@@ -572,7 +572,7 @@ fn test_calcul_voting_power_of_vessel_token_info_not_found() {
 
     let token_info_provider = create_mock_token_info_provider(); // Doesn't contain "unknown_token_group"
 
-    let result = calcul_voting_power_of_vessel(
+    let result = calculate_voting_power_of_vessel(
         deps.as_ref().storage,
         deps.as_ref().api,
         vessel_id,
@@ -617,7 +617,7 @@ fn test_calcul_total_voting_power_on_proposal_with_empty_tws() {
     let round_id = 1u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_total_voting_power_on_proposal(
+    let result = calculate_total_voting_power_on_proposal(
         deps.as_ref().storage,
         proposal_id,
         round_id,
@@ -651,7 +651,7 @@ fn test_calcul_total_voting_power_of_hydromancer_on_proposal_with_empty_tws() {
 }
 
 #[test]
-fn test_calcul_total_voting_power_of_hydromancer_for_locked_rounds_with_empty_tws() {
+fn test_calculate_total_voting_power_of_hydromancer_for_locked_rounds_with_empty_tws() {
     let deps = mock_dependencies();
 
     let hydromancer_id = 1u64;
@@ -659,7 +659,7 @@ fn test_calcul_total_voting_power_of_hydromancer_for_locked_rounds_with_empty_tw
     let locked_rounds = 2u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_total_voting_power_of_hydromancer_for_locked_rounds(
+    let result = calculate_total_voting_power_of_hydromancer_for_locked_rounds(
         deps.as_ref().storage,
         hydromancer_id,
         round_id,
@@ -673,7 +673,7 @@ fn test_calcul_total_voting_power_of_hydromancer_for_locked_rounds_with_empty_tw
 
 // Test with different locked rounds scenarios
 #[test]
-fn test_calcul_total_voting_power_of_hydromancer_for_locked_rounds_zero_locked() {
+fn test_calculate_total_voting_power_of_hydromancer_for_locked_rounds_zero_locked() {
     let deps = mock_dependencies();
 
     let hydromancer_id = 1u64;
@@ -681,7 +681,7 @@ fn test_calcul_total_voting_power_of_hydromancer_for_locked_rounds_zero_locked()
     let locked_rounds = 0u64; // Zero locked rounds
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_total_voting_power_of_hydromancer_for_locked_rounds(
+    let result = calculate_total_voting_power_of_hydromancer_for_locked_rounds(
         deps.as_ref().storage,
         hydromancer_id,
         round_id,
@@ -692,9 +692,9 @@ fn test_calcul_total_voting_power_of_hydromancer_for_locked_rounds_zero_locked()
     assert!(result.is_err() || result.is_ok());
 }
 
-// Test calcul_rewards_amount_for_vessel_on_proposal with different scenarios
+// Test calculate_rewards_amount_for_vessel_on_proposal with different scenarios
 #[test]
-fn test_calcul_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
+fn test_calculate_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
     let deps = mock_dependencies();
 
     let round_id = 1u64;
@@ -708,7 +708,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calcul_rewards_amount_for_vessel_on_proposal(
+    let result = calculate_rewards_amount_for_vessel_on_proposal(
         deps.as_ref(),
         round_id,
         tranche_id,
@@ -726,9 +726,9 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
     assert!(result.is_err() || result.is_ok());
 }
 
-// Test calcul_rewards_amount_for_vessel_on_proposal with vessel not found
+// Test calculate_rewards_amount_for_vessel_on_proposal with vessel not found
 #[test]
-fn test_calcul_rewards_amount_for_vessel_on_proposal_vessel_not_found() {
+fn test_calculate_rewards_amount_for_vessel_on_proposal_vessel_not_found() {
     let deps = mock_dependencies();
 
     let round_id = 1u64;
@@ -742,7 +742,7 @@ fn test_calcul_rewards_amount_for_vessel_on_proposal_vessel_not_found() {
     let vessel_id = 999u64; // Non-existent vessel
 
     let mock_data_loader = MockDataLoader;
-    let result = calcul_rewards_amount_for_vessel_on_proposal(
+    let result = calculate_rewards_amount_for_vessel_on_proposal(
         deps.as_ref(),
         round_id,
         tranche_id,

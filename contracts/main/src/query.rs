@@ -19,9 +19,9 @@ use crate::{
         },
         hydromancer_tribute_data_loader::{DataLoader, InMemoryDataLoader, StateDataLoader},
         rewards::{
-            allocate_rewards_to_hydromancer, calcul_protocol_comm_and_rest,
-            calcul_total_voting_power_on_proposal, calculate_hydromancer_claiming_rewards,
-            calculate_rewards_for_vessels_on_tribute,
+            allocate_rewards_to_hydromancer, calculate_hydromancer_claiming_rewards,
+            calculate_protocol_comm_and_rest, calculate_rewards_for_vessels_on_tribute,
+            calculate_total_voting_power_on_proposal,
         },
         tribute_queries::query_tribute_proposal_tributes,
         validation::validate_no_duplicate_ids,
@@ -201,7 +201,7 @@ pub fn query_vessels_rewards(
         let proposal_tributes =
             query_tribute_proposal_tributes(&deps, &constants, round_id, proposal.proposal_id)
                 .map_err(|e| StdError::generic_err(e.to_string()))?;
-        let total_proposal_voting_power = calcul_total_voting_power_on_proposal(
+        let total_proposal_voting_power = calculate_total_voting_power_on_proposal(
             deps.storage,
             proposal.proposal_id,
             round_id,
@@ -238,7 +238,7 @@ pub fn query_vessels_rewards(
             }
 
             let (_, users_funds) =
-                calcul_protocol_comm_and_rest(zephyrus_rewards.clone(), &constants);
+                calculate_protocol_comm_and_rest(zephyrus_rewards.clone(), &constants);
 
             if !tribute_processed {
                 // as tribute has not been processed yet, we will need to calculate rewards for hydromancers

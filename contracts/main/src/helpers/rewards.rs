@@ -82,7 +82,7 @@ pub fn build_claim_tribute_sub_msg(
     Ok(sub_msg)
 }
 
-pub fn calcul_total_voting_power_of_hydromancer_on_proposal(
+pub fn calculate_total_voting_power_of_hydromancer_on_proposal(
     storage: &dyn Storage,
     api: &dyn Api,
     hydromancer_id: HydromancerId,
@@ -409,7 +409,7 @@ pub fn allocate_rewards_to_hydromancer(
     total_proposal_voting_power: Decimal,
     hydromancer_id: u64,
 ) -> Result<HydromancerTribute, ContractError> {
-    let hydromancer_voting_power = calcul_total_voting_power_of_hydromancer_on_proposal(
+    let hydromancer_voting_power = calculate_total_voting_power_of_hydromancer_on_proposal(
         deps.storage,
         deps.api,
         hydromancer_id,

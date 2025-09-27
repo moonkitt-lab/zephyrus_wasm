@@ -112,7 +112,7 @@ fn test_calcul_total_voting_power_of_hydromancer_on_proposal() {
     let round_id = 1u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_total_voting_power_of_hydromancer_on_proposal(
+    let result = calculate_total_voting_power_of_hydromancer_on_proposal(
         deps.as_ref().storage,
         deps.as_ref().api,
         hydromancer_id,
@@ -637,7 +637,7 @@ fn test_calcul_total_voting_power_of_hydromancer_on_proposal_with_empty_tws() {
     let round_id = 1u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calcul_total_voting_power_of_hydromancer_on_proposal(
+    let result = calculate_total_voting_power_of_hydromancer_on_proposal(
         deps.as_ref().storage,
         deps.as_ref().api,
         hydromancer_id,

@@ -95,7 +95,6 @@ fn test_build_claim_tribute_sub_msg() {
         &contract_address,
         &balances,
         &outstanding_tribute,
-        &deps.api,
     );
 
     assert!(result.is_ok());
@@ -114,7 +113,6 @@ fn test_calcul_total_voting_power_of_hydromancer_on_proposal() {
 
     let result = calculate_total_voting_power_of_hydromancer_on_proposal(
         deps.as_ref().storage,
-        deps.as_ref().api,
         hydromancer_id,
         proposal_id,
         round_id,
@@ -172,7 +170,6 @@ fn test_calculate_voting_power_of_vessel() {
 
     let result = calculate_voting_power_of_vessel(
         deps.as_ref().storage,
-        deps.as_ref().api,
         vessel_id,
         round_id,
         &token_info_provider,
@@ -196,7 +193,7 @@ fn test_calculate_rewards_amount_for_vessel_on_proposal() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_proposal(
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
         deps.as_ref(),
         round_id,
         tranche_id,
@@ -342,7 +339,7 @@ fn test_voting_power_calculation_with_zero_total() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_proposal(
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
         deps.as_ref(),
         round_id,
         tranche_id,
@@ -449,7 +446,6 @@ fn test_build_claim_tribute_sub_msg_with_balance_found() {
         &contract_address,
         &balances,
         &outstanding_tribute,
-        &deps.api,
     );
 
     assert!(result.is_ok());
@@ -484,7 +480,6 @@ fn test_build_claim_tribute_sub_msg_with_balance_not_found() {
         &contract_address,
         &balances,
         &outstanding_tribute,
-        &deps.api,
     );
 
     assert!(result.is_ok());
@@ -519,7 +514,6 @@ fn test_build_claim_tribute_sub_msg_with_empty_balances() {
         &contract_address,
         &balances,
         &outstanding_tribute,
-        &deps.api,
     );
 
     assert!(result.is_ok());
@@ -537,7 +531,6 @@ fn test_calculate_voting_power_of_vessel_with_shares_error() {
 
     let result = calculate_voting_power_of_vessel(
         deps.as_ref().storage,
-        deps.as_ref().api,
         vessel_id,
         round_id,
         &token_info_provider,
@@ -574,7 +567,6 @@ fn test_calculate_voting_power_of_vessel_token_info_not_found() {
 
     let result = calculate_voting_power_of_vessel(
         deps.as_ref().storage,
-        deps.as_ref().api,
         vessel_id,
         round_id,
         &token_info_provider,
@@ -639,7 +631,6 @@ fn test_calcul_total_voting_power_of_hydromancer_on_proposal_with_empty_tws() {
 
     let result = calculate_total_voting_power_of_hydromancer_on_proposal(
         deps.as_ref().storage,
-        deps.as_ref().api,
         hydromancer_id,
         proposal_id,
         round_id,
@@ -692,9 +683,9 @@ fn test_calculate_total_voting_power_of_hydromancer_for_locked_rounds_zero_locke
     assert!(result.is_err() || result.is_ok());
 }
 
-// Test calculate_rewards_amount_for_vessel_on_proposal with different scenarios
+// Test calculate_rewards_amount_for_vessel_on_tribute with different scenarios
 #[test]
-fn test_calculate_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
+fn test_calculate_rewards_amount_for_vessel_on_tribute_zero_voting_power() {
     let deps = mock_dependencies();
 
     let round_id = 1u64;
@@ -708,7 +699,7 @@ fn test_calculate_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_proposal(
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
         deps.as_ref(),
         round_id,
         tranche_id,
@@ -728,7 +719,7 @@ fn test_calculate_rewards_amount_for_vessel_on_proposal_zero_voting_power() {
 
 // Test calculate_rewards_amount_for_vessel_on_proposal with vessel not found
 #[test]
-fn test_calculate_rewards_amount_for_vessel_on_proposal_vessel_not_found() {
+fn test_calculate_rewards_amount_for_vessel_on_tribute_vessel_not_found() {
     let deps = mock_dependencies();
 
     let round_id = 1u64;
@@ -742,7 +733,7 @@ fn test_calculate_rewards_amount_for_vessel_on_proposal_vessel_not_found() {
     let vessel_id = 999u64; // Non-existent vessel
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_proposal(
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
         deps.as_ref(),
         round_id,
         tranche_id,
@@ -940,7 +931,6 @@ fn test_distribute_rewards_for_vessels_on_tribute_already_claimed() {
         1,
         tribute_id,
         Coin::new(100u128, "uatom"),
-        &api,
     )
     .expect("Should save claim");
 
@@ -949,7 +939,6 @@ fn test_distribute_rewards_for_vessels_on_tribute_already_claimed() {
         2,
         tribute_id,
         Coin::new(200u128, "uatom"),
-        &api,
     )
     .expect("Should save claim");
 

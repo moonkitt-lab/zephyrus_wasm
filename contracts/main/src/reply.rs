@@ -74,11 +74,6 @@ pub fn handle_claim_tribute_reply(
     env: Env,
     payload: ClaimTributeReplyPayload,
 ) -> Result<Response, ContractError> {
-    deps.api
-        .debug("ZEPH997: CLAIM_TRIBUTE_REPLY HANDLER CALLED - TEST LOG");
-    deps.api.debug(&format!("ZEPH020: Starting claim tribute reply handler - tribute_id: {}, proposal_id: {}, amount: {:?}", 
-        payload.tribute_id, payload.proposal_id, payload.amount));
-
     let constants = state::get_constants(deps.storage)?;
     let balance_query = deps
         .querier
@@ -93,17 +88,8 @@ pub fn handle_claim_tribute_reply(
         state::get_total_distributed_amount(deps.storage, &payload.amount.denom)?;
     let balance_expected_adjusted = balance_expected.saturating_sub(total_distributed);
 
-    deps.api.debug(&format!(
-        "ZEPH021: Balance check - actual: {}, expected: {}, before_claim: {}, total_distributed: {}, adjusted_expected: {}",
-        balance_query.amount, balance_expected, payload.balance_before_claim.amount, total_distributed, balance_expected_adjusted
-    ));
-
     // Check if the amount received is correct, accounting for previous distributions
     if balance_query.amount != balance_expected_adjusted {
-        deps.api.debug(&format!(
-            "ZEPH022: ERROR - Balance mismatch! tribute_id: {}, actual: {}, expected_adjusted: {}",
-            payload.tribute_id, balance_query.amount, balance_expected_adjusted
-        ));
         return Err(ContractError::InsufficientTributeReceived {
             tribute_id: payload.tribute_id,
         });
@@ -111,15 +97,6 @@ pub fn handle_claim_tribute_reply(
 
     let (commission_amount, users_and_hydromancers_funds) =
         calculate_protocol_comm_and_rest(payload.amount.clone(), &constants);
-    deps.api.debug(&format!(
-        "ZEPH023: Commission calculation - commission: {}, users_and_hydromancers_funds: {:?}",
-        commission_amount, users_and_hydromancers_funds
-    ));
-
-    deps.api.debug(&format!(
-        "ZEPH112: REPLY_COMMISSION: tribute_id={}, total_amount={:?}, commission={}, users_and_hydromancers_funds={:?}",
-        payload.tribute_id, payload.amount, commission_amount, users_and_hydromancers_funds
-    ));
 
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, payload.round_id)?;
@@ -130,16 +107,7 @@ pub fn handle_claim_tribute_reply(
         &token_info_provider,
     )?;
 
-    deps.api.debug(&format!(
-        "ZEPH024: Total proposal voting power: {}",
-        total_proposal_voting_power
-    ));
-
     let hydromancer_ids = state::get_all_hydromancers(deps.storage)?;
-    deps.api.debug(&format!(
-        "ZEPH025: Allocating rewards to {} hydromancers",
-        hydromancer_ids.len()
-    ));
 
     for hydromancer_id in hydromancer_ids {
         let hydromancer_tribute = allocate_rewards_to_hydromancer(
@@ -160,21 +128,6 @@ pub fn handle_claim_tribute_reply(
         )?;
     }
 
-    deps.api.debug(&format!(
-        "ZEPH026: Calculating rewards for {} vessels",
-        payload.vessel_ids.len()
-    ));
-
-    // Log vessel ownership for debugging
-    deps.api.debug(&format!(
-        "ZEPH027: VESSEL_OWNERSHIP: tribute_id={}, vessels={:?}, owner={}",
-        payload.tribute_id, payload.vessel_ids, payload.vessels_owner
-    ));
-
-    // Cumulate rewards for each vessel
-    deps.api.debug(&format!("ZEPH113: REPLY_BEFORE_DISTRIBUTE: tribute_id={}, vessels={:?}, users_and_hydromancers_funds={:?}, total_proposal_voting_power={}", 
-        payload.tribute_id, payload.vessel_ids, users_and_hydromancers_funds, total_proposal_voting_power));
-
     let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
         &mut deps,
         payload.vessel_ids.clone(),
@@ -188,31 +141,12 @@ pub fn handle_claim_tribute_reply(
         total_proposal_voting_power,
     )?;
 
-    deps.api.debug(&format!(
-        "ZEPH114: REPLY_AFTER_DISTRIBUTE: tribute_id={}, amount_to_distribute={}",
-        payload.tribute_id, amount_to_distribute
-    ));
     let mut response = Response::new();
 
-    deps.api.debug(&format!(
-        "ZEPH027: Amount to distribute: {}",
-        amount_to_distribute
-    ));
     // Send rewards to vessels owner
     let floored_amount = amount_to_distribute.to_uint_floor();
-    deps.api
-        .debug(&format!("ZEPH028: Floored amount: {}", floored_amount));
-
-    deps.api.debug(&format!(
-        "ZEPH115: REPLY_SEND: tribute_id={}, amount_decimal={}, amount_floored={}, owner={}",
-        payload.tribute_id, amount_to_distribute, floored_amount, payload.vessels_owner
-    ));
 
     if !floored_amount.is_zero() {
-        deps.api.debug(&format!(
-            "ZEPH029: Sending {} {} to vessel owner {}",
-            floored_amount, payload.amount.denom, payload.vessels_owner
-        ));
         let send_msg = BankMsg::Send {
             to_address: payload.vessels_owner.to_string(),
             amount: vec![Coin {
@@ -221,17 +155,10 @@ pub fn handle_claim_tribute_reply(
             }],
         };
         response = response.add_message(send_msg);
-    } else {
-        deps.api
-            .debug("ZEPH030: No rewards to send to vessel owner (floored amount is zero)");
     }
 
     // Send commission to recipient
     if commission_amount.u128() > 0 {
-        deps.api.debug(&format!(
-            "ZEPH031: Sending commission {} {} to {}",
-            commission_amount, payload.amount.denom, constants.commission_recipient
-        ));
         let send_msg = BankMsg::Send {
             to_address: constants.commission_recipient.to_string(),
             amount: vec![Coin {
@@ -240,8 +167,6 @@ pub fn handle_claim_tribute_reply(
             }],
         };
         response = response.add_message(send_msg);
-    } else {
-        deps.api.debug("ZEPH032: No commission to send");
     }
 
     // Process the case that sender is an hydromancer and send its commission to the sender
@@ -259,7 +184,6 @@ pub fn handle_claim_tribute_reply(
 
     // Add hydromancer rewards if any and add to response
     if let Some(ref send_msg) = hydromancer_rewards_send_msg {
-        deps.api.debug("ZEPH033: Sending hydromancer commission");
         response = response.add_message(send_msg.clone());
 
         // Extract amount from hydromancer message for tracking
@@ -270,8 +194,6 @@ pub fn handle_claim_tribute_reply(
                     .map_err(|e| ContractError::Std(e.into()))?;
             }
         }
-    } else {
-        deps.api.debug("ZEPH034: No hydromancer commission to send");
     }
 
     if !total_distributed_amount.is_zero() {
@@ -283,10 +205,6 @@ pub fn handle_claim_tribute_reply(
                 amount: total_distributed_amount,
             },
         )?;
-        deps.api.debug(&format!(
-            "ZEPH034.5: Recorded distribution of {} {} for tribute_id: {}",
-            total_distributed_amount, payload.amount.denom, payload.tribute_id
-        ));
     }
     //we mark the processed amount as the users funds, because the users funds are the amount that will be distributed to the vessels, not the tribute amount
     state::mark_tribute_processed(
@@ -294,8 +212,6 @@ pub fn handle_claim_tribute_reply(
         payload.tribute_id,
         users_and_hydromancers_funds.clone(),
     )?;
-    deps.api
-        .debug("ZEPH035: Claim tribute reply handler completed successfully");
     Ok(response.add_attribute("action", "handle_claim_tribute_reply"))
 }
 
@@ -361,22 +277,10 @@ pub fn handle_refresh_time_weighted_shares_reply(
     }
 
     // Apply all batched changes in single write operations
-    deps.api.debug(&format!(
-        "ZEPH302: APPLYING_HYDROMANCER_TWS_CHANGES: {} changes",
-        hydromancer_tws_changes.len()
-    ));
     apply_hydromancer_tws_changes(deps.storage, hydromancer_tws_changes)?;
 
-    deps.api.debug(&format!(
-        "ZEPH303: APPLYING_PROPOSAL_TWS_CHANGES: {} changes",
-        tws_changes.proposal_changes.len()
-    ));
     apply_proposal_tws_changes(deps.storage, tws_changes.proposal_changes)?;
 
-    deps.api.debug(&format!(
-        "ZEPH304: APPLYING_PROPOSAL_HYDROMANCER_TWS_CHANGES: {} changes",
-        tws_changes.proposal_hydromancer_changes.len()
-    ));
     apply_proposal_hydromancer_tws_changes(deps.storage, tws_changes.proposal_hydromancer_changes)?;
 
     Ok(Response::new()
@@ -443,8 +347,7 @@ pub fn handle_vote_reply(
                                 steerer_id: payload.steerer_id,
                             },
                         )?;
-                        deps.api.debug(&format!("ZEPH305: VOTE_CHANGE_SUB_TWS: vessel_id={}, from_proposal={}, token_group_id={}, tws={}", 
-                            vessel.hydro_lock_id, previous_harbor_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()));
+
                         state::substract_time_weighted_shares_from_proposal(
                             deps.storage,
                             previous_harbor_id,
@@ -452,8 +355,6 @@ pub fn handle_vote_reply(
                             vessel_shares_info.time_weighted_shares.u128(),
                         )?;
 
-                        deps.api.debug(&format!("ZEPH306: VOTE_CHANGE_ADD_TWS: vessel_id={}, to_proposal={}, token_group_id={}, tws={}", 
-                            vessel.hydro_lock_id, vessels_to_harbor.harbor_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()));
                         state::add_time_weighted_shares_to_proposal(
                             deps.storage,
                             vessels_to_harbor.harbor_id,
@@ -463,8 +364,6 @@ pub fn handle_vote_reply(
                         // if it's a hydromancer vote, add time weighted shares to proposal for hydromancer
                         if !payload.user_vote && !vessel_shares_info.time_weighted_shares.is_zero()
                         {
-                            deps.api.debug(&format!("ZEPH307: HYDROMANCER_VOTE_ADD_TWS: vessel_id={}, proposal={}, hydromancer={}, token_group_id={}, tws={}", 
-                                vessel.hydro_lock_id, vessels_to_harbor.harbor_id, payload.steerer_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()));
                             state::add_time_weighted_shares_to_proposal_for_hydromancer(
                                 deps.storage,
                                 vessels_to_harbor.harbor_id,
@@ -473,8 +372,6 @@ pub fn handle_vote_reply(
                                 vessel_shares_info.time_weighted_shares.u128(),
                             )?;
 
-                            deps.api.debug(&format!("ZEPH308: HYDROMANCER_VOTE_SUB_TWS: vessel_id={}, proposal={}, hydromancer={}, token_group_id={}, tws={}", 
-                                vessel.hydro_lock_id, previous_harbor_id, payload.steerer_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()));
                             state::substract_time_weighted_shares_from_proposal_for_hydromancer(
                                 deps.storage,
                                 previous_harbor_id,
@@ -486,12 +383,6 @@ pub fn handle_vote_reply(
                     }
                 }
                 None => {
-                    deps.api.debug(&format!(
-                        "ZEPH124: FIRST_VOTE_DEBUG: vessel_id={}, proposal_id={}, user_vote={}, steerer_id={}, tws={}, is_zero={}",
-                        vessel.hydro_lock_id, vessels_to_harbor.harbor_id, payload.user_vote, payload.steerer_id,
-                        vessel_shares_info.time_weighted_shares, vessel_shares_info.time_weighted_shares.is_zero()
-                    ));
-
                     state::add_vessel_to_harbor(
                         deps.storage,
                         payload.tranche_id,
@@ -511,19 +402,9 @@ pub fn handle_vote_reply(
                         vessel_shares_info.time_weighted_shares.u128(),
                     )?;
 
-                    deps.api.debug(&format!(
-                        "ZEPH125: HYDROMANCER_CONDITION_DEBUG: user_vote={}, tws={}, is_zero={}, condition_result={}",
-                        payload.user_vote, vessel_shares_info.time_weighted_shares,
-                        vessel_shares_info.time_weighted_shares.is_zero(),
-                        !payload.user_vote && !vessel_shares_info.time_weighted_shares.is_zero()
-                    ));
-
                     if !payload.user_vote && !vessel_shares_info.time_weighted_shares.is_zero() {
                         // should always be some, because hydro has accepted the vote
-                        deps.api.debug(&format!(
-                            "ZEPH126: ADDING_HYDROMANCER_TWS: proposal_id={}, hydromancer_id={}, token_group_id={}, tws={}",
-                            vessels_to_harbor.harbor_id, payload.steerer_id, vessel_shares_info.token_group_id, vessel_shares_info.time_weighted_shares.u128()
-                        ));
+
                         state::add_time_weighted_shares_to_proposal_for_hydromancer(
                             deps.storage,
                             vessels_to_harbor.harbor_id,
@@ -531,13 +412,6 @@ pub fn handle_vote_reply(
                             &vessel_shares_info.token_group_id,
                             vessel_shares_info.time_weighted_shares.u128(),
                         )?;
-                    } else {
-                        deps.api.debug(&format!(
-                            "ZEPH127: SKIPPING_HYDROMANCER_TWS: user_vote={}, tws={}, is_zero={}",
-                            payload.user_vote,
-                            vessel_shares_info.time_weighted_shares,
-                            vessel_shares_info.time_weighted_shares.is_zero()
-                        ));
                     }
                 }
             }

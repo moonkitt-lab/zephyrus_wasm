@@ -1,8 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use cosmwasm_std::{
-    to_json_binary, Addr, Api, BankMsg, Coin, Decimal, Deps, DepsMut, Storage, SubMsg, Uint128,
-    WasmMsg,
+    to_json_binary, Addr, BankMsg, Coin, Decimal, Deps, DepsMut, Storage, SubMsg, Uint128, WasmMsg,
 };
 use hydro_interface::msgs::{DenomInfoResponse, ExecuteMsg as HydroExecuteMsg};
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -27,6 +26,7 @@ use crate::{
     state,
 };
 
+// Build claim tribute sub message for hydro tribute contract
 #[allow(clippy::too_many_arguments)]
 pub fn build_claim_tribute_sub_msg(
     round_id: u64,
@@ -37,12 +37,7 @@ pub fn build_claim_tribute_sub_msg(
     contract_address: &Addr,
     balances: &[Coin],
     outstanding_tribute: &hydro_interface::msgs::TributeClaim,
-    api: &dyn Api,
 ) -> Result<SubMsg<NeutronMsg>, ContractError> {
-    api.debug(&format!("ZEPH012: Building claim tribute sub msg - tribute_id: {}, amount: {:?}, balance_before: {:?}", 
-        outstanding_tribute.tribute_id, outstanding_tribute.amount,
-        balances.iter().find(|b| b.denom == outstanding_tribute.amount.denom)));
-
     let claim_msg = HydroExecuteMsg::ClaimTribute {
         round_id,
         tranche_id,
@@ -82,9 +77,10 @@ pub fn build_claim_tribute_sub_msg(
     Ok(sub_msg)
 }
 
+// Calculate the total voting power of a hydromancer for a specific proposal.
+// Use token info providers to get the ratio of the token group of each tws of vessels
 pub fn calculate_total_voting_power_of_hydromancer_on_proposal(
     storage: &dyn Storage,
-    api: &dyn Api,
     hydromancer_id: HydromancerId,
     proposal_id: HydroProposalId,
     round_id: RoundId,
@@ -92,11 +88,6 @@ pub fn calculate_total_voting_power_of_hydromancer_on_proposal(
 ) -> Result<Decimal, ContractError> {
     let list_tws =
         state::get_hydromancer_proposal_time_weighted_shares(storage, proposal_id, hydromancer_id)?;
-
-    api.debug(&format!(
-        "ZEPH122: HYDROMANCER_TWS_DEBUG: hydromancer_id={}, proposal_id={}, list_tws={:?}",
-        hydromancer_id, proposal_id, list_tws
-    ));
 
     let mut total_voting_power = Decimal::zero();
     for (token_group_id, tws) in list_tws {
@@ -107,23 +98,12 @@ pub fn calculate_total_voting_power_of_hydromancer_on_proposal(
             },
         )?;
 
-        api.debug(&format!(
-            "ZEPH123: TOKEN_INFO_DEBUG: token_group_id={}, tws={}, ratio={}",
-            token_group_id, tws, token_info.ratio
-        ));
-
         total_voting_power = total_voting_power
             .saturating_add(Decimal::from_ratio(tws, 1u128).saturating_mul(token_info.ratio));
     }
-
-    api.debug(&format!(
-        "ZEPH124: TOTAL_VP_DEBUG: hydromancer_id={}, proposal_id={}, total_voting_power={}",
-        hydromancer_id, proposal_id, total_voting_power
-    ));
-
     Ok(total_voting_power)
 }
-
+// Calculate the total voting power of a hydromancer for a specific number of locked rounds.
 pub fn calculate_total_voting_power_of_hydromancer_for_locked_rounds(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
@@ -134,9 +114,6 @@ pub fn calculate_total_voting_power_of_hydromancer_for_locked_rounds(
     let list_tws =
         state::get_hydromancer_time_weighted_shares_by_round(storage, round_id, hydromancer_id)?;
     let mut total_voting_power = Decimal::zero();
-
-    println!("ZEPH102: HYDROMANCER_TWS: hydromancer_id={}, round_id={}, locked_rounds={}, total_entries={}", 
-        hydromancer_id, round_id, locked_rounds, list_tws.len());
 
     for ((locked_round, token_group_id), tws) in &list_tws {
         let token_info = token_info_provider.get(token_group_id).ok_or(
@@ -150,24 +127,16 @@ pub fn calculate_total_voting_power_of_hydromancer_for_locked_rounds(
             Decimal::from_ratio(*tws, 1u128).saturating_mul(token_info.ratio);
 
         if *locked_round < locked_rounds {
-            println!("ZEPH103: HYDROMANCER_TWS_SKIP: hydromancer_id={}, locked_round={}, required={}, token_group_id={}, tws={}, contribution={} (SKIPPED)", 
-                hydromancer_id, locked_round, locked_rounds, token_group_id, tws, voting_power_contribution);
             continue;
         }
 
         total_voting_power = total_voting_power.saturating_add(voting_power_contribution);
-
-        println!("ZEPH104: HYDROMANCER_TWS_ADD: hydromancer_id={}, locked_round={}, token_group_id={}, tws={}, ratio={}, contribution={}, total_so_far={}", 
-            hydromancer_id, locked_round, token_group_id, tws, token_info.ratio, voting_power_contribution, total_voting_power);
     }
 
-    println!(
-        "ZEPH105: HYDROMANCER_TWS_FINAL: hydromancer_id={}, total_voting_power={}",
-        hydromancer_id, total_voting_power
-    );
     Ok(total_voting_power)
 }
 
+// Calculate the total voting power of a proposal.
 pub fn calculate_total_voting_power_on_proposal(
     storage: &dyn Storage,
     proposal_id: HydroProposalId,
@@ -189,22 +158,14 @@ pub fn calculate_total_voting_power_on_proposal(
         let voting_power_contribution =
             Decimal::from_ratio(*tws, 1u128).saturating_mul(token_info.ratio);
         total_voting_power = total_voting_power.saturating_add(voting_power_contribution);
-
-        // DEBUG: Log each contribution
-        println!("ZEPH100: TWS_PROPOSAL: proposal_id={}, token_group_id={}, tws={}, ratio={}, contribution={}, total_so_far={}", 
-            proposal_id, token_group_id, tws, token_info.ratio, voting_power_contribution, total_voting_power);
     }
 
-    println!(
-        "ZEPH101: TWS_PROPOSAL_FINAL: proposal_id={}, total_voting_power={}",
-        proposal_id, total_voting_power
-    );
     Ok(total_voting_power)
 }
 
+// Calculate the voting power of a vessel for a specific round.
 pub fn calculate_voting_power_of_vessel(
     storage: &dyn Storage,
-    api: &dyn Api,
     vessel_id: HydroLockId,
     round_id: RoundId,
     token_info_provider: &HashMap<String, DenomInfoResponse>,
@@ -212,10 +173,6 @@ pub fn calculate_voting_power_of_vessel(
     // Vessel shares should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
     let vessel_share_info = state::get_vessel_shares_info(storage, round_id, vessel_id);
     if vessel_share_info.is_err() {
-        api.debug(&format!(
-            "ZEPH106: VESSEL_TWS: vessel_id={}, round_id={}, ERROR: no shares found",
-            vessel_id, round_id
-        ));
         return Ok(Decimal::zero());
     }
     let vessel_share_info = vessel_share_info.unwrap();
@@ -228,14 +185,12 @@ pub fn calculate_voting_power_of_vessel(
     let voting_power = Decimal::from_ratio(vessel_share_info.time_weighted_shares, 1u128)
         .saturating_mul(token_info.ratio);
 
-    api.debug(&format!("ZEPH107: VESSEL_TWS: vessel_id={}, round_id={}, token_group_id={}, tws={}, ratio={}, voting_power={}", 
-        vessel_id, round_id, vessel_share_info.token_group_id, vessel_share_info.time_weighted_shares, token_info.ratio, voting_power));
-
     Ok(voting_power)
 }
 
+// Calculate the rewards amount for a vessel on a specific tribute.
 #[allow(clippy::too_many_arguments)]
-pub fn calculate_rewards_amount_for_vessel_on_proposal(
+pub fn calculate_rewards_amount_for_vessel_on_tribute(
     deps: Deps<'_>,
     round_id: RoundId,
     tranche_id: TrancheId,
@@ -248,41 +203,18 @@ pub fn calculate_rewards_amount_for_vessel_on_proposal(
     vessel_id: u64,
     data_loader: &dyn DataLoader,
 ) -> Result<Decimal, ContractError> {
-    deps.api.debug(&format!("ZEPH070: Calculating vessel reward - vessel_id: {}, proposal_id: {}, total_power: {}, rewards: {:?}", 
-        vessel_id, proposal_id, total_proposal_voting_power, proposal_rewards));
-
     let vessel = state::get_vessel(deps.storage, vessel_id)?;
-    let voting_power = calculate_voting_power_of_vessel(
-        deps.storage,
-        deps.api,
-        vessel_id,
-        round_id,
-        token_info_provider,
-    )?;
-
-    deps.api.debug(&format!(
-        "ZEPH071: Vessel {} voting power: {}, user_control: {}",
-        vessel_id,
-        voting_power,
-        vessel.is_under_user_control()
-    ));
+    let voting_power =
+        calculate_voting_power_of_vessel(deps.storage, vessel_id, round_id, token_info_provider)?;
 
     if vessel.is_under_user_control() {
         let vessel_harbor =
             state::get_harbor_of_vessel(deps.storage, tranche_id, round_id, vessel_id)?;
-        deps.api.debug(&format!(
-            "ZEPH072: Vessel {} harbor: {:?}",
-            vessel_id, vessel_harbor
-        ));
 
         if vessel_harbor.is_some() {
             let vessel_harbor = vessel_harbor.unwrap();
 
             if vessel_harbor == proposal_id {
-                deps.api.debug(&format!(
-                    "ZEPH073: Vessel {} voted for proposal {}, calculating portion",
-                    vessel_id, proposal_id
-                ));
                 let vp_ratio = voting_power
                     .checked_div(total_proposal_voting_power)
                     .map_err(|_| ContractError::CustomError {
@@ -292,51 +224,20 @@ pub fn calculate_rewards_amount_for_vessel_on_proposal(
                 let portion =
                     vp_ratio.saturating_mul(Decimal::from_ratio(proposal_rewards.amount, 1u128));
 
-                deps.api.debug(&format!("ZEPH108: VESSEL_USER_REWARD: vessel_id={}, voting_power={}, total_proposal_power={}, vp_ratio={}, proposal_rewards={}, portion={}", 
-                    vessel_id, voting_power, total_proposal_voting_power, vp_ratio, proposal_rewards.amount, portion));
-
-                deps.api.debug(&format!(
-                    "ZEPH074: Vessel {} portion: {}",
-                    vessel_id, portion
-                ));
                 return Ok(portion);
-            } else {
-                deps.api.debug(&format!(
-                    "ZEPH075: Vessel {} voted for different proposal ({}), no rewards",
-                    vessel_id, vessel_harbor
-                ));
             }
-        } else {
-            deps.api.debug(&format!(
-                "ZEPH076: Vessel {} has no harbor assignment",
-                vessel_id
-            ));
         }
         Ok(Decimal::zero())
     } else {
-        deps.api.debug(&format!(
-            "ZEPH077: Vessel {} under hydromancer control",
-            vessel_id
-        ));
         // Vessel is under hydromancer control, we don't care if it was used or not, it take a portion of hydromancer rewards
 
         // Vessel shares should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
         let vessel_shares = state::get_vessel_shares_info(deps.storage, round_id, vessel_id);
         if vessel_shares.is_err() {
-            deps.api.debug(&format!(
-                "ZEPH078: Vessel {} shares not found for hydromancer {}",
-                vessel_id,
-                vessel.hydromancer_id.unwrap()
-            ));
             return Ok(Decimal::zero());
         }
         let vessel_shares = vessel_shares.unwrap();
         let proposal = query_hydro_proposal(&deps, constants, round_id, tranche_id, proposal_id)?;
-
-        deps.api.debug(&format!(
-            "ZEPH078: Vessel {} locked_rounds: {}, proposal duration: {}",
-            vessel_id, vessel_shares.locked_rounds, proposal.deployment_duration
-        ));
 
         if proposal.deployment_duration <= vessel_shares.locked_rounds {
             let total_hydromancer_locked_rounds_voting_power =
@@ -354,11 +255,6 @@ pub fn calculate_rewards_amount_for_vessel_on_proposal(
                 tribute_id,
             )?;
 
-            deps.api.debug(&format!(
-                "ZEPH079: Hydromancer total power: {}, allocated rewards: {:?}",
-                total_hydromancer_locked_rounds_voting_power, rewards_allocated_to_hydromancer
-            ));
-
             if let Some(rewards_allocated_to_hydromancer) = rewards_allocated_to_hydromancer {
                 let vp_ratio = voting_power
                     .checked_div(total_hydromancer_locked_rounds_voting_power)
@@ -371,34 +267,14 @@ pub fn calculate_rewards_amount_for_vessel_on_proposal(
                     1u128,
                 ));
 
-                deps.api.debug(&format!("ZEPH109: VESSEL_HYDROMANCER_REWARD: vessel_id={}, voting_power={}, total_hydromancer_power={}, vp_ratio={}, hydromancer_rewards={}, portion={}",
-                    vessel_id, voting_power, total_hydromancer_locked_rounds_voting_power, vp_ratio,
-                    rewards_allocated_to_hydromancer.rewards_for_users.amount, portion));
-
-                deps.api.debug(&format!(
-                    "ZEPH080: Vessel {} hydromancer portion: {}",
-                    vessel_id, portion
-                ));
                 return Ok(portion);
-            } else {
-                deps.api.debug(&format!(
-                    "ZEPH081: No hydromancer rewards allocated for vessel {}",
-                    vessel_id
-                ));
             }
-        } else {
-            deps.api.debug(&format!(
-                "ZEPH082: Vessel {} locked rounds insufficient for proposal duration",
-                vessel_id
-            ));
         }
 
-        deps.api
-            .debug(&format!("ZEPH083: Vessel {} gets zero rewards", vessel_id));
         Ok(Decimal::zero())
     }
 }
-
+// This methode calculate the portion of rewards (from a tribute) for a hydromancer and its commission
 #[allow(clippy::too_many_arguments)]
 pub fn allocate_rewards_to_hydromancer(
     deps: Deps<'_>,
@@ -411,7 +287,6 @@ pub fn allocate_rewards_to_hydromancer(
 ) -> Result<HydromancerTribute, ContractError> {
     let hydromancer_voting_power = calculate_total_voting_power_of_hydromancer_on_proposal(
         deps.storage,
-        deps.api,
         hydromancer_id,
         proposal_id,
         round_id,
@@ -427,18 +302,8 @@ pub fn allocate_rewards_to_hydromancer(
 
     let hydromancer = state::get_hydromancer(deps.storage, hydromancer_id)?;
 
-    deps.api.debug(&format!(
-        "ZEPH120: COMMISSION_DEBUG: hydromancer_id={}, funds={}, total_hydromancer_reward={}, commission_rate={}",
-        hydromancer_id, funds.amount, total_hydromancer_reward, hydromancer.commission_rate
-    ));
-
     let hydromancer_commission =
         total_hydromancer_reward.saturating_mul(hydromancer.commission_rate);
-
-    deps.api.debug(&format!(
-        "ZEPH121: COMMISSION_DEBUG: hydromancer_commission_decimal={}, hydromancer_commission_uint={}",
-        hydromancer_commission, hydromancer_commission.to_uint_floor()
-    ));
 
     let rewards_for_users = total_hydromancer_reward
         .saturating_sub(hydromancer_commission)
@@ -471,31 +336,11 @@ pub fn distribute_rewards_for_vessels_on_tribute(
     token_info_provider: HashMap<String, hydro_interface::msgs::DenomInfoResponse>,
     total_proposal_voting_power: Decimal,
 ) -> Result<Decimal, ContractError> {
-    deps.api.debug(&format!("ZEPH060: Calculating vessel rewards - tribute_id: {}, proposal_id: {}, vessels: {:?}, rewards: {:?}", 
-        tribute_id, proposal_id, vessel_ids, tribute_rewards));
-
-    // Log which vessels are voting on which proposal
-    for vessel_id in &vessel_ids {
-        if let Ok(vessel) = state::get_vessel(deps.storage, *vessel_id) {
-            deps.api.debug(&format!(
-                "ZEPH061: VESSEL_VOTE_INFO: vessel_id={}, owner_id={}, hydromancer_id={:?}",
-                vessel_id, vessel.owner_id, vessel.hydromancer_id
-            ));
-        }
-    }
-
     let mut amount_to_distribute = Decimal::zero();
-    deps.api.debug(&format!("ZEPH110: DISTRIBUTE_START: tribute_id={}, proposal_id={}, vessels={:?}, tribute_rewards={:?}", 
-        tribute_id, proposal_id, vessel_ids, tribute_rewards));
 
     for vessel_id in vessel_ids.clone() {
-        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id, deps.api) {
-            deps.api.debug(&format!(
-                "ZEPH061: Processing unclaimed vessel {}",
-                vessel_id
-            ));
-
-            let proposal_vessel_rewards = calculate_rewards_amount_for_vessel_on_proposal(
+        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
+            let proposal_vessel_rewards = calculate_rewards_amount_for_vessel_on_tribute(
                 deps.as_ref(),
                 round_id,
                 tranche_id,
@@ -509,21 +354,9 @@ pub fn distribute_rewards_for_vessels_on_tribute(
                 &StateDataLoader {},
             )?;
 
-            deps.api.debug(&format!(
-                "ZEPH062: Vessel {} reward amount: {}",
-                vessel_id, proposal_vessel_rewards
-            ));
-
             amount_to_distribute = amount_to_distribute.saturating_add(proposal_vessel_rewards);
 
             let floored_vessel_reward = proposal_vessel_rewards.to_uint_floor();
-            deps.api.debug(&format!("ZEPH111: DISTRIBUTE_VESSEL: vessel_id={}, reward_decimal={}, reward_floored={}, total_so_far={}", 
-                vessel_id, proposal_vessel_rewards, floored_vessel_reward, amount_to_distribute));
-
-            deps.api.debug(&format!(
-                "ZEPH063: Saving vessel {} claim: {} {}",
-                vessel_id, floored_vessel_reward, tribute_rewards.denom
-            ));
 
             state::save_vessel_tribute_claim(
                 deps.storage,
@@ -533,31 +366,10 @@ pub fn distribute_rewards_for_vessels_on_tribute(
                     denom: tribute_rewards.denom.clone(),
                     amount: floored_vessel_reward,
                 },
-                deps.api,
             )?;
-            if state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id, deps.api) {
-                deps.api.debug(&format!(
-                    "ZEPH063bis: Vessel {} mark as claimed for tribute {}",
-                    vessel_id, tribute_id
-                ));
-            } else {
-                deps.api.debug(&format!(
-                    "ZEPH063ter: Vessel {} unexpectedly not mark as claimed for tribute {}",
-                    vessel_id, tribute_id
-                ));
-            }
-        } else {
-            deps.api.debug(&format!(
-                "ZEPH064: Vessel {} already claimed tribute {}",
-                vessel_id, tribute_id
-            ));
         }
     }
 
-    deps.api.debug(&format!(
-        "ZEPH0065: Total amount to distribute: {} for vessel_ids: {:?}",
-        amount_to_distribute, vessel_ids
-    ));
     Ok(amount_to_distribute)
 }
 
@@ -576,18 +388,10 @@ pub fn calculate_rewards_for_vessels_on_tribute(
     total_proposal_voting_power: Decimal,
     data_loader: &dyn DataLoader,
 ) -> Result<Decimal, ContractError> {
-    deps.api.debug(&format!("ZEPH060:READONLY Calculating vessel rewards - tribute_id: {}, proposal_id: {}, vessels: {:?}, rewards: {:?}", 
-        tribute_id, proposal_id, vessel_ids, tribute_rewards));
-
     let mut amount_to_distribute = Decimal::zero();
     for vessel_id in vessel_ids.clone() {
-        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id, deps.api) {
-            deps.api.debug(&format!(
-                "ZEPH061: Processing unclaimed vessel {}",
-                vessel_id
-            ));
-
-            let proposal_vessel_rewards = calculate_rewards_amount_for_vessel_on_proposal(
+        if !state::is_vessel_tribute_claimed(deps.storage, vessel_id, tribute_id) {
+            let proposal_vessel_rewards = calculate_rewards_amount_for_vessel_on_tribute(
                 deps,
                 round_id,
                 tranche_id,
@@ -601,30 +405,10 @@ pub fn calculate_rewards_for_vessels_on_tribute(
                 data_loader,
             )?;
 
-            deps.api.debug(&format!(
-                "ZEPH062:READONLY  Vessel {} reward amount: {}",
-                vessel_id, proposal_vessel_rewards
-            ));
-
             amount_to_distribute = amount_to_distribute.saturating_add(proposal_vessel_rewards);
-
-            let floored_vessel_reward = proposal_vessel_rewards.to_uint_floor();
-            deps.api.debug(&format!(
-                "ZEPH063:READONLY Saving vessel {} claim: {} {}",
-                vessel_id, floored_vessel_reward, tribute_rewards.denom
-            ));
-        } else {
-            deps.api.debug(&format!(
-                "ZEPH064:READONLY Vessel {} already claimed tribute {}",
-                vessel_id, tribute_id
-            ));
         }
     }
 
-    deps.api.debug(&format!(
-        "ZEPH065:READONLY Total amount to distribute: {}",
-        amount_to_distribute
-    ));
     Ok(amount_to_distribute)
 }
 
@@ -637,29 +421,13 @@ pub fn distribute_rewards_for_all_round_proposals(
     constants: Constants,
     tributes_process_in_reply: BTreeSet<u64>,
 ) -> Result<Vec<BankMsg>, ContractError> {
-    deps.api.debug(&format!(
-        "ZEPH040: Starting reward distribution - sender: {}, round: {}, tranche: {}, vessels: {:?}",
-        sender, round_id, tranche_id, vessel_ids
-    ));
-
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, round_id)?;
     let all_round_proposals =
         query_hydro_round_all_proposals(&deps.as_ref(), &constants, round_id, tranche_id)?;
 
-    deps.api.debug(&format!(
-        "ZEPH041: Found {} proposals for round {}",
-        all_round_proposals.len(),
-        round_id
-    ));
-
     let mut messages: Vec<BankMsg> = vec![];
     for proposal in all_round_proposals {
-        deps.api.debug(&format!(
-            "ZEPH042: Processing proposal_id: {}",
-            proposal.proposal_id
-        ));
-
         let proposal_tributes = query_tribute_proposal_tributes(
             &deps.as_ref(),
             &constants,
@@ -678,36 +446,16 @@ pub fn distribute_rewards_for_all_round_proposals(
         }
         let total_proposal_voting_power = total_proposal_voting_power.unwrap();
 
-        deps.api.debug(&format!(
-            "ZEPH043: Proposal {} has {} tributes, total voting power: {}",
-            proposal.proposal_id,
-            proposal_tributes.len(),
-            total_proposal_voting_power
-        ));
-
         if total_proposal_voting_power.is_zero() {
-            deps.api.debug(&format!(
-                "ZEPH044.1: Skipping proposal {} (no voting power)",
-                proposal.proposal_id
-            ));
-
             continue;
         }
 
         for tribute in proposal_tributes {
             // tributes that have been just claimed will be processed in the reply handler, so we skip them here
             if tributes_process_in_reply.contains(&tribute.tribute_id) {
-                deps.api.debug(&format!(
-                    "ZEPH044.2: Skipping tribute {} (will be processed in reply)",
-                    tribute.tribute_id
-                ));
                 continue;
             }
 
-            deps.api.debug(&format!(
-                "ZEPH045: Processing tribute_id: {}, amount: {:?}",
-                tribute.tribute_id, tribute.funds
-            ));
             let tribute_funds_after_commission =
                 state::get_tribute_processed(deps.storage, tribute.tribute_id)?;
 
@@ -729,19 +477,10 @@ pub fn distribute_rewards_for_all_round_proposals(
                     total_proposal_voting_power,
                 )?;
 
-                deps.api.debug(&format!(
-                    "ZEPH046: Calculated amount to distribute: {}, for vessel_ids: {:?}",
-                    amount_to_distribute, vessel_ids
-                ));
-
                 reward_amount = amount_to_distribute.to_uint_floor();
             }
 
             if !reward_amount.is_zero() {
-                deps.api.debug(&format!(
-                    "ZEPH047: Creating send message for {} {} to {}",
-                    reward_amount, tribute.funds.denom, sender
-                ));
                 let send_msg = BankMsg::Send {
                     to_address: sender.to_string(),
                     amount: vec![Coin {
@@ -750,9 +489,6 @@ pub fn distribute_rewards_for_all_round_proposals(
                     }],
                 };
                 messages.push(send_msg);
-            } else {
-                deps.api
-                    .debug("ZEPH048: No rewards to distribute (floored amount is zero)");
             }
 
             // Process the case that sender is an hydromancer and send its commission to the sender
@@ -763,17 +499,10 @@ pub fn distribute_rewards_for_all_round_proposals(
                 tribute.tribute_id,
             )?;
             if let Some(send_msg) = hydromancer_rewards_send_msg {
-                deps.api
-                    .debug("ZEPH049: Adding hydromancer commission message");
                 messages.push(send_msg);
             }
         }
     }
-
-    deps.api.debug(&format!(
-        "ZEPH050: Reward distribution completed, generated {} messages",
-        messages.len()
-    ));
 
     Ok(messages)
 }
@@ -800,24 +529,9 @@ pub fn process_hydromancer_claiming_rewards(
     round_id: RoundId,
     tribute_id: TributeId,
 ) -> Result<Option<BankMsg>, ContractError> {
-    deps.api.debug(&format!(
-        "ZEPH090: Processing hydromancer rewards - sender: {}, tribute_id: {}",
-        sender, tribute_id
-    ));
-
     let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, sender.clone()).ok();
     if let Some(hydromancer_id) = hydromancer_id {
-        deps.api.debug(&format!(
-            "ZEPH091: Found hydromancer_id: {}",
-            hydromancer_id
-        ));
-
         if !state::is_hydromancer_tribute_claimed(deps.storage, hydromancer_id, tribute_id) {
-            deps.api.debug(&format!(
-                "ZEPH092: Hydromancer {} has not claimed tribute {}",
-                hydromancer_id, tribute_id
-            ));
-
             // Sender is an hydromancer, send its commission to the sender
             let hydromancer_tribute = state::get_hydromancer_rewards_by_tribute(
                 deps.storage,
@@ -826,11 +540,6 @@ pub fn process_hydromancer_claiming_rewards(
                 tribute_id,
             )?;
             if let Some(hydromancer_tribute) = hydromancer_tribute {
-                deps.api.debug(&format!(
-                    "ZEPH093: Hydromancer commission: {:?}",
-                    hydromancer_tribute.commission_for_hydromancer
-                ));
-
                 // Check if commission amount is greater than zero
                 if !hydromancer_tribute
                     .commission_for_hydromancer
@@ -848,30 +557,11 @@ pub fn process_hydromancer_claiming_rewards(
                         tribute_id,
                         hydromancer_tribute.commission_for_hydromancer,
                     )?;
-                    deps.api
-                        .debug("ZEPH094: Returning hydromancer commission message");
                     return Ok(Some(send_to_hydromancer_msg));
-                } else {
-                    deps.api
-                        .debug("ZEPH095: Hydromancer commission is zero, not sending");
                 }
-            } else {
-                deps.api.debug(&format!(
-                    "ZEPH096: No hydromancer tribute found for hydromancer {} tribute {}",
-                    hydromancer_id, tribute_id
-                ));
             }
-        } else {
-            deps.api.debug(&format!(
-                "ZEPH097: Hydromancer {} already claimed tribute {}",
-                hydromancer_id, tribute_id
-            ));
         }
-    } else {
-        deps.api
-            .debug(&format!("ZEPH098: Sender {} is not a hydromancer", sender));
     }
-    deps.api.debug("ZEPH099: No hydromancer commission to send");
     Ok(None)
 }
 

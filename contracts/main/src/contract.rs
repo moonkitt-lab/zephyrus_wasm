@@ -57,7 +57,6 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
-    deps.api.debug("ZEPH990: INSTANTIATE CALLED - TEST LOG");
     state::initialize_sequences(deps.storage)?;
 
     let mut whitelist_admins: Vec<Addr> = vec![];
@@ -110,8 +109,6 @@ pub fn execute(
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
-    deps.api
-        .debug("ZEPH998: EXECUTE FUNCTION CALLED - TEST LOG");
     match msg {
         ExecuteMsg::AutoMaintain {
             start_from_vessel_id,
@@ -220,16 +217,9 @@ fn execute_claim(
     tranche_id: u64,
     vessel_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
-    deps.api.debug("ZEPH992: EXECUTE_CLAIM CALLED - TEST LOG");
-    deps.api.debug(&format!("ZEPH001: Starting claim execution - sender: {}, round_id: {}, tranche_id: {}, vessel_ids: {:?}", 
-        info.sender, round_id, tranche_id, vessel_ids));
-
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
     validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
-
-    deps.api
-        .debug("ZEPH002: Validations passed, querying outstanding tributes");
 
     let contract_address = env.contract.address.clone();
 
@@ -245,11 +235,6 @@ fn execute_claim(
     let mut response = Response::new().add_attribute("action", "claim");
 
     if let Ok(outstanding_tributes) = outstanding_tributes_result {
-        deps.api.debug(&format!(
-            "ZEPH003: Found {} outstanding tributes to claim",
-            outstanding_tributes.claims.len()
-        ));
-
         // Note: We still need to process, even if we found 0 outstanding tributes to claim,
         // because they may have already been claimed previously
         response = process_outstanding_tribute_claims(
@@ -263,11 +248,6 @@ fn execute_claim(
             outstanding_tributes.claims,
             response,
         )?;
-    } else {
-        deps.api.debug(&format!(
-            "ZEPH008: Outstanding tributes query failed: {:?}",
-            outstanding_tributes_result.err()
-        ));
     }
 
     // Clear temporary distribution tracking data after successful batch completion
@@ -291,19 +271,7 @@ fn process_outstanding_tribute_claims(
     let mut tributes_process_in_reply = BTreeSet::new();
     let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
 
-    deps.api.debug(&format!(
-        "ZEPH004: Current contract balances: {:?}",
-        balances
-    ));
-
     for outstanding_tribute in claims {
-        deps.api.debug(&format!(
-            "ZEPH005: Processing tribute_id: {}, proposal_id: {}, amount: {:?}",
-            outstanding_tribute.tribute_id,
-            outstanding_tribute.proposal_id,
-            outstanding_tribute.amount
-        ));
-
         let sub_msg = build_claim_tribute_sub_msg(
             round_id,
             tranche_id,
@@ -313,13 +281,9 @@ fn process_outstanding_tribute_claims(
             contract_address,
             &balances,
             &outstanding_tribute,
-            deps.api,
         )?;
         tributes_process_in_reply.insert(outstanding_tribute.tribute_id);
-        deps.api.debug(&format!(
-                "ZEPH006bis: Added tribute {} to process in reply for hydro contract : {} in zephyrus contract : {}",
-                outstanding_tribute.tribute_id, constants.hydro_config.hydro_contract_address, contract_address
-            ));
+
         response = response.add_submessage(sub_msg);
 
         // Update virtual balances for checking purposes
@@ -332,24 +296,11 @@ fn process_outstanding_tribute_claims(
                 .amount
                 .checked_add(outstanding_tribute.amount.amount)
                 .map_err(|e| ContractError::Std(e.into()))?;
-            deps.api.debug(&format!(
-                "ZEPH006: Updated existing balance for {}: {}",
-                outstanding_tribute.amount.denom, balance.amount
-            ));
         } else {
             // balance not found, add it
             balances.push(outstanding_tribute.amount.clone());
-            deps.api.debug(&format!(
-                "ZEPH007: Added new balance for {}: {}",
-                outstanding_tribute.amount.denom, outstanding_tribute.amount.amount
-            ));
         }
     }
-
-    deps.api.debug(&format!(
-        "ZEPH009: Distributing rewards for {} vessels",
-        vessel_ids.len()
-    ));
     let messages = distribute_rewards_for_all_round_proposals(
         deps.branch(),
         info.sender.clone(),
@@ -417,7 +368,6 @@ fn execute_receive_nft(
     token_id: String,
     msg: Binary,
 ) -> Result<Response, ContractError> {
-    deps.api.debug("ZEPH991: RECEIVE_NFT CALLED - TEST LOG");
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
@@ -497,8 +447,6 @@ fn execute_receive_nft(
     )?;
 
     if current_time_weighted_shares > 0 {
-        deps.api.debug(&format!("ZEPH309: VESSEL_CREATION_ADD_HYDROMANCER_TWS: vessel_id={}, hydromancer_id={}, round={}, token_group_id={}, locked_rounds={}, tws={}", 
-            vessel.hydro_lock_id, vessel_info.hydromancer_id, current_round, token_group_id, locked_rounds, current_time_weighted_shares));
         state::add_time_weighted_shares_to_hydromancer(
             deps.storage,
             vessel_info.hydromancer_id,
@@ -788,8 +736,6 @@ fn execute_hydromancer_vote(
     tranche_id: u64,
     vessels_harbors: Vec<VesselsToHarbor>,
 ) -> Result<Response, ContractError> {
-    deps.api
-        .debug("ZEPH994: EXECUTE_HYDROMANCER_VOTE CALLED - TEST LOG");
     let constants = state::get_constants(deps.storage)?;
 
     validate_contract_is_not_paused(&constants)?;
@@ -929,8 +875,6 @@ fn execute_take_control(
     info: MessageInfo,
     vessel_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
-    deps.api
-        .debug("ZEPH995: EXECUTE_TAKE_CONTROL CALLED - TEST LOG");
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
     validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
@@ -995,8 +939,6 @@ fn execute_user_vote(
     tranche_id: u64,
     vessels_harbors: Vec<VesselsToHarbor>,
 ) -> Result<Response, ContractError> {
-    deps.api
-        .debug("ZEPH993: EXECUTE_USER_VOTE CALLED - TEST LOG");
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 

@@ -587,14 +587,6 @@ mod tests {
         let hydromancer_id = 1;
         let current_round_id = 1;
 
-        // Mark as complete first (this is backwards from the logic, but for testing)
-        state::mark_hydromancer_tws_complete(
-            deps.as_mut().storage,
-            current_round_id,
-            hydromancer_id,
-        )
-        .unwrap();
-
         let result = complete_hydromancer_time_weighted_shares(
             &mut deps.as_mut(),
             hydromancer_id,

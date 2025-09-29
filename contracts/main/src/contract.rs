@@ -568,7 +568,7 @@ fn execute_auto_maintain(
 //     lock_ids,
 //     lock_duration,
 // }
-// TODO: Need to be careful that all the vessels are currently less than hydro_lock_duration
+// NOTE that clients need to check that all the vessels are currently less than hydro_lock_duration
 // Otherwise, the RefreshLockDuration will fail
 fn execute_update_vessels_class(
     mut deps: DepsMut,

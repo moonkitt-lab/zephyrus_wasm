@@ -43,58 +43,136 @@ pub struct Cw721ReceiveMsg {
     pub token_id: String,
     pub msg: Binary,
 }
-
+/// Contract execution messages.
+///
+/// Each variant describes a possible external action.
 #[cw_serde]
 pub enum ExecuteMsg {
-    TakeControl {
-        vessel_ids: Vec<u64>,
-    },
+    /// Executable message for Zephyrus users that allows the caller
+    /// to reclaim control of the specified vessels (provided as parameters).
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the owner of every vessel they wish to reclaim control of.
+    TakeControl { vessel_ids: Vec<u64> },
+    /// Executable message for Zephyrus for users or hydromancers
+    /// to unvote from the specified tranche and vessels (provided as parameters).
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the hydromancer or the user controlling every vessel he wishes to unvote.
     Unvote {
         tranche_id: TrancheId,
         vessel_ids: Vec<u64>,
     },
+    /// Executable message for Zephyrus users that allows the caller
+    /// to update the class period of the specified vessels (provided as parameters).
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the owner of every vessel they wish to update the class period of.
+    /// - The new end of lock duration must be in the valid durations.
+    /// - The new end of lock duration must be greater than the current end of lock duration of every vessel.
     UpdateVesselsClass {
         hydro_lock_ids: Vec<u64>,
         hydro_lock_duration: u64,
     },
+    /// Executable message for anybody
+    /// to auto-maintain the limit number of vessels with auto_maintenance true
+    /// Anybody can call this function.
+    /// Preconditions:
+    /// - The contract must not be paused.
     AutoMaintain {
         start_from_vessel_id: Option<u64>,
         limit: Option<usize>,
     },
+    /// Executable message for Zephyrus users that allows the caller
+    /// to modify the auto_maintenance of the specified vessels (provided as parameters).
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the owner of every vessel they wish to modify the auto_maintenance of.
     ModifyAutoMaintenance {
         hydro_lock_ids: Vec<u64>,
         auto_maintenance: bool,
     },
+    /// Executable message for admins
+    /// to pause the contract
+    /// Preconditions:
+    /// - The caller must be an admin.
+    /// - The contract must not be paused.
     PauseContract {},
+    /// Executable message for admins
+    /// to unpause the contract
+    /// Preconditions:
+    /// - The caller must be an admin.
+    /// - The contract must be paused.
     UnpauseContract {},
-    DecommissionVessels {
-        hydro_lock_ids: Vec<u64>,
-    },
+    /// Executable message for users
+    /// to decommission the specified vessels (provided as parameters).
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the owner of every vessel they wish to decommission.
+    /// - Every vessel should have a lock end < now (block time)
+    DecommissionVessels { hydro_lock_ids: Vec<u64> },
+    /// Executable message for Zephyrus for hydromancers
+    /// to vote from the specified tranche and vessels (provided as parameters).
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the hydromancer and all the vessels should be controlled by the hydromancer.
+    /// - No vessels duplicates in the harbors.
+    /// - No harbors duplicates.
     HydromancerVote {
         tranche_id: TrancheId,
         vessels_harbors: Vec<VesselsToHarbor>,
     },
+    /// Executable message for Zephyrus for users
+    /// to vote from the specified tranche and vessels (provided as parameters).
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the user and all the vessels should be controlled by the user.
+    /// - No vessels duplicates in the harbors.
+    /// - No harbors duplicates.
     UserVote {
         tranche_id: TrancheId,
         vessels_harbors: Vec<VesselsToHarbor>,
     },
+    /// Executable message by hydro contract
+    /// to create a vessel when a NFT is received from hydro contract
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the hydro contract.
     ReceiveNft(Cw721ReceiveMsg),
+    /// Executable message for Zephyrus users
+    /// to change the hydromancer of the specified vessels (provided as parameters).
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the owner of every vessel they wish to change the hydromancer of.
+    /// - The new hydromancer should exist.
     ChangeHydromancer {
         tranche_id: TrancheId,
         hydromancer_id: HydromancerId,
         hydro_lock_ids: Vec<u64>,
     },
+    /// Executable message for Zephyrus users and hydromancers
+    /// to claim the specified vessels rewards (provided as parameters) and commissions if caller is a hydromancer
+    /// Preconditions:
+    /// - The contract must not be paused.
+    /// - The caller must be the owner of every vessel they wish to claim rewards for, hydromancer can claim commissions with empty vessel_ids.
+    /// - The round should be completed.
     Claim {
         round_id: u64,
         tranche_id: u64,
         vessel_ids: Vec<u64>,
     },
-    UpdateCommissionRate {
-        new_commission_rate: Decimal,
-    },
-    UpdateCommissionRecipient {
-        new_commission_recipient: String,
-    },
+    /// Executable message for admins
+    /// to update the commission rate
+    /// Preconditions:
+    /// - The caller must be an admin.
+    /// - The new commission rate must be less than 1 (100%).
+    UpdateCommissionRate { new_commission_rate: Decimal },
+    /// Executable message for admins
+    /// to update the commission recipient address
+    /// Preconditions:
+    /// - The caller must be an admin.
+    /// - The new commission recipient must be a valid address.
+    UpdateCommissionRecipient { new_commission_recipient: String },
 }
 
 #[cw_serde]

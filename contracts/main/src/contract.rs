@@ -627,9 +627,7 @@ fn execute_modify_auto_maintenance(
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
-    if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
-        return Err(ContractError::Unauthorized {});
-    }
+    validate_user_owns_vessels(deps.storage, &info.sender, &hydro_lock_ids)?;
 
     for hydro_lock_id in hydro_lock_ids.iter() {
         state::modify_auto_maintenance(deps.storage, *hydro_lock_id, auto_maintenance)?;
@@ -678,9 +676,7 @@ fn execute_decommission_vessels(
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
 
-    if !state::are_vessels_owned_by(deps.storage, &info.sender, &hydro_lock_ids)? {
-        return Err(ContractError::Unauthorized {});
-    }
+    validate_user_owns_vessels(deps.storage, &info.sender, &hydro_lock_ids)?;
 
     // Check the current balance before unlocking tokens
     let balance_query = BankQuery::AllBalances {

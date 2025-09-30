@@ -11,24 +11,21 @@ pub struct ProposalToLockups {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    LockTokens {
-        lock_duration: u64,
-    },
+    /// Refresh the lock duration of the specified lock ids, used by zephyrus to refresh period class period of vessels
     RefreshLockDuration {
         lock_ids: Vec<u64>,
         lock_duration: u64,
     },
-    UnlockTokens {
-        lock_ids: Option<Vec<u64>>,
-    },
+    /// Unlock the specified lock ids, used by zephyrus to decommission vessels
+    UnlockTokens { lock_ids: Option<Vec<u64>> },
+    /// Vote the specified proposals, used by zephyrus to vote on proposals
     Vote {
         tranche_id: u64,
         proposals_votes: Vec<ProposalToLockups>,
     },
-    Unvote {
-        tranche_id: u64,
-        lock_ids: Vec<u64>,
-    },
+    /// Unvote the specified lock ids, used by zephyrus to unvote on proposals
+    Unvote { tranche_id: u64, lock_ids: Vec<u64> },
+    /// Claim the specified tribute, used by zephyrus to claim tribute
     ClaimTribute {
         round_id: u64,
         tranche_id: u64,
@@ -37,33 +34,37 @@ pub enum ExecuteMsg {
     },
 }
 
+/// Hydro contract query messages.
 #[cw_serde]
 pub enum HydroQueryMsg {
+    /// Query the current round.
     CurrentRound {},
+    /// Query the available tranches.
     Tranches {},
-    SpecificUserLockups {
-        address: String,
-        lock_ids: Vec<u64>,
-    },
-    SpecificUserLockupsWithTrancheInfos {
-        address: String,
-        lock_ids: Vec<u64>,
-    },
+    /// Query the specific user lockups return SpecificUserLockupsResponse
+    SpecificUserLockups { address: String, lock_ids: Vec<u64> },
+    /// Query the specific user lockups with tranche infos return SpecificUserLockupsWithTrancheInfosResponse
+    SpecificUserLockupsWithTrancheInfos { address: String, lock_ids: Vec<u64> },
+    /// Query hydro constants return HydroConstantsResponse
     Constants {},
-    LockupsShares {
-        lock_ids: Vec<u64>,
-    },
+    /// Query the lockups shares return LockupsSharesResponse
+    /// Used to track time weighted shares of vessels with token group id and locked rounds
+    LockupsShares { lock_ids: Vec<u64> },
+    /// Use to query the outstanding tribute claims by Zephyrusreturn OutstandingTributeClaimsResponse
     OutstandingTributeClaims {
         user_address: String,
         round_id: u64,
         tranche_id: u64,
     },
+    /// Query the token info providers return TokenInfoProvidersResponse
     TokenInfoProviders {},
+    /// Query the proposal return ProposalResponse
     Proposal {
         round_id: u64,
         tranche_id: u64,
         proposal_id: u64,
     },
+    /// Query the round proposals return RoundProposalsResponse
     RoundProposals {
         round_id: u64,
         tranche_id: u64,

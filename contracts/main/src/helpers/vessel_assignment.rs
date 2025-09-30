@@ -4,6 +4,7 @@ use zephyrus_core::msgs::{HydroLockId, HydromancerId, RoundId, TrancheId};
 use crate::{errors::ContractError, state};
 
 /// Comprehensive vessel assignment function that handles all TWS cleanup and vessel reassignment
+/// it is assumed that the Unvote message is issued for re-assigned vessels, so TWS should be subtracted from previous proposals
 pub fn assign_vessel_to_hydromancer(
     storage: &mut dyn Storage,
     vessel_id: HydroLockId,

@@ -26,7 +26,7 @@ use crate::{
     state,
 };
 
-// Build claim tribute sub message for hydro tribute contract
+/// Build claim tribute sub message for hydro tribute contract
 #[allow(clippy::too_many_arguments)]
 pub fn build_claim_tribute_sub_msg(
     round_id: u64,
@@ -77,8 +77,8 @@ pub fn build_claim_tribute_sub_msg(
     Ok(sub_msg)
 }
 
-// Calculate the total voting power of a hydromancer for a specific proposal.
-// Use token info providers to get the ratio of the token group of each tws of vessels
+/// Calculate the total voting power of a hydromancer for a specific proposal.
+/// Use token info providers to get the ratio of the token group of each tws of vessels
 pub fn calculate_total_voting_power_of_hydromancer_on_proposal(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
@@ -103,7 +103,7 @@ pub fn calculate_total_voting_power_of_hydromancer_on_proposal(
     }
     Ok(total_voting_power)
 }
-// Calculate the total voting power of a hydromancer for a specific number of locked rounds.
+/// Calculate the total voting power of a hydromancer for a specific number of locked rounds.
 pub fn calculate_total_voting_power_of_hydromancer_for_locked_rounds(
     storage: &dyn Storage,
     hydromancer_id: HydromancerId,
@@ -136,7 +136,7 @@ pub fn calculate_total_voting_power_of_hydromancer_for_locked_rounds(
     Ok(total_voting_power)
 }
 
-// Calculate the total voting power of a proposal.
+/// Calculate the total voting power of a proposal.
 pub fn calculate_total_voting_power_on_proposal(
     storage: &dyn Storage,
     proposal_id: HydroProposalId,
@@ -163,7 +163,7 @@ pub fn calculate_total_voting_power_on_proposal(
     Ok(total_voting_power)
 }
 
-// Calculate the voting power of a vessel for a specific round.
+/// Calculate the voting power of a vessel for a specific round.
 pub fn calculate_voting_power_of_vessel(
     storage: &dyn Storage,
     vessel_id: HydroLockId,
@@ -188,7 +188,7 @@ pub fn calculate_voting_power_of_vessel(
     Ok(voting_power)
 }
 
-// Calculate the rewards amount for a vessel on a specific tribute.
+/// Calculate the rewards amount for a vessel on a specific tribute.
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_rewards_amount_for_vessel_on_tribute(
     deps: Deps<'_>,
@@ -274,7 +274,7 @@ pub fn calculate_rewards_amount_for_vessel_on_tribute(
         Ok(Decimal::zero())
     }
 }
-// This methode calculate the portion of rewards (from a tribute) for a hydromancer and its commission
+/// This methode calculate the portion of rewards (from a tribute) for a hydromancer and its commission
 #[allow(clippy::too_many_arguments)]
 pub fn allocate_rewards_to_hydromancer(
     deps: Deps<'_>,
@@ -322,7 +322,7 @@ pub fn allocate_rewards_to_hydromancer(
         },
     })
 }
-
+/// Distribute the rewards for the vessels on a tribute
 #[allow(clippy::too_many_arguments)]
 pub fn distribute_rewards_for_vessels_on_tribute(
     deps: &mut DepsMut<'_>,
@@ -373,7 +373,7 @@ pub fn distribute_rewards_for_vessels_on_tribute(
     Ok(amount_to_distribute)
 }
 
-// READONLY method This function is used to calculate the rewards for the vessels on a tribute
+/// READONLY method This function is used to calculate the rewards for the vessels on a tribute (readonly version of distribute_rewards_for_vessels_on_tribute)
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_rewards_for_vessels_on_tribute(
     deps: Deps<'_>,
@@ -411,7 +411,7 @@ pub fn calculate_rewards_for_vessels_on_tribute(
 
     Ok(amount_to_distribute)
 }
-
+/// Distribute the rewards for all vessels on all round proposals
 pub fn distribute_rewards_for_all_round_proposals(
     mut deps: DepsMut<'_>,
     sender: Addr,
@@ -507,6 +507,7 @@ pub fn distribute_rewards_for_all_round_proposals(
     Ok(messages)
 }
 
+/// Calculate the protocol commission and the rest of the amount
 pub fn calculate_protocol_comm_and_rest(
     amount: Coin,
     constants: &zephyrus_core::state::Constants,
@@ -522,7 +523,7 @@ pub fn calculate_protocol_comm_and_rest(
     };
     (commission_amount, user_funds)
 }
-
+/// Process the hydromancer claiming its commission
 pub fn process_hydromancer_claiming_rewards(
     deps: &mut DepsMut<'_>,
     sender: Addr,

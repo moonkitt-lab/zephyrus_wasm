@@ -56,7 +56,7 @@ pub fn build_claim_tribute_sub_msg(
         .iter()
         .find(|balance| balance.denom == outstanding_tribute.amount.denom)
         .cloned()
-        .unwrap_or(Coin {
+        .unwrap_or_else(|| Coin {
             denom: outstanding_tribute.amount.denom.clone(),
             amount: Uint128::zero(),
         });
@@ -434,17 +434,16 @@ pub fn distribute_rewards_for_all_round_proposals(
             round_id,
             proposal.proposal_id,
         )?;
-        let total_proposal_voting_power = calculate_total_voting_power_on_proposal(
+
+        // If the total proposal voting power is not found, we skip the proposal it means that zephyrus did not vote on the proposal
+        let Ok(total_proposal_voting_power) = calculate_total_voting_power_on_proposal(
             deps.storage,
             proposal.proposal_id,
             round_id,
             &token_info_provider,
-        );
-        // If the total proposal voting power is not found, we skip the proposal it means that zephyrus did not vote on the proposal
-        if total_proposal_voting_power.is_err() {
+        ) else {
             continue;
-        }
-        let total_proposal_voting_power = total_proposal_voting_power.unwrap();
+        };
 
         if total_proposal_voting_power.is_zero() {
             continue;
@@ -491,13 +490,14 @@ pub fn distribute_rewards_for_all_round_proposals(
                 messages.push(send_msg);
             }
 
-            // Process the case that sender is an hydromancer and send its commission to the sender
+            // Process the case that the vessel owner is also the hydromancer and send its commission to the message sender
             let hydromancer_rewards_send_msg = process_hydromancer_claiming_rewards(
                 &mut deps,
                 sender.clone(),
                 round_id,
                 tribute.tribute_id,
             )?;
+
             if let Some(send_msg) = hydromancer_rewards_send_msg {
                 messages.push(send_msg);
             }
@@ -530,40 +530,47 @@ pub fn process_hydromancer_claiming_rewards(
     round_id: RoundId,
     tribute_id: TributeId,
 ) -> Result<Option<BankMsg>, ContractError> {
-    let hydromancer_id = state::get_hydromancer_id_by_address(deps.storage, sender.clone()).ok();
-    if let Some(hydromancer_id) = hydromancer_id {
-        if !state::is_hydromancer_tribute_claimed(deps.storage, hydromancer_id, tribute_id) {
-            // Sender is an hydromancer, send its commission to the sender
-            let hydromancer_tribute = state::get_hydromancer_rewards_by_tribute(
-                deps.storage,
-                hydromancer_id,
-                round_id,
-                tribute_id,
-            )?;
-            if let Some(hydromancer_tribute) = hydromancer_tribute {
-                // Check if commission amount is greater than zero
-                if !hydromancer_tribute
-                    .commission_for_hydromancer
-                    .amount
-                    .is_zero()
-                {
-                    let send_to_hydromancer_msg = BankMsg::Send {
-                        to_address: sender.to_string(),
-                        amount: vec![hydromancer_tribute.commission_for_hydromancer.clone()],
-                    };
+    let Ok(hydromancer_id) = state::get_hydromancer_id_by_address(deps.storage, sender.clone())
+    else {
+        return Ok(None);
+    };
 
-                    state::save_hydromancer_tribute_claim(
-                        deps.storage,
-                        hydromancer_id,
-                        tribute_id,
-                        hydromancer_tribute.commission_for_hydromancer,
-                    )?;
-                    return Ok(Some(send_to_hydromancer_msg));
-                }
-            }
-        }
+    if state::is_hydromancer_tribute_claimed(deps.storage, hydromancer_id, tribute_id) {
+        return Ok(None);
     }
-    Ok(None)
+
+    let Some(hydromancer_tribute) = state::get_hydromancer_rewards_by_tribute(
+        deps.storage,
+        hydromancer_id,
+        round_id,
+        tribute_id,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    if hydromancer_tribute
+        .commission_for_hydromancer
+        .amount
+        .is_zero()
+    {
+        return Ok(None);
+    }
+
+    // Sender is an hydromancer with an unclaimed, non-zero commission
+    let send_to_hydromancer_msg = BankMsg::Send {
+        to_address: sender.to_string(),
+        amount: vec![hydromancer_tribute.commission_for_hydromancer.clone()],
+    };
+
+    state::save_hydromancer_tribute_claim(
+        deps.storage,
+        hydromancer_id,
+        tribute_id,
+        hydromancer_tribute.commission_for_hydromancer,
+    )?;
+
+    Ok(Some(send_to_hydromancer_msg))
 }
 
 /// READONLY method This function is used to calculate the rewards for the hydromancer on a tribute

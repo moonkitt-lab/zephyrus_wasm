@@ -6,21 +6,17 @@ use cosmwasm_std::{
     WasmMsg,
 };
 use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups, TributeClaim};
-
 use neutron_sdk::bindings::msg::NeutronMsg;
-use zephyrus_core::msgs::{
-    DecommissionVesselsReplyPayload, ExecuteMsg, InstantiateMsg, MigrateMsg,
-    RefreshTimeWeightedSharesReplyPayload, TrancheId, VesselInfo, VesselsToHarbor,
-    VoteReplyPayload, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID, VOTE_REPLY_ID,
+use zephyrus_core::{
+    msgs::{
+        DecommissionVesselsReplyPayload, ExecuteMsg, InstantiateMsg, MigrateMsg,
+        RefreshTimeWeightedSharesReplyPayload, TrancheId, VesselInfo, VesselsToHarbor,
+        VoteReplyPayload, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID,
+        VOTE_REPLY_ID,
+    },
+    state::{Constants, HydroConfig, HydroLockId, Vessel},
 };
-use zephyrus_core::state::{Constants, HydroConfig, HydroLockId, Vessel};
 
-use crate::helpers::hydro_queries::query_hydro_outstanding_tribute_claims;
-use crate::helpers::rewards::{
-    build_claim_tribute_sub_msg, distribute_rewards_for_all_round_proposals,
-};
-use crate::helpers::tws::reset_vessel_vote;
-use crate::helpers::validation::validate_user_controls_vessel;
 use crate::{
     errors::ContractError,
     helpers::{
@@ -29,14 +25,17 @@ use crate::{
         },
         hydro_queries::{
             query_hydro_constants, query_hydro_current_round, query_hydro_lockups_shares,
-            query_hydro_lockups_with_tranche_infos, query_hydro_specific_user_lockups,
-            query_hydro_tranches,
+            query_hydro_lockups_with_tranche_infos, query_hydro_outstanding_tribute_claims,
+            query_hydro_specific_user_lockups, query_hydro_tranches,
         },
-        tws::{complete_hydromancer_time_weighted_shares, initialize_vessel_tws},
+        rewards::{build_claim_tribute_sub_msg, distribute_rewards_for_all_round_proposals},
+        tws::{
+            complete_hydromancer_time_weighted_shares, initialize_vessel_tws, reset_vessel_vote,
+        },
         validation::{
             validate_admin_address, validate_contract_is_not_paused, validate_contract_is_paused,
             validate_hydromancer_controls_vessels, validate_hydromancer_exists,
-            validate_lock_duration, validate_user_owns_vessels,
+            validate_lock_duration, validate_user_controls_vessel, validate_user_owns_vessels,
             validate_vessels_not_tied_to_proposal, validate_vote_duplicates,
         },
         vectors::join_u64_ids,
@@ -311,11 +310,7 @@ fn process_outstanding_tribute_claims(
         tributes_process_in_reply,
     )?;
 
-    if !messages.is_empty() {
-        response = response.add_messages(messages);
-    }
-
-    Ok(response)
+    Ok(response.add_messages(messages))
 }
 
 fn execute_unvote(
@@ -326,15 +321,16 @@ fn execute_unvote(
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
+
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
     let user_addr = info.sender;
     for vessel_id in vessel_ids.iter() {
         let vessel = state::get_vessel(deps.storage, *vessel_id)?;
         validate_user_controls_vessel(deps.storage, user_addr.clone(), vessel.clone())?;
-        let harbor_of_vessel =
-            state::get_harbor_of_vessel(deps.storage, tranche_id, current_round_id, *vessel_id)?;
-        if harbor_of_vessel.is_some() {
-            let proposal_id = harbor_of_vessel.unwrap();
+
+        if let Some(proposal_id) =
+            state::get_harbor_of_vessel(deps.storage, tranche_id, current_round_id, *vessel_id)?
+        {
             reset_vessel_vote(
                 deps.storage,
                 vessel,
@@ -462,6 +458,7 @@ fn execute_receive_nft(
 
 // This function loops through all the vessels, and filters those who have auto_maintenance true
 // Then, it combines them by hydro_lock_duration, and calls execute_update_vessels_class
+const DEFAULT_AUTO_MAINTAIN_LIMIT: usize = 50;
 fn execute_auto_maintain(
     deps: DepsMut,
     _info: MessageInfo,
@@ -474,7 +471,7 @@ fn execute_auto_maintain(
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
     let hydro_constants_response = query_hydro_constants(&deps.as_ref(), &constants)?;
     let lock_epoch_length = hydro_constants_response.constants.lock_epoch_length;
-    let max_vessels = limit.unwrap_or(50); // Default to 50 vessels max
+    let max_vessels = limit.unwrap_or(DEFAULT_AUTO_MAINTAIN_LIMIT);
 
     // Collect all vessels that need auto-maintenance, sorted by vessel ID
     let vessels_needing_maintenance = collect_vessels_needing_auto_maintenance(
@@ -500,7 +497,10 @@ fn execute_auto_maintain(
 
     let mut response = Response::new().add_attribute("action", "auto_maintain");
     let mut total_vessels_processed = 0;
-    let last_processed_vessel_id = vessels_needing_maintenance.last().map(|(id, _)| *id);
+    let last_processed_vessel_id = vessels_needing_maintenance
+        .last()
+        .map(|(id, _)| *id)
+        .expect("non empty vessels_needing_maintenance");
 
     // Process each class period batch
     for (target_class_period, vessel_ids) in &vessels_by_class {
@@ -537,19 +537,20 @@ fn execute_auto_maintain(
     }
 
     // Add pagination info
-    if let Some(last_vessel_id) = last_processed_vessel_id {
-        response = response.add_attribute("last_processed_vessel_id", last_vessel_id.to_string());
+    response = response.add_attribute(
+        "last_processed_vessel_id",
+        last_processed_vessel_id.to_string(),
+    );
 
-        // Check if there are more vessels to process
-        let has_more_vessels = check_has_more_vessels_needing_maintenance(
-            deps.storage,
-            current_round_id,
-            last_vessel_id,
-            lock_epoch_length,
-        )?;
+    // Check if there are more vessels to process
+    let has_more_vessels = check_has_more_vessels_needing_maintenance(
+        deps.storage,
+        current_round_id,
+        last_processed_vessel_id,
+        lock_epoch_length,
+    )?;
 
-        response = response.add_attribute("has_more", has_more_vessels.to_string());
-    }
+    response = response.add_attribute("has_more", has_more_vessels.to_string());
 
     Ok(response
         .add_attribute(
@@ -568,8 +569,7 @@ fn execute_auto_maintain(
 //     lock_ids,
 //     lock_duration,
 // }
-// NOTE that clients need to check that all the vessels are currently less than hydro_lock_duration
-// Otherwise, the RefreshLockDuration will fail
+// NOTE: clients need to check that all the vessels are currently less than hydro_lock_duration or RefreshLockDuration will fail
 fn execute_update_vessels_class(
     mut deps: DepsMut,
     info: MessageInfo,
@@ -595,16 +595,15 @@ fn execute_update_vessels_class(
         lock_duration: hydro_lock_duration,
     };
 
-    // There should not be any funds?
     let execute_refresh_duration_msg = WasmMsg::Execute {
         contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
         msg: to_json_binary(&refresh_duration_msg)?,
-        funds: info.funds.clone(),
+        funds: vec![],
     };
 
     // Create payload for reply handler
     let refresh_payload = RefreshTimeWeightedSharesReplyPayload {
-        vessel_ids: hydro_lock_ids.clone(),
+        vessel_ids: hydro_lock_ids,
         target_class_period: hydro_lock_duration,
         current_round_id,
     };
@@ -743,6 +742,16 @@ fn execute_hydromancer_vote(
             identifier: info.sender.to_string(),
         })?;
 
+    let mut proposals_votes = Vec::with_capacity(vessels_harbors.len());
+    for vh in vessels_harbors.clone() {
+        // Validate that all vessels are controlled by the hydromancer
+        validate_hydromancer_controls_vessels(deps.storage, hydromancer_id, &vh.vessel_ids)?;
+        proposals_votes.push(ProposalToLockups {
+            proposal_id: vh.harbor_id,
+            lock_ids: vh.vessel_ids,
+        });
+    }
+
     // We need to initialize the Hydromancer TWS when the hydromancer votes
     // It's only initialized once per round / hydromancer
     complete_hydromancer_time_weighted_shares(
@@ -751,24 +760,6 @@ fn execute_hydromancer_vote(
         &constants,
         current_round_id,
     )?;
-
-    // Prepare the proposals_votes
-    let proposals_votes: Vec<ProposalToLockups> = vessels_harbors
-        .iter()
-        .map(|vessels_to_harbor| {
-            // Validate that all vessels are controlled by the hydromancer
-            validate_hydromancer_controls_vessels(
-                deps.storage,
-                hydromancer_id,
-                &vessels_to_harbor.vessel_ids,
-            )?;
-
-            Ok(ProposalToLockups {
-                proposal_id: vessels_to_harbor.harbor_id,
-                lock_ids: vessels_to_harbor.vessel_ids.clone(),
-            })
-        })
-        .collect::<Result<Vec<_>, ContractError>>()?;
 
     // Prepare the Vote message with payload
     let vote_message = HydroExecuteMsg::Vote {
@@ -835,25 +826,7 @@ fn execute_change_hydromancer(
     // (vessels now have correct hydromancer assignments)
     initialize_vessel_tws(&mut deps, vessel_ids.clone(), current_round_id, &constants)?;
 
-    // Step 3: Send unvote message for vessels that changed hydromancer (or that were controlled by user)
-    let response = if !vessels_not_yet_controlled.is_empty() {
-        let unvote_msg = HydroExecuteMsg::Unvote {
-            tranche_id,
-            lock_ids: vessels_not_yet_controlled.clone(),
-        };
-
-        let execute_unvote_msg = WasmMsg::Execute {
-            contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
-            msg: to_json_binary(&unvote_msg)?,
-            funds: vec![],
-        };
-
-        Response::new().add_message(execute_unvote_msg)
-    } else {
-        Response::new()
-    };
-
-    Ok(response
+    let response = Response::new()
         .add_attribute("action", "change_hydromancer")
         .add_attribute("new_hydromancer_id", new_hydromancer_id.to_string())
         .add_attribute(
@@ -863,7 +836,26 @@ fn execute_change_hydromancer(
         .add_attribute(
             "already_controlled_vessels",
             join_u64_ids(&vessels_already_controlled),
-        ))
+        );
+
+    if vessels_not_yet_controlled.is_empty() {
+        // nothing left to do
+        return Ok(response);
+    }
+
+    // Step 3: Send unvote message for vessels that changed hydromancer (or that were controlled by user)
+    let unvote_msg = HydroExecuteMsg::Unvote {
+        tranche_id,
+        lock_ids: vessels_not_yet_controlled.clone(),
+    };
+
+    let execute_unvote_msg = WasmMsg::Execute {
+        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&unvote_msg)?,
+        funds: vec![],
+    };
+
+    Ok(Response::new().add_message(execute_unvote_msg))
 }
 
 fn execute_take_control(
@@ -909,13 +901,12 @@ fn execute_take_control(
     }
 
     let mut response = Response::new();
-    for (tranche_id, unvote_ids) in unvote_ids_by_tranche.iter() {
-        let unvote_msg = HydroExecuteMsg::Unvote {
-            tranche_id: *tranche_id,
-            lock_ids: unvote_ids.clone(),
-        };
+    for (tranche_id, lock_ids) in unvote_ids_by_tranche.into_iter() {
         response = response.add_message(WasmMsg::Execute {
-            msg: to_json_binary(&unvote_msg)?,
+            msg: to_json_binary(&HydroExecuteMsg::Unvote {
+                tranche_id,
+                lock_ids,
+            })?,
             contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
             funds: vec![],
         });
@@ -957,7 +948,7 @@ fn execute_user_vote(
             vessels_to_harbor.vessel_ids.clone(),
         )?;
 
-        for lockup_shares_info in lockups_shares_response.lockups_shares_info.iter() {
+        for lockup_shares_info in lockups_shares_response.lockups_shares_info {
             let vessel = state::get_vessel(deps.storage, lockup_shares_info.lock_id)?;
 
             // Check that the vessel belongs to the user
@@ -983,7 +974,7 @@ fn execute_user_vote(
                     lockup_shares_info.lock_id,
                     current_round_id,
                     lockup_shares_info.time_weighted_shares.u128(),
-                    lockup_shares_info.token_group_id.clone(),
+                    lockup_shares_info.token_group_id,
                     lockup_shares_info.locked_rounds,
                 )?;
             }
@@ -991,7 +982,7 @@ fn execute_user_vote(
 
         let proposal_to_lockups = ProposalToLockups {
             proposal_id: vessels_to_harbor.harbor_id,
-            lock_ids: vessels_to_harbor.vessel_ids.clone(),
+            lock_ids: vessels_to_harbor.vessel_ids,
         };
         proposal_votes.push(proposal_to_lockups);
     }
@@ -1009,13 +1000,16 @@ fn execute_user_vote(
         tranche_id,
         proposals_votes: proposal_votes,
     };
+
     let execute_hydro_vote_msg = WasmMsg::Execute {
         contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
         msg: to_json_binary(&vote_message)?,
         funds: vec![],
     };
+
     let execute_hydro_vote_msg: SubMsg<NeutronMsg> =
         SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID).with_payload(payload);
+
     Ok(response.add_submessage(execute_hydro_vote_msg))
 }
 

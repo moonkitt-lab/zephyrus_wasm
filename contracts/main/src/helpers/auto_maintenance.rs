@@ -40,28 +40,22 @@ pub fn collect_vessels_needing_auto_maintenance(
         0
     };
 
-    let paginated_vessels: Vec<(HydroLockId, u64)> = all_auto_maintained_vessels
+    let paginated_vessels_requiring_maintenance = all_auto_maintained_vessels
         .into_iter()
         .skip(start_index)
         .take(limit)
+        .filter(|&(vessel_id, target_class_period)| {
+            vessel_needs_auto_maintenance(
+                storage,
+                vessel_id,
+                target_class_period,
+                current_round_id,
+                lock_epoch_length,
+            )
+        })
         .collect();
 
-    // Filter to only vessels that actually need maintenance
-    let mut vessels_needing_maintenance = Vec::new();
-
-    for (vessel_id, target_class_period) in paginated_vessels {
-        if vessel_needs_auto_maintenance(
-            storage,
-            vessel_id,
-            target_class_period,
-            current_round_id,
-            lock_epoch_length,
-        )? {
-            vessels_needing_maintenance.push((vessel_id, target_class_period));
-        }
-    }
-
-    Ok(vessels_needing_maintenance)
+    Ok(paginated_vessels_requiring_maintenance)
 }
 
 /// Check if a vessel needs auto maintenance for the current round
@@ -73,19 +67,16 @@ pub fn vessel_needs_auto_maintenance(
     target_class_period: u64,
     current_round_id: RoundId,
     lock_epoch_length: u64,
-) -> Result<bool, ContractError> {
-    // Check if vessel shares exist for this round
-    match state::get_vessel_shares_info(storage, current_round_id, vessel_id) {
-        Ok(vessel_shares) => {
-            // Vessel shares exist - check if locked_rounds * lock_epoch_length != target class period
-            let vessel_effective_class_period = vessel_shares.locked_rounds * lock_epoch_length;
-            Ok(vessel_effective_class_period != target_class_period)
-        }
-        Err(_) => {
-            // No vessel shares exist - needs maintenance
-            Ok(true)
-        }
-    }
+) -> bool {
+    let Ok(vessel_shares) = state::get_vessel_shares_info(storage, current_round_id, vessel_id)
+    else {
+        // No vessel shares exist - needs maintenance
+        return true;
+    };
+
+    // Vessel shares exist - check if locked_rounds * lock_epoch_length != target class period
+    let vessel_effective_class_period = vessel_shares.locked_rounds * lock_epoch_length;
+    vessel_effective_class_period != target_class_period
 }
 
 /// Check if there are more vessels needing maintenance after the last processed one
@@ -112,7 +103,7 @@ pub fn check_has_more_vessels_needing_maintenance(
                     target_class_period,
                     current_round_id,
                     lock_epoch_length,
-                )?
+                )
             {
                 return Ok(true);
             }

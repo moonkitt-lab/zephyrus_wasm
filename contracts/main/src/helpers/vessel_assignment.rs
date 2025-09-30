@@ -15,82 +15,82 @@ pub fn assign_vessel_to_hydromancer(
     let mut vessel = state::get_vessel(storage, vessel_id)?;
     let old_hydromancer_id = vessel.hydromancer_id;
 
-    // Early return if vessel is already assigned to this hydromancer
-    if old_hydromancer_id == Some(new_hydromancer_id) {
-        return Ok(());
-    }
-
-    // CRITICAL: Remove vessel from ALL active proposals first if it has TWS
-    if let Ok(vessel_shares) = state::get_vessel_shares_info(storage, current_round_id, vessel_id) {
-        // Remove from all proposals across all tranches
-        for &tranche_id in tranche_ids {
-            if let Ok(Some(proposal_id)) =
-                state::get_harbor_of_vessel(storage, tranche_id, current_round_id, vessel_id)
-            {
-                // Remove vessel TWS from proposal totals
-                state::substract_time_weighted_shares_from_proposal(
-                    storage,
-                    proposal_id,
-                    &vessel_shares.token_group_id,
-                    vessel_shares.time_weighted_shares,
-                )?;
-
-                // Remove vessel TWS from hydromancer-specific proposal totals (if applicable)
-                if let Some(old_hydro_id) = old_hydromancer_id {
-                    state::substract_time_weighted_shares_from_proposal_for_hydromancer(
-                        storage,
-                        proposal_id,
-                        old_hydro_id,
-                        &vessel_shares.token_group_id,
-                        vessel_shares.time_weighted_shares,
-                    )?;
-                }
-
-                // Remove vessel harbor mapping
-                state::remove_vessel_harbor(
-                    storage,
-                    tranche_id,
-                    current_round_id,
-                    proposal_id,
-                    vessel_id,
-                )?;
-            }
+    if let Some(old_hydromancer_id) = old_hydromancer_id {
+        // Early return if vessel is already assigned to this hydromancer
+        if old_hydromancer_id == new_hydromancer_id {
+            return Ok(());
         }
 
-        // Remove from old hydromancer totals (if applicable)
-        if let Some(old_hydro_id) = old_hydromancer_id {
-            state::substract_time_weighted_shares_from_hydromancer(
-                storage,
-                old_hydro_id,
-                current_round_id,
-                &vessel_shares.token_group_id,
-                vessel_shares.locked_rounds,
-                vessel_shares.time_weighted_shares,
-            )?;
-        }
+        state::remove_vessel_from_hydromancer(storage, old_hydromancer_id, vessel_id)?;
     }
 
     // Update vessel assignment
     vessel.hydromancer_id = Some(new_hydromancer_id);
     state::save_vessel(storage, vessel_id, &vessel)?;
-
-    // Update HYDROMANCER_VESSELS mappings
-    if let Some(old_hydro_id) = old_hydromancer_id {
-        state::remove_vessel_from_hydromancer(storage, old_hydro_id, vessel_id)?;
-    }
     state::add_vessel_to_hydromancer(storage, new_hydromancer_id, vessel_id)?;
 
-    // Add to new hydromancer totals (if vessel has TWS)
-    if let Ok(vessel_shares) = state::get_vessel_shares_info(storage, current_round_id, vessel_id) {
-        state::add_time_weighted_shares_to_hydromancer(
+    // CRITICAL: Remove vessel from ALL active proposals if it has TWS, otherwise nothing left to do
+    let Ok(vessel_shares) = state::get_vessel_shares_info(storage, current_round_id, vessel_id)
+    else {
+        return Ok(());
+    };
+
+    // Remove from all proposals across all tranches
+    for &tranche_id in tranche_ids {
+        if let Ok(Some(proposal_id)) =
+            state::get_harbor_of_vessel(storage, tranche_id, current_round_id, vessel_id)
+        {
+            // Remove vessel TWS from proposal totals
+            state::substract_time_weighted_shares_from_proposal(
+                storage,
+                proposal_id,
+                &vessel_shares.token_group_id,
+                vessel_shares.time_weighted_shares,
+            )?;
+
+            // Remove vessel TWS from hydromancer-specific proposal totals (if applicable)
+            if let Some(old_hydro_id) = old_hydromancer_id {
+                state::substract_time_weighted_shares_from_proposal_for_hydromancer(
+                    storage,
+                    proposal_id,
+                    old_hydro_id,
+                    &vessel_shares.token_group_id,
+                    vessel_shares.time_weighted_shares,
+                )?;
+            }
+
+            // Remove vessel harbor mapping
+            state::remove_vessel_harbor(
+                storage,
+                tranche_id,
+                current_round_id,
+                proposal_id,
+                vessel_id,
+            )?;
+        }
+    }
+
+    // Remove from old hydromancer totals (if applicable)
+    if let Some(old_hydro_id) = old_hydromancer_id {
+        state::substract_time_weighted_shares_from_hydromancer(
             storage,
-            new_hydromancer_id,
+            old_hydro_id,
             current_round_id,
             &vessel_shares.token_group_id,
             vessel_shares.locked_rounds,
             vessel_shares.time_weighted_shares,
         )?;
     }
+
+    // Add to new hydromancer totals
+    state::add_time_weighted_shares_to_hydromancer(
+        storage,
+        new_hydromancer_id,
+        current_round_id,
+        &vessel_shares.token_group_id,
+        vessel_shares.locked_rounds,
+        vessel_shares.time_weighted_shares,
+    )?;
 
     Ok(())
 }
@@ -111,58 +111,61 @@ pub fn assign_vessel_to_user_control(
 
     let hydromancer_id = vessel.hydromancer_id.unwrap();
 
-    // CRITICAL: Remove vessel from ALL active proposals first if it has TWS
-    if let Ok(vessel_shares) = state::get_vessel_shares_info(storage, current_round_id, vessel_id) {
-        // Remove from all proposals across all tranches
-        for &tranche_id in tranche_ids {
-            if let Ok(Some(proposal_id)) =
-                state::get_harbor_of_vessel(storage, tranche_id, current_round_id, vessel_id)
-            {
-                // Remove vessel TWS from proposal totals
-                state::substract_time_weighted_shares_from_proposal(
-                    storage,
-                    proposal_id,
-                    &vessel_shares.token_group_id,
-                    vessel_shares.time_weighted_shares,
-                )?;
-
-                // Remove vessel TWS from hydromancer-specific proposal totals
-                state::substract_time_weighted_shares_from_proposal_for_hydromancer(
-                    storage,
-                    proposal_id,
-                    hydromancer_id,
-                    &vessel_shares.token_group_id,
-                    vessel_shares.time_weighted_shares,
-                )?;
-
-                // Remove vessel harbor mapping
-                state::remove_vessel_harbor(
-                    storage,
-                    tranche_id,
-                    current_round_id,
-                    proposal_id,
-                    vessel_id,
-                )?;
-            }
-        }
-
-        // Remove from hydromancer totals
-        state::substract_time_weighted_shares_from_hydromancer(
-            storage,
-            hydromancer_id,
-            current_round_id,
-            &vessel_shares.token_group_id,
-            vessel_shares.locked_rounds,
-            vessel_shares.time_weighted_shares,
-        )?;
-    }
-
     // Update vessel to user control
     vessel.hydromancer_id = None;
     state::save_vessel(storage, vessel_id, &vessel)?;
 
     // Remove from hydromancer vessels mapping
     state::remove_vessel_from_hydromancer(storage, hydromancer_id, vessel_id)?;
+
+    // CRITICAL: Remove vessel from ALL active proposals first if it has TWS, or nothing else to do
+    let Ok(vessel_shares) = state::get_vessel_shares_info(storage, current_round_id, vessel_id)
+    else {
+        return Ok(());
+    };
+
+    // Remove from all proposals across all tranches
+    for &tranche_id in tranche_ids {
+        if let Ok(Some(proposal_id)) =
+            state::get_harbor_of_vessel(storage, tranche_id, current_round_id, vessel_id)
+        {
+            // Remove vessel TWS from proposal totals
+            state::substract_time_weighted_shares_from_proposal(
+                storage,
+                proposal_id,
+                &vessel_shares.token_group_id,
+                vessel_shares.time_weighted_shares,
+            )?;
+
+            // Remove vessel TWS from hydromancer-specific proposal totals
+            state::substract_time_weighted_shares_from_proposal_for_hydromancer(
+                storage,
+                proposal_id,
+                hydromancer_id,
+                &vessel_shares.token_group_id,
+                vessel_shares.time_weighted_shares,
+            )?;
+
+            // Remove vessel harbor mapping
+            state::remove_vessel_harbor(
+                storage,
+                tranche_id,
+                current_round_id,
+                proposal_id,
+                vessel_id,
+            )?;
+        }
+    }
+
+    // Remove from hydromancer totals
+    state::substract_time_weighted_shares_from_hydromancer(
+        storage,
+        hydromancer_id,
+        current_round_id,
+        &vessel_shares.token_group_id,
+        vessel_shares.locked_rounds,
+        vessel_shares.time_weighted_shares,
+    )?;
 
     Ok(())
 }

@@ -850,13 +850,17 @@ pub fn add_time_weighted_shares_to_hydromancer(
     token_group_id: &str,
     locked_rounds: u64,
     shares: u128,
-) -> StdResult<()> {
+) -> StdResult<u128> {
     HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         ((hydromancer_id, round_id), locked_rounds, token_group_id),
-        |current_shares| -> Result<_, StdError> { Ok(current_shares.unwrap_or_default() + shares) },
-    )?;
-    Ok(())
+        |current_shares| {
+            Ok(current_shares
+                .unwrap_or_default()
+                .checked_add(shares)
+                .expect("operation cannot overflow"))
+        },
+    )
 }
 
 pub fn substract_time_weighted_shares_from_hydromancer(
@@ -866,13 +870,17 @@ pub fn substract_time_weighted_shares_from_hydromancer(
     token_group_id: &str,
     locked_rounds: u64,
     shares: u128,
-) -> StdResult<()> {
+) -> StdResult<u128> {
     HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         ((hydromancer_id, round_id), locked_rounds, token_group_id),
-        |current_shares| -> Result<_, StdError> { Ok(current_shares.unwrap_or_default() - shares) },
-    )?;
-    Ok(())
+        |current_shares| {
+            Ok(current_shares
+                .unwrap_or_default()
+                .checked_sub(shares)
+                .expect("current shares >= shares to subtract"))
+        },
+    )
 }
 
 pub fn get_proposal_time_weighted_shares(
@@ -891,15 +899,17 @@ pub fn add_time_weighted_shares_to_proposal(
     proposal_id: HydroProposalId,
     token_group_id: &str,
     time_weighted_shares: u128,
-) -> StdResult<()> {
+) -> StdResult<u128> {
     PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         (proposal_id, token_group_id),
-        |current_shares| -> Result<_, StdError> {
-            Ok(current_shares.unwrap_or_default() + time_weighted_shares)
+        |current_shares| {
+            Ok(current_shares
+                .unwrap_or_default()
+                .checked_add(time_weighted_shares)
+                .expect("operation cannot overflow"))
         },
-    )?;
-    Ok(())
+    )
 }
 
 pub fn substract_time_weighted_shares_from_proposal(
@@ -907,15 +917,17 @@ pub fn substract_time_weighted_shares_from_proposal(
     proposal_id: HydroProposalId,
     token_group_id: &str,
     time_weighted_shares: u128,
-) -> StdResult<()> {
+) -> StdResult<u128> {
     PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         (proposal_id, token_group_id),
-        |current_shares| -> Result<_, StdError> {
-            Ok(current_shares.unwrap_or_default() - time_weighted_shares)
+        |current_shares| {
+            Ok(current_shares
+                .unwrap_or_default()
+                .checked_sub(time_weighted_shares)
+                .expect("current shares >= shares to subtract"))
         },
-    )?;
-    Ok(())
+    )
 }
 
 pub fn get_hydromancer_proposal_time_weighted_shares(
@@ -936,15 +948,17 @@ pub fn add_time_weighted_shares_to_proposal_for_hydromancer(
     hydromancer_id: HydromancerId,
     token_group_id: &str,
     time_weighted_shares: u128,
-) -> StdResult<()> {
+) -> StdResult<u128> {
     PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         (proposal_id, hydromancer_id, token_group_id),
-        |current_shares| -> Result<_, StdError> {
-            Ok(current_shares.unwrap_or_default() + time_weighted_shares)
+        |current_shares| {
+            Ok(current_shares
+                .unwrap_or_default()
+                .checked_add(time_weighted_shares)
+                .expect("operation cannot overflow"))
         },
-    )?;
-    Ok(())
+    )
 }
 
 pub fn substract_time_weighted_shares_from_proposal_for_hydromancer(
@@ -953,15 +967,17 @@ pub fn substract_time_weighted_shares_from_proposal_for_hydromancer(
     hydromancer_id: HydromancerId,
     token_group_id: &str,
     time_weighted_shares: u128,
-) -> StdResult<()> {
+) -> StdResult<u128> {
     PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
         (proposal_id, hydromancer_id, token_group_id),
-        |current_shares| -> Result<_, StdError> {
-            Ok(current_shares.unwrap_or_default() - time_weighted_shares)
+        |current_shares| {
+            Ok(current_shares
+                .unwrap_or_default()
+                .checked_sub(time_weighted_shares)
+                .expect("current shares >= shares to subtract"))
         },
-    )?;
-    Ok(())
+    )
 }
 
 pub fn take_control_of_vessels(storage: &mut dyn Storage, vessel_id: HydroLockId) -> StdResult<()> {

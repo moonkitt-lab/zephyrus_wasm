@@ -189,8 +189,7 @@ mod tests {
             target_class_period,
             current_round_id,
             lock_epoch_length,
-        )
-        .unwrap();
+        );
 
         assert!(needs_maintenance);
     }
@@ -224,8 +223,7 @@ mod tests {
             target_class_period,
             current_round_id,
             lock_epoch_length,
-        )
-        .unwrap();
+        );
 
         assert!(!needs_maintenance);
     }
@@ -258,8 +256,7 @@ mod tests {
             target_class_period,
             current_round_id,
             lock_epoch_length,
-        )
-        .unwrap();
+        );
 
         assert!(needs_maintenance);
     }

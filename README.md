@@ -30,6 +30,13 @@ Zephyrus is a vote aggregator for Hydro, built around a maritime theme.
 Each Vessel represents a lockup on Hydro.  
 Zephyrus allows a user to either delegate their Vessels and claim a share of the rewards earned by Zephyrus, or to vote directly themselves if they choose.
 
+## Hydro
+
+https://hydro.markets/  
+Hydro is an advanced liquidity management solution for the Interchain, designed to transform liquidity allocation in the Cosmos ecosystem. Hydro introduces an innovative way to vote for projects using staked ATOM while still earning staking APR. Built to support and secure the growing ecosystem, Hydro allows users to lock their stakded ATOM to gain Voting Power, empowering them to choose which projects should receive liquidity and how much.
+
+Each Zephyrus Vessel corresponds to a lockup on Hydro. On Hydro, Zephyrus is the sole voter; Zephyrus then manages hydromancers and allows its users to claim their share of rewards.
+
 ## Rewards distribution
 
 Zephyrus aims to provide the fairest possible distribution of rewards.  

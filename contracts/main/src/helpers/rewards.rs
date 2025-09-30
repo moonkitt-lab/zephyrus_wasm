@@ -566,7 +566,7 @@ pub fn process_hydromancer_claiming_rewards(
     Ok(None)
 }
 
-// READONLY method This function is used to calculate the rewards for the hydromancer on a tribute
+/// READONLY method This function is used to calculate the rewards for the hydromancer on a tribute
 pub fn calculate_hydromancer_claiming_rewards(
     deps: Deps<'_>,
     sender: Addr,

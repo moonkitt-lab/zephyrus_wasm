@@ -29,3 +29,6 @@ mod vessel_assignment_test;
 
 #[cfg(test)]
 mod rewards_test;
+
+#[cfg(test)]
+mod hydromancer_tribute_data_loader_test;

@@ -208,7 +208,6 @@ pub struct ConstantsResponse {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    // TODO: Determine message variants and response types
     #[returns(VotingPowerResponse)]
     VotingPower {},
     #[returns(VesselsResponse)]

@@ -422,7 +422,7 @@ pub fn handle_vote_reply(
     Ok(Response::new().add_attribute("skipped_locks", join_u64_ids(skipped_locks)))
 }
 
-fn parse_u64_list_from_reply(
+pub(crate) fn parse_u64_list_from_reply(
     reply: &Reply,
     attribute_key: &str,
 ) -> Result<Vec<u64>, ContractError> {
@@ -460,7 +460,10 @@ fn parse_u64_list_from_reply(
         })
 }
 
-fn parse_coins_from_reply(reply: &Reply, attribute_key: &str) -> Result<Vec<Coin>, ContractError> {
+pub(crate) fn parse_coins_from_reply(
+    reply: &Reply,
+    attribute_key: &str,
+) -> Result<Vec<Coin>, ContractError> {
     let response = reply
         .result
         .clone()
@@ -496,15 +499,15 @@ fn parse_coins_from_reply(reply: &Reply, attribute_key: &str) -> Result<Vec<Coin
 }
 
 // Now your original functions become:
-fn parse_locks_skipped_reply(reply: &Reply) -> Result<Vec<u64>, ContractError> {
+pub(crate) fn parse_locks_skipped_reply(reply: &Reply) -> Result<Vec<u64>, ContractError> {
     parse_u64_list_from_reply(reply, "locks_skipped")
 }
 
-fn parse_unlocked_lock_ids_reply(reply: &Reply) -> Result<Vec<u64>, ContractError> {
+pub(crate) fn parse_unlocked_lock_ids_reply(reply: &Reply) -> Result<Vec<u64>, ContractError> {
     parse_u64_list_from_reply(reply, "unlocked_lock_ids")
 }
 
-fn parse_unlocked_token_from_reply(reply: &Reply) -> Result<Vec<Coin>, ContractError> {
+pub(crate) fn parse_unlocked_token_from_reply(reply: &Reply) -> Result<Vec<Coin>, ContractError> {
     parse_coins_from_reply(reply, "unlocked_tokens")
 }
 

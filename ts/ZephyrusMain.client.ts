@@ -5,8 +5,8 @@
 */
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
-import { Coin, StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, Binary, BuildVesselParams, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, VotingPowerResponse } from "./ZephyrusMain.types";
+import { StdFee } from "@cosmjs/amino";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, Uint128, VesselsRewardsResponse, RewardInfo, Coin, VotingPowerResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   votingPower: () => Promise<VotingPowerResponse>;
@@ -38,6 +38,17 @@ export interface ZephyrusMainReadOnlyInterface {
     roundId: number;
     trancheId: number;
   }) => Promise<VesselHarborResponse>;
+  vesselsRewards: ({
+    roundId,
+    trancheId,
+    userAddress,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    userAddress: string;
+    vesselIds: number[];
+  }) => Promise<VesselsRewardsResponse>;
 }
 export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   client: CosmWasmClient;
@@ -50,6 +61,7 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
     this.vesselsByHydromancer = this.vesselsByHydromancer.bind(this);
     this.constants = this.constants.bind(this);
     this.vesselsHarbor = this.vesselsHarbor.bind(this);
+    this.vesselsRewards = this.vesselsRewards.bind(this);
   }
   votingPower = async (): Promise<VotingPowerResponse> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -112,16 +124,41 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
       }
     });
   };
+  vesselsRewards = async ({
+    roundId,
+    trancheId,
+    userAddress,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    userAddress: string;
+    vesselIds: number[];
+  }): Promise<VesselsRewardsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      vessels_rewards: {
+        round_id: roundId,
+        tranche_id: trancheId,
+        user_address: userAddress,
+        vessel_ids: vesselIds
+      }
+    });
+  };
 }
 export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   contractAddress: string;
   sender: string;
-  buildVessel: ({
-    receiver,
-    vessels
+  takeControl: ({
+    vesselIds
   }: {
-    receiver?: string;
-    vessels: BuildVesselParams[];
+    vesselIds: number[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  unvote: ({
+    trancheId,
+    vesselIds
+  }: {
+    trancheId: number;
+    vesselIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateVesselsClass: ({
     hydroLockDuration,
@@ -130,7 +167,13 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     hydroLockDuration: number;
     hydroLockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  autoMaintain: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  autoMaintain: ({
+    limit,
+    startFromVesselId
+  }: {
+    limit?: number;
+    startFromVesselId?: number;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   modifyAutoMaintenance: ({
     autoMaintenance,
     hydroLockIds
@@ -177,6 +220,25 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     hydromancerId: number;
     trancheId: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  claim: ({
+    roundId,
+    trancheId,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    vesselIds: number[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  updateCommissionRate: ({
+    newCommissionRate
+  }: {
+    newCommissionRate: Decimal;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  updateCommissionRecipient: ({
+    newCommissionRecipient
+  }: {
+    newCommissionRecipient: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
   client: SigningCosmWasmClient;
@@ -187,7 +249,8 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.client = client;
     this.sender = sender;
     this.contractAddress = contractAddress;
-    this.buildVessel = this.buildVessel.bind(this);
+    this.takeControl = this.takeControl.bind(this);
+    this.unvote = this.unvote.bind(this);
     this.updateVesselsClass = this.updateVesselsClass.bind(this);
     this.autoMaintain = this.autoMaintain.bind(this);
     this.modifyAutoMaintenance = this.modifyAutoMaintenance.bind(this);
@@ -198,18 +261,32 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.userVote = this.userVote.bind(this);
     this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
+    this.claim = this.claim.bind(this);
+    this.updateCommissionRate = this.updateCommissionRate.bind(this);
+    this.updateCommissionRecipient = this.updateCommissionRecipient.bind(this);
   }
-  buildVessel = async ({
-    receiver,
-    vessels
+  takeControl = async ({
+    vesselIds
   }: {
-    receiver?: string;
-    vessels: BuildVesselParams[];
+    vesselIds: number[];
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      build_vessel: {
-        receiver,
-        vessels
+      take_control: {
+        vessel_ids: vesselIds
+      }
+    }, fee, memo, _funds);
+  };
+  unvote = async ({
+    trancheId,
+    vesselIds
+  }: {
+    trancheId: number;
+    vesselIds: number[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      unvote: {
+        tranche_id: trancheId,
+        vessel_ids: vesselIds
       }
     }, fee, memo, _funds);
   };
@@ -227,9 +304,18 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
       }
     }, fee, memo, _funds);
   };
-  autoMaintain = async (fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+  autoMaintain = async ({
+    limit,
+    startFromVesselId
+  }: {
+    limit?: number;
+    startFromVesselId?: number;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      auto_maintain: {}
+      auto_maintain: {
+        limit,
+        start_from_vessel_id: startFromVesselId
+      }
     }, fee, memo, _funds);
   };
   modifyAutoMaintenance = async ({
@@ -326,6 +412,45 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
         hydro_lock_ids: hydroLockIds,
         hydromancer_id: hydromancerId,
         tranche_id: trancheId
+      }
+    }, fee, memo, _funds);
+  };
+  claim = async ({
+    roundId,
+    trancheId,
+    vesselIds
+  }: {
+    roundId: number;
+    trancheId: number;
+    vesselIds: number[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      claim: {
+        round_id: roundId,
+        tranche_id: trancheId,
+        vessel_ids: vesselIds
+      }
+    }, fee, memo, _funds);
+  };
+  updateCommissionRate = async ({
+    newCommissionRate
+  }: {
+    newCommissionRate: Decimal;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_commission_rate: {
+        new_commission_rate: newCommissionRate
+      }
+    }, fee, memo, _funds);
+  };
+  updateCommissionRecipient = async ({
+    newCommissionRecipient
+  }: {
+    newCommissionRecipient: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_commission_recipient: {
+        new_commission_recipient: newCommissionRecipient
       }
     }, fee, memo, _funds);
   };

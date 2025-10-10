@@ -6,6 +6,8 @@
 
 export type Decimal = string;
 export interface InstantiateMsg {
+  commission_rate: Decimal;
+  commission_recipient: string;
   default_hydromancer_address: string;
   default_hydromancer_commission_rate: Decimal;
   default_hydromancer_name: string;
@@ -14,9 +16,13 @@ export interface InstantiateMsg {
   whitelist_admins: string[];
 }
 export type ExecuteMsg = {
-  build_vessel: {
-    receiver?: string | null;
-    vessels: BuildVesselParams[];
+  take_control: {
+    vessel_ids: number[];
+  };
+} | {
+  unvote: {
+    tranche_id: number;
+    vessel_ids: number[];
   };
 } | {
   update_vessels_class: {
@@ -24,7 +30,10 @@ export type ExecuteMsg = {
     hydro_lock_ids: number[];
   };
 } | {
-  auto_maintain: {};
+  auto_maintain: {
+    limit?: number | null;
+    start_from_vessel_id?: number | null;
+  };
 } | {
   modify_auto_maintenance: {
     auto_maintenance: boolean;
@@ -56,13 +65,22 @@ export type ExecuteMsg = {
     hydromancer_id: number;
     tranche_id: number;
   };
+} | {
+  claim: {
+    round_id: number;
+    tranche_id: number;
+    vessel_ids: number[];
+  };
+} | {
+  update_commission_rate: {
+    new_commission_rate: Decimal;
+  };
+} | {
+  update_commission_recipient: {
+    new_commission_recipient: string;
+  };
 };
 export type Binary = string;
-export interface BuildVesselParams {
-  auto_maintenance: boolean;
-  hydromancer_id: number;
-  lock_duration: number;
-}
 export interface VesselsToHarbor {
   harbor_id: number;
   vessel_ids: number[];
@@ -94,12 +112,21 @@ export type QueryMsg = {
     round_id: number;
     tranche_id: number;
   };
+} | {
+  vessels_rewards: {
+    round_id: number;
+    tranche_id: number;
+    user_address: string;
+    vessel_ids: number[];
+  };
 };
 export type Addr = string;
 export interface ConstantsResponse {
   constants: Constants;
 }
 export interface Constants {
+  commission_rate: Decimal;
+  commission_recipient: Addr;
   default_hydromancer_id: number;
   hydro_config: HydroConfig;
   paused_contract: boolean;
@@ -118,7 +145,7 @@ export interface Vessel {
   auto_maintenance: boolean;
   class_period: number;
   hydro_lock_id: number;
-  hydromancer_id: number;
+  hydromancer_id?: number | null;
   owner_id: number;
   tokenized_share_record_id?: number | null;
 }
@@ -134,6 +161,21 @@ export interface VesselHarbor {
   hydro_lock_id: number;
   steerer_id: number;
   user_control: boolean;
+}
+export type Uint128 = string;
+export interface VesselsRewardsResponse {
+  rewards: RewardInfo[];
+  round_id: number;
+  tranche_id: number;
+}
+export interface RewardInfo {
+  coin: Coin;
+  proposal_id: number;
+  tribute_id: number;
+}
+export interface Coin {
+  amount: Uint128;
+  denom: string;
 }
 export interface VotingPowerResponse {
   voting_power: number;

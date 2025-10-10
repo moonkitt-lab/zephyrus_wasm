@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Timestamp, Uint128};
 
@@ -9,31 +11,108 @@ pub struct ProposalToLockups {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    LockTokens {
-        lock_duration: u64,
-    },
+    /// Refresh the lock duration of the specified lock ids, used by zephyrus to refresh period class period of vessels
     RefreshLockDuration {
         lock_ids: Vec<u64>,
         lock_duration: u64,
     },
-    UnlockTokens {
-        lock_ids: Option<Vec<u64>>,
-    },
+    /// Unlock the specified lock ids, used by zephyrus to decommission vessels
+    UnlockTokens { lock_ids: Option<Vec<u64>> },
+    /// Vote the specified proposals, used by zephyrus to vote on proposals
     Vote {
         tranche_id: u64,
         proposals_votes: Vec<ProposalToLockups>,
     },
-    Unvote {
+    /// Unvote the specified lock ids, used by zephyrus to unvote on proposals
+    Unvote { tranche_id: u64, lock_ids: Vec<u64> },
+    /// Claim the specified tribute, used by zephyrus to claim tribute
+    ClaimTribute {
+        round_id: u64,
         tranche_id: u64,
-        lock_ids: Vec<u64>,
+        tribute_id: u64,
+        voter_address: String,
+    },
+}
+
+/// Hydro contract query messages.
+#[cw_serde]
+pub enum HydroQueryMsg {
+    /// Query the current round.
+    CurrentRound {},
+    /// Query the available tranches.
+    Tranches {},
+    /// Query the specific user lockups return SpecificUserLockupsResponse
+    SpecificUserLockups { address: String, lock_ids: Vec<u64> },
+    /// Query the specific user lockups with tranche infos return SpecificUserLockupsWithTrancheInfosResponse
+    SpecificUserLockupsWithTrancheInfos { address: String, lock_ids: Vec<u64> },
+    /// Query hydro constants return HydroConstantsResponse
+    Constants {},
+    /// Query the lockups shares return LockupsSharesResponse
+    /// Used to track time weighted shares of vessels with token group id and locked rounds
+    LockupsShares { lock_ids: Vec<u64> },
+    /// Use to query the outstanding tribute claims by Zephyrusreturn OutstandingTributeClaimsResponse
+    OutstandingTributeClaims {
+        user_address: String,
+        round_id: u64,
+        tranche_id: u64,
+    },
+    /// Query the token info providers return TokenInfoProvidersResponse
+    TokenInfoProviders {},
+    /// Query the proposal return ProposalResponse
+    Proposal {
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+    },
+    /// Query the round proposals return RoundProposalsResponse
+    RoundProposals {
+        round_id: u64,
+        tranche_id: u64,
+        start_from: u32,
+        limit: u32,
     },
 }
 
 #[cw_serde]
-pub enum HydroQueryMsg {
-    CurrentRound {},
-    SpecificUserLockups { address: String, lock_ids: Vec<u64> },
-    Constants {},
+pub enum DerivativeTokenInfoProviderQueryMsg {
+    DenomInfo { round_id: u64 },
+}
+
+#[cw_serde]
+pub enum TributeQueryMsg {
+    ProposalTributes {
+        round_id: u64,
+        proposal_id: u64,
+        start_from: u32,
+        limit: u32,
+    },
+}
+
+#[cw_serde]
+pub struct TributeClaim {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub tribute_id: u64,
+    pub amount: Coin,
+}
+
+#[cw_serde]
+pub struct OutstandingTributeClaimsResponse {
+    pub claims: Vec<TributeClaim>,
+}
+
+#[cw_serde]
+pub struct LockupsSharesInfo {
+    pub lock_id: u64,
+    pub time_weighted_shares: Uint128,
+    pub token_group_id: String,
+    pub locked_rounds: u64,
+}
+
+#[cw_serde]
+pub struct LockupsSharesResponse {
+    pub lockups_shares_info: Vec<LockupsSharesInfo>,
 }
 
 #[cw_serde]
@@ -102,4 +181,130 @@ pub struct LockPowerEntry {
 pub struct CollectionInfo {
     pub name: String,
     pub symbol: String,
+}
+
+#[cw_serde]
+pub struct Tranche {
+    pub id: u64,
+    pub name: String,
+    pub metadata: String,
+}
+
+#[cw_serde]
+pub struct TranchesResponse {
+    pub tranches: Vec<Tranche>,
+}
+
+#[cw_serde]
+pub struct RoundWithBid {
+    pub round_id: u64,
+    pub proposal_id: u64,
+    pub round_end: Timestamp,
+}
+
+// PerTrancheLockupInfo is used to store the lockup information for a specific tranche.
+#[cw_serde]
+pub struct PerTrancheLockupInfo {
+    pub tranche_id: u64,
+    // If this number is less or equal to the current round, it means the lockup can vote in the current round.
+    pub next_round_lockup_can_vote: u64,
+    // This is the proposal that the lockup is voting for in the current round, if any.
+    // In particular, if the lockup is blocked from voting in the current round (because it voted for a
+    // proposal with a long deployment duration in a previous round), this will be None.
+    pub current_voted_on_proposal: Option<u64>,
+
+    // This is the id of the proposal that the lockup is tied to because it has voted for a proposal with a long deployment duration.
+    // In case the lockup can currently vote (and is not tied to a proposal), this will be None.
+    // Note that None will also be returned if the lockup voted for a proposal that received a deployment with zero funds.
+    pub tied_to_proposal: Option<u64>,
+
+    /// This is the list of proposals that the lockup has been used to vote for in the past.
+    /// It is used to show the history of the lockup upon transfer / selling on Marketplace.
+    /// Note that this does not include the current voted on proposal, which is found in the current_voted_on_proposal field.
+    pub historic_voted_on_proposals: Vec<RoundWithBid>,
+}
+
+#[cw_serde]
+pub struct LockupWithPerTrancheInfo {
+    pub lock_with_power: LockEntryWithPower,
+    pub per_tranche_info: Vec<PerTrancheLockupInfo>,
+}
+
+#[cw_serde]
+pub struct SpecificUserLockupsWithTrancheInfosResponse {
+    pub lockups_with_per_tranche_infos: Vec<LockupWithPerTrancheInfo>,
+}
+
+#[cw_serde]
+pub struct DenomInfoResponse {
+    pub denom: String,
+    pub token_group_id: String,
+    pub ratio: Decimal,
+}
+
+#[cw_serde]
+pub struct TokenInfoProviderDerivative {
+    pub contract: String,
+    pub cache: HashMap<u64, DenomInfoResponse>,
+}
+
+#[cw_serde]
+pub struct TokenInfoProviderLSM {
+    pub max_validator_shares_participating: u64,
+    pub hub_connection_id: String,
+    pub hub_transfer_channel_id: String,
+    pub icq_update_period: u64,
+}
+
+#[cw_serde]
+pub enum TokenInfoProvider {
+    #[serde(rename = "lsm")]
+    LSM(TokenInfoProviderLSM),
+    Derivative(TokenInfoProviderDerivative),
+}
+
+#[cw_serde]
+pub struct TokenInfoProvidersResponse {
+    pub providers: Vec<TokenInfoProvider>,
+}
+
+#[cw_serde]
+pub struct Proposal {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub title: String,
+    pub description: String,
+    pub power: Uint128,
+    pub percentage: Uint128,
+    pub deployment_duration: u64, // number of rounds liquidity is allocated excluding voting round.
+    pub minimum_atom_liquidity_request: Uint128,
+}
+
+#[cw_serde]
+pub struct ProposalResponse {
+    pub proposal: Proposal,
+}
+
+#[cw_serde]
+pub struct RoundProposalsResponse {
+    pub proposals: Vec<Proposal>,
+}
+
+#[cw_serde]
+pub struct Tribute {
+    pub round_id: u64,
+    pub tranche_id: u64,
+    pub proposal_id: u64,
+    pub tribute_id: u64,
+    pub depositor: Addr,
+    pub funds: Coin,
+    pub refunded: bool,
+    pub creation_time: Timestamp,
+    pub creation_round: u64,
+}
+
+#[cw_serde]
+pub struct ProposalTributesResponse {
+    pub tributes: Vec<Tribute>,
 }

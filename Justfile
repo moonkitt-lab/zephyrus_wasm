@@ -113,7 +113,7 @@ export GAIA_IMAGE          := "cosmos/gaia:" + GAIA_VERSION
 export NEUTRON_VERSION     := env("NEUTRON_VERSION", "v5.0.4")
 export NEUTRON_IMAGE       := "neutron-org/neutron:" + NEUTRON_VERSION
 
-export HYDRO_VERSION       := env("HYDRO_VERSION", "v2.0.2")
+export HYDRO_VERSION       := env("HYDRO_VERSION", "v3.5.0")
 
 # Setup on-chain test suite
 [script]

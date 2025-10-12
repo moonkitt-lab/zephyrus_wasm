@@ -1,0 +1,548 @@
+{
+    "protocol_config": {
+        "round_length": 350000000000,
+        "protocol_commission_bps": 1000,
+        "hydromancer_commission_bps": 500,
+        "total_rounds": 1
+    },
+    "users": [
+        {
+            "user_id": "0",
+            "vessels": [
+                {
+                    "id": 0,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "376",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": 3,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 1,
+                    "lock_duration_rounds": 1,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "624",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 1,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "1",
+            "vessels": [
+                {
+                    "id": 2,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "760",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 1,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 3,
+                    "lock_duration_rounds": 1,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "876",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": 3,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "2",
+            "vessels": [
+                {
+                    "id": 4,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "964",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 5,
+                    "lock_duration_rounds": 3,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "143",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 6,
+                    "lock_duration_rounds": 3,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "413",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "3",
+            "vessels": [
+                {
+                    "id": 7,
+                    "lock_duration_rounds": 3,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "87",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 8,
+                    "lock_duration_rounds": 1,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "377",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": 3,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 9,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "994",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 6,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "4",
+            "vessels": [
+                {
+                    "id": 10,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "606",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 11,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "198",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 1,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 12,
+                    "lock_duration_rounds": 1,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "105",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "5",
+            "vessels": [
+                {
+                    "id": 13,
+                    "lock_duration_rounds": 1,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "377",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 4,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 14,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "204",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "6",
+            "vessels": [
+                {
+                    "id": 15,
+                    "lock_duration_rounds": 3,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "456",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 16,
+                    "lock_duration_rounds": 3,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "203",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": 4,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "7",
+            "vessels": [
+                {
+                    "id": 17,
+                    "lock_duration_rounds": 3,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "263",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 6,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 18,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "932",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": 6,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 19,
+                    "lock_duration_rounds": 1,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "740",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": 3,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "8",
+            "vessels": [
+                {
+                    "id": 20,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "576",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 21,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "425",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": 3,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 22,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "979",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 2,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "9",
+            "vessels": [
+                {
+                    "id": 23,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "700",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 2,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 24,
+                    "lock_duration_rounds": 1,
+                    "locked_denom": "dATOM",
+                    "locked_amount": "997",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "proposals": [
+        {
+            "id": 0,
+            "round_id": 0,
+            "bid_duration_months": 3,
+            "tributes": [
+                {
+                    "id": 0,
+                    "denom": "USDC",
+                    "amount": "763.00"
+                }
+            ]
+        },
+        {
+            "id": 1,
+            "round_id": 0,
+            "bid_duration_months": 1,
+            "tributes": [
+                {
+                    "id": 1,
+                    "denom": "USDC",
+                    "amount": "175.00"
+                },
+                {
+                    "id": 2,
+                    "denom": "stATOM",
+                    "amount": "910.00"
+                },
+                {
+                    "id": 3,
+                    "denom": "dATOM",
+                    "amount": "815.00"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "round_id": 0,
+            "bid_duration_months": 2,
+            "tributes": [
+                {
+                    "id": 4,
+                    "denom": "USDC",
+                    "amount": "161.00"
+                },
+                {
+                    "id": 5,
+                    "denom": "USDC",
+                    "amount": "547.00"
+                },
+                {
+                    "id": 6,
+                    "denom": "stATOM",
+                    "amount": "95.00"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "round_id": 0,
+            "bid_duration_months": 1,
+            "tributes": [
+                {
+                    "id": 7,
+                    "denom": "USDC",
+                    "amount": "507.00"
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "round_id": 0,
+            "bid_duration_months": 1,
+            "tributes": [
+                {
+                    "id": 8,
+                    "denom": "dATOM",
+                    "amount": "706.00"
+                },
+                {
+                    "id": 9,
+                    "denom": "dATOM",
+                    "amount": "563.00"
+                }
+            ]
+        },
+        {
+            "id": 5,
+            "round_id": 0,
+            "bid_duration_months": 3,
+            "tributes": [
+                {
+                    "id": 10,
+                    "denom": "dATOM",
+                    "amount": "865.00"
+                },
+                {
+                    "id": 11,
+                    "denom": "USDC",
+                    "amount": "615.00"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "round_id": 0,
+            "bid_duration_months": 2,
+            "tributes": [
+                {
+                    "id": 12,
+                    "denom": "dATOM",
+                    "amount": "676.00"
+                },
+                {
+                    "id": 13,
+                    "denom": "USDC",
+                    "amount": "157.00"
+                },
+                {
+                    "id": 14,
+                    "denom": "stATOM",
+                    "amount": "151.00"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "round_id": 0,
+            "bid_duration_months": 3,
+            "tributes": [
+                {
+                    "id": 15,
+                    "denom": "stATOM",
+                    "amount": "963.00"
+                }
+            ]
+        }
+    ]
+}

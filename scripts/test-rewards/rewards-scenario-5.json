@@ -1,0 +1,135 @@
+{
+    "protocol_config": {
+        "round_length": 120000000000,
+        "protocol_commission_bps": 1000,
+        "hydromancer_commission_bps": 500,
+        "total_rounds": 2
+    },
+    "users": [
+        {
+            "user_id": "0",
+            "vessels": [
+                {
+                    "id": 0,
+                    "lock_duration_rounds": 2,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "546",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": 0,
+                            "refresh": false
+                        },
+                        {
+                            "round_id": 1,
+                            "controlled_by": "hydromancer",
+                            "voted_proposal_id": null,
+                            "refresh": false
+                        }
+                    ]
+                },
+                {
+                    "id": 1,
+                    "lock_duration_rounds": 1,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "498",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 1,
+                            "refresh": true
+                        },
+                        {
+                            "round_id": 1,
+                            "controlled_by": "user",
+                            "voted_proposal_id": null,
+                            "refresh": true
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "user_id": "1",
+            "vessels": [
+                {
+                    "id": 2,
+                    "lock_duration_rounds": 3,
+                    "locked_denom": "stATOM",
+                    "locked_amount": "355",
+                    "rounds": [
+                        {
+                            "round_id": 0,
+                            "controlled_by": "user",
+                            "voted_proposal_id": null,
+                            "refresh": true
+                        },
+                        {
+                            "round_id": 1,
+                            "controlled_by": "user",
+                            "voted_proposal_id": 2,
+                            "refresh": false
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "proposals": [
+        {
+            "id": 0,
+            "round_id": 0,
+            "bid_duration_months": 2,
+            "tributes": [
+                {
+                    "id": 0,
+                    "denom": "dATOM",
+                    "amount": "908.00"
+                },
+                {
+                    "id": 1,
+                    "denom": "USDC",
+                    "amount": "393.00"
+                }
+            ]
+        },
+        {
+            "id": 1,
+            "round_id": 0,
+            "bid_duration_months": 1,
+            "tributes": [
+                {
+                    "id": 2,
+                    "denom": "stATOM",
+                    "amount": "957.00"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "round_id": 1,
+            "bid_duration_months": 1,
+            "tributes": [
+                {
+                    "id": 2,
+                    "denom": "stATOM",
+                    "amount": "1000.00"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "round_id": 1,
+            "bid_duration_months": 1,
+            "tributes": [
+                {
+                    "id": 2,
+                    "denom": "USDC",
+                    "amount": "2000.00"
+                }
+            ]
+        }
+    ]
+}

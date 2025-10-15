@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use cosmwasm_std::{testing::mock_env, MessageInfo, Uint128};
-    use hydro_interface::msgs::LockupsSharesInfo;
+    use hydro_interface::msgs::LockupsInfo;
     use std::collections::HashMap;
     use zephyrus_core::state::{Constants, HydroConfig, Vessel, VesselSharesInfo};
 
@@ -134,7 +134,7 @@ mod tests {
         let hydromancer_id = 1;
         let current_round_id = 1;
         let old_vessel_shares = None;
-        let new_lockup_shares = LockupsSharesInfo {
+        let new_lockup_shares = LockupsInfo {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
@@ -164,7 +164,7 @@ mod tests {
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
         });
-        let new_lockup_shares = LockupsSharesInfo {
+        let new_lockup_shares = LockupsInfo {
             lock_id: 1,
             time_weighted_shares: Uint128::zero(),
             token_group_id: "dAtom".to_string(),
@@ -194,7 +194,7 @@ mod tests {
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
         });
-        let new_lockup_shares = LockupsSharesInfo {
+        let new_lockup_shares = LockupsInfo {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1200u128),
             token_group_id: "dAtom".to_string(),
@@ -226,7 +226,7 @@ mod tests {
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
         });
-        let new_lockup_shares = LockupsSharesInfo {
+        let new_lockup_shares = LockupsInfo {
             lock_id: 1,
             time_weighted_shares: Uint128::from(800u128),
             token_group_id: "dAtom".to_string(),
@@ -256,7 +256,7 @@ mod tests {
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
         });
-        let new_lockup_shares = LockupsSharesInfo {
+        let new_lockup_shares = LockupsInfo {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
@@ -285,7 +285,7 @@ mod tests {
         let mut tws_changes = TwsChanges::new();
         let vessel = state::get_vessel(deps.as_ref().storage, 1).unwrap();
         let old_vessel_shares = None;
-        let new_lockup_shares = LockupsSharesInfo {
+        let new_lockup_shares = LockupsInfo {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
@@ -342,7 +342,7 @@ mod tests {
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
         });
-        let new_lockup_shares = LockupsSharesInfo {
+        let new_lockup_shares = LockupsInfo {
             lock_id: vessel_id,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
@@ -748,7 +748,7 @@ mod tests {
 
         // First call
         let old_vessel_shares_1 = None;
-        let new_lockup_shares_1 = LockupsSharesInfo {
+        let new_lockup_shares_1 = LockupsInfo {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
@@ -765,7 +765,7 @@ mod tests {
 
         // Second call with same key
         let old_vessel_shares_2 = None;
-        let new_lockup_shares_2 = LockupsSharesInfo {
+        let new_lockup_shares_2 = LockupsInfo {
             lock_id: 2,
             time_weighted_shares: Uint128::from(500u128),
             token_group_id: "dAtom".to_string(),

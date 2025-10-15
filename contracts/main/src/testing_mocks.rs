@@ -9,8 +9,8 @@ use cosmwasm_std::{
 };
 use hydro_interface::msgs::{
     CollectionInfo, CurrentRoundResponse, HydroConstants, HydroConstantsResponse, HydroQueryMsg,
-    LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo, LockupsSharesInfo,
-    LockupsSharesResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo,
+    LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo, LockupsInfo,
+    LockupsInfoResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo,
     RoundLockPowerSchedule, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, Tranche,
     TranchesResponse,
@@ -68,9 +68,7 @@ impl MockWasmQuerier {
                     HydroQueryMsg::SpecificUserLockups { address, lock_ids } => {
                         self.handle_specific_user_lockups(&address, &lock_ids)
                     }
-                    HydroQueryMsg::LockupsShares { lock_ids } => {
-                        self.handle_lockups_shares(&lock_ids)
-                    }
+                    HydroQueryMsg::LockupsInfo { lock_ids } => self.handle_lockups_info(&lock_ids),
                     HydroQueryMsg::Tranches {} => self.handle_tranches(),
                     HydroQueryMsg::SpecificUserLockupsWithTrancheInfos {
                         address: _,
@@ -128,20 +126,18 @@ impl MockWasmQuerier {
         })
     }
 
-    fn handle_lockups_shares(&self, lock_ids: &[u64]) -> StdResult<Binary> {
-        let mut shares_info: Vec<LockupsSharesInfo> = vec![];
+    fn handle_lockups_info(&self, lock_ids: &[u64]) -> StdResult<Binary> {
+        let mut info: Vec<LockupsInfo> = vec![];
         for lock_id in lock_ids {
             let (token_group_id, tws) = generate_deterministic_tws(*lock_id);
-            shares_info.push(LockupsSharesInfo {
+            info.push(LockupsInfo {
                 lock_id: *lock_id,
                 time_weighted_shares: Uint128::from(tws),
                 token_group_id: token_group_id,
                 locked_rounds: 1,
             });
         }
-        to_json_binary(&LockupsSharesResponse {
-            lockups_shares_info: shares_info,
-        })
+        to_json_binary(&LockupsInfoResponse { lockups_info: info })
     }
 
     fn handle_current_round(&self) -> StdResult<Binary> {

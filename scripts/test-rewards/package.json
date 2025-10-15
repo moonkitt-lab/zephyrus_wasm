@@ -14,13 +14,7 @@
     "lint": "echo 'Linting not configured yet'",
     "prepare": "npm run build && npm run setup"
   },
-  "keywords": [
-    "zephyrus",
-    "hydro",
-    "cosmos",
-    "rewards",
-    "testing"
-  ],
+  "keywords": [],
   "author": "Zephyrus Team",
   "license": "MIT",
   "dependencies": {

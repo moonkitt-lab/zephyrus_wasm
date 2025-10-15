@@ -31,8 +31,7 @@ export interface TestConfig {
 }
 
 export const CONFIG: TestConfig = {
-  deployerMnemonic:
-    "appear empty thrive panther spread mandate together possible hawk area delay artefact hockey endorse assist blood grid cheap argue capable diamond bonus abstract quarter",
+  deployerMnemonic: "",
 
   chainId: "neutron-devnet-1",
   rpcEndpoint: "http://localhost:26657",

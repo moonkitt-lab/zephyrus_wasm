@@ -235,7 +235,7 @@ pub fn complete_hydromancer_time_weighted_shares(
         vessels.iter().map(|v| v.hydro_lock_id).collect(),
     )?;
 
-    for lockup_info in lockups_info_response.lockups_info {
+    for lockup_info in lockups_info_response.lockups_shares_info {
         // if vessel shares info already exists it means that vessel was created and delegated to hydromancer before its vote it's weighted shares are already added, so we skip
         if state::has_vessel_shares_info(deps.storage, current_round_id, lockup_info.lock_id) {
             continue;
@@ -291,7 +291,7 @@ pub fn initialize_vessel_tws(
         query_hydro_lockups_shares(&deps.as_ref(), constants, missing_lock_ids)?;
 
     // Process each vessel's TWS data
-    for lockup_info in &lockups_info_response.lockups_info {
+    for lockup_info in &lockups_info_response.lockups_shares_info {
         // Save vessel TWS info
         state::save_vessel_shares_info(
             deps.storage,

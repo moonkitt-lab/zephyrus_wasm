@@ -157,10 +157,13 @@ mod tests {
         let lockups_shares_response = result.unwrap();
 
         // Mock creates one entry per vessel_id
-        assert_eq!(lockups_shares_response.lockups_info.len(), vessel_ids.len());
+        assert_eq!(
+            lockups_shares_response.lockups_shares_info.len(),
+            vessel_ids.len()
+        );
 
         for (i, vessel_id) in vessel_ids.iter().enumerate() {
-            let shares_info = &lockups_shares_response.lockups_info[i];
+            let shares_info = &lockups_shares_response.lockups_shares_info[i];
             let (token_group_id, tws) = generate_deterministic_tws(*vessel_id);
             assert_eq!(shares_info.lock_id, *vessel_id);
             assert_eq!(shares_info.time_weighted_shares.u128(), tws);
@@ -179,7 +182,7 @@ mod tests {
 
         assert!(result.is_ok());
         let lockups_shares_response = result.unwrap();
-        assert_eq!(lockups_shares_response.lockups_info.len(), 0);
+        assert_eq!(lockups_shares_response.lockups_shares_info.len(), 0);
     }
 
     #[test]
@@ -431,7 +434,7 @@ mod tests {
             query_hydro_lockups_with_tranche_infos(&deps.as_ref(), &env, &constants, &vessel_ids)
                 .unwrap();
 
-        assert_eq!(lockups_shares.lockups_info.len(), 2);
+        assert_eq!(lockups_shares.lockups_shares_info.len(), 2);
         assert_eq!(specific_lockups.lockups.len(), 2);
         assert_eq!(lockups_with_tranche_infos.len(), 2);
     }

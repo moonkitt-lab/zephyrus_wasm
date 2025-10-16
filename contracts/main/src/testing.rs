@@ -1922,7 +1922,7 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     .expect("Should get hydromancer tws even if there's no tws an empty list should be returned");
     let lockup_shares = query_hydro_lockups_shares(&deps.as_ref(), &constants, vec![0]);
     assert!(lockup_shares.is_ok());
-    let lockup_shares = lockup_shares.unwrap().lockups_info[0].clone();
+    let lockup_shares = lockup_shares.unwrap().lockups_shares_info[0].clone();
     assert_eq!(hydromancer_tws[0].0 .0, lockup_shares.locked_rounds);
     assert_eq!(hydromancer_tws[0].0 .0, lockup_shares.locked_rounds);
     let vessel = state::get_vessel(deps.as_ref().storage, 0).expect("Vessel should exist !");
@@ -2079,7 +2079,7 @@ fn user_take_control_after_new_round_succeed() {
 
     let lockup_shares = query_hydro_lockups_shares(&deps.as_ref(), &constants, vec![0]);
     assert!(lockup_shares.is_ok());
-    let lockup_shares = lockup_shares.unwrap().lockups_info[0].clone();
+    let lockup_shares = lockup_shares.unwrap().lockups_shares_info[0].clone();
 
     // check tws for hydromancer is 0
     let hydromancer_tws = state::get_hydromancer_time_weighted_shares_by_round(

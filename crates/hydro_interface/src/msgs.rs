@@ -112,7 +112,7 @@ pub struct LockupsInfo {
 
 #[cw_serde]
 pub struct LockupsInfoResponse {
-    pub lockups_info: Vec<LockupsInfo>,
+    pub lockups_shares_info: Vec<LockupsInfo>,
 }
 
 #[cw_serde]

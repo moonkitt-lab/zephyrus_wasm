@@ -137,7 +137,9 @@ impl MockWasmQuerier {
                 locked_rounds: 1,
             });
         }
-        to_json_binary(&LockupsInfoResponse { lockups_info: info })
+        to_json_binary(&LockupsInfoResponse {
+            lockups_shares_info: info,
+        })
     }
 
     fn handle_current_round(&self) -> StdResult<Binary> {

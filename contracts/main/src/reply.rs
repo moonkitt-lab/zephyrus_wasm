@@ -233,7 +233,7 @@ pub fn handle_refresh_time_weighted_shares_reply(
 
     let mut vessels_tws_updated = Vec::new();
 
-    for updated_lockup_info in updated_lockups_info.lockups_info {
+    for updated_lockup_info in updated_lockups_info.lockups_shares_info {
         let vessel_id = updated_lockup_info.lock_id;
         let vessel = state::get_vessel(deps.storage, vessel_id)?;
 
@@ -308,8 +308,7 @@ pub fn handle_vote_reply(
             &constants,
             vessels_to_harbor.vessel_ids.clone(),
         )?;
-
-        for vessel_info in vessels_info.lockups_info.iter() {
+        for vessel_info in vessels_info.lockups_shares_info.iter() {
             // if vessel is skipped, it means that hydro was not able to vote for it, zephyrus skips it too
             if skipped_locks.contains(&vessel_info.lock_id) {
                 continue;

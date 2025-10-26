@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankQuery, Binary, Decimal,
@@ -25,10 +25,13 @@ use crate::{
         },
         hydro_queries::{
             query_hydro_constants, query_hydro_current_round, query_hydro_lockups_shares,
-            query_hydro_lockups_with_tranche_infos, query_hydro_outstanding_tribute_claims,
-            query_hydro_specific_tributes, query_hydro_specific_user_lockups, query_hydro_tranches,
+            query_hydro_lockups_with_tranche_infos, query_hydro_specific_tributes,
+            query_hydro_specific_user_lockups, query_hydro_tranches,
         },
-        rewards::{build_claim_tribute_sub_msg, distribute_rewards_for_all_round_proposals},
+        rewards::{
+            build_claim_tribute_sub_msg,
+            distribute_rewards_for_all_tributes_already_claimed_on_hydro,
+        },
         tws::{
             complete_hydromancer_time_weighted_shares, initialize_vessel_tws, reset_vessel_vote,
         },
@@ -232,16 +235,24 @@ fn execute_claim(
     validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
 
     let contract_address = env.contract.address.clone();
+    // remove duplicates ids
+    let tribute_ids: HashSet<u64> = tribute_ids.into_iter().collect();
 
-    let tributes = query_hydro_specific_tributes(&deps.as_ref(), &constants, tribute_ids)?;
+    let tributes = query_hydro_specific_tributes(
+        &deps.as_ref(),
+        &constants,
+        tribute_ids.into_iter().collect(),
+    )?;
     // Validate round and tranche consistency, if round_id is not the same as the round_id in the tributes, return an error
     validate_round_tranche_consistency(&tributes.tributes, round_id, tranche_id)?;
     let mut outstanding_tributes = Vec::new();
+    let mut tributes_processed = Vec::new();
     for tribute in tributes.tributes {
         if state::is_tribute_processed(deps.storage, tribute.tribute_id) {
-            continue;
+            tributes_processed.push(tribute);
+        } else {
+            outstanding_tributes.push(tribute);
         }
-        outstanding_tributes.push(tribute);
     }
 
     let mut response = Response::new().add_attribute("action", "claim");
@@ -256,6 +267,7 @@ fn execute_claim(
         vessel_ids,
         &constants,
         &contract_address,
+        tributes_processed,
         outstanding_tributes,
         response,
     )?;
@@ -275,13 +287,14 @@ fn process_outstanding_tribute_claims(
     vessel_ids: Vec<u64>,
     constants: &Constants,
     contract_address: &Addr,
-    claims: Vec<TributeClaim>,
+    tributes_already_claimed_on_hydro: Vec<TributeClaim>,
+    outstanding_tributes: Vec<TributeClaim>,
     mut response: Response,
 ) -> Result<Response, ContractError> {
     let mut tributes_process_in_reply = BTreeSet::new();
     let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
 
-    for outstanding_tribute in claims {
+    for outstanding_tribute in outstanding_tributes {
         let sub_msg = build_claim_tribute_sub_msg(
             round_id,
             tranche_id,
@@ -311,14 +324,13 @@ fn process_outstanding_tribute_claims(
             balances.push(outstanding_tribute.amount.clone());
         }
     }
-    let messages = distribute_rewards_for_all_round_proposals(
+    let messages = distribute_rewards_for_all_tributes_already_claimed_on_hydro(
         deps.branch(),
         info.sender.clone(),
         round_id,
-        tranche_id,
         vessel_ids,
         constants.clone(),
-        tributes_process_in_reply,
+        tributes_already_claimed_on_hydro,
     )?;
 
     Ok(response.add_messages(messages))

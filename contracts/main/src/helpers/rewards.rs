@@ -1,9 +1,9 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use cosmwasm_std::{
     to_json_binary, Addr, BankMsg, Coin, Decimal, Deps, DepsMut, Storage, SubMsg, Uint128, WasmMsg,
 };
-use hydro_interface::msgs::{DenomInfoResponse, ExecuteMsg as HydroExecuteMsg};
+use hydro_interface::msgs::{DenomInfoResponse, ExecuteMsg as HydroExecuteMsg, TributeClaim};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::{
     msgs::{
@@ -16,12 +16,8 @@ use zephyrus_core::{
 use crate::{
     errors::ContractError,
     helpers::{
-        hydro_queries::{
-            query_hydro_derivative_token_info_providers, query_hydro_proposal,
-            query_hydro_round_all_proposals,
-        },
+        hydro_queries::{query_hydro_derivative_token_info_providers, query_hydro_proposal},
         hydromancer_tribute_data_loader::{DataLoader, StateDataLoader},
-        tribute_queries::query_tribute_proposal_tributes,
     },
     state,
 };
@@ -411,34 +407,24 @@ pub fn calculate_rewards_for_vessels_on_tribute(
 
     Ok(amount_to_distribute)
 }
-/// Distribute the rewards for all vessels on all round proposals
-pub fn distribute_rewards_for_all_round_proposals(
+/// Distribute the rewards for all vessels for all tributes in params that should alreadyhave been claimed on hydro
+pub fn distribute_rewards_for_all_tributes_already_claimed_on_hydro(
     mut deps: DepsMut<'_>,
     sender: Addr,
     round_id: u64,
-    tranche_id: u64,
     vessel_ids: Vec<u64>,
     constants: Constants,
-    tributes_process_in_reply: BTreeSet<u64>,
+    tributes_already_claimed_on_hydro: Vec<TributeClaim>,
 ) -> Result<Vec<BankMsg>, ContractError> {
     let token_info_provider =
         query_hydro_derivative_token_info_providers(&deps.as_ref(), &constants, round_id)?;
-    let all_round_proposals =
-        query_hydro_round_all_proposals(&deps.as_ref(), &constants, round_id, tranche_id)?;
 
     let mut messages: Vec<BankMsg> = vec![];
-    for proposal in all_round_proposals {
-        let proposal_tributes = query_tribute_proposal_tributes(
-            &deps.as_ref(),
-            &constants,
-            round_id,
-            proposal.proposal_id,
-        )?;
-
+    for tribute in tributes_already_claimed_on_hydro {
         // If the total proposal voting power is not found, we skip the proposal it means that zephyrus did not vote on the proposal
         let Ok(total_proposal_voting_power) = calculate_total_voting_power_on_proposal(
             deps.storage,
-            proposal.proposal_id,
+            tribute.proposal_id,
             round_id,
             &token_info_provider,
         ) else {
@@ -449,58 +435,51 @@ pub fn distribute_rewards_for_all_round_proposals(
             continue;
         }
 
-        for tribute in proposal_tributes {
-            // tributes that have been just claimed will be processed in the reply handler, so we skip them here
-            if tributes_process_in_reply.contains(&tribute.tribute_id) {
-                continue;
-            }
+        let tribute_funds_after_commission =
+            state::get_tribute_processed(deps.storage, tribute.tribute_id)?;
 
-            let tribute_funds_after_commission =
-                state::get_tribute_processed(deps.storage, tribute.tribute_id)?;
+        let mut reward_amount = Uint128::zero();
 
-            let mut reward_amount = Uint128::zero();
-
-            // It is possible that there is no tributes yet for this proposal (liquidity not yet deployed)
-            if let Some(tribute_rewards) = tribute_funds_after_commission {
-                // Cumulate rewards for each vessel
-                let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
-                    &mut deps,
-                    vessel_ids.clone(),
-                    tribute.tribute_id,
-                    tribute.tranche_id,
-                    tribute.round_id,
-                    tribute.proposal_id,
-                    tribute_rewards,
-                    constants.clone(),
-                    token_info_provider.clone(),
-                    total_proposal_voting_power,
-                )?;
-
-                reward_amount = amount_to_distribute.to_uint_floor();
-            }
-
-            if !reward_amount.is_zero() {
-                let send_msg = BankMsg::Send {
-                    to_address: sender.to_string(),
-                    amount: vec![Coin {
-                        denom: tribute.funds.denom.clone(),
-                        amount: reward_amount,
-                    }],
-                };
-                messages.push(send_msg);
-            }
-
-            // Process the case that the vessel owner is also the hydromancer and send its commission to the message sender
-            let hydromancer_rewards_send_msg = process_hydromancer_claiming_rewards(
+        // It is possible that there is no tributes yet for this proposal (liquidity not yet deployed)
+        if let Some(tribute_rewards) = tribute_funds_after_commission {
+            // Cumulate rewards for each vessel
+            let amount_to_distribute = distribute_rewards_for_vessels_on_tribute(
                 &mut deps,
-                sender.clone(),
-                round_id,
+                vessel_ids.clone(),
                 tribute.tribute_id,
+                tribute.tranche_id,
+                tribute.round_id,
+                tribute.proposal_id,
+                tribute_rewards,
+                constants.clone(),
+                token_info_provider.clone(),
+                total_proposal_voting_power,
             )?;
 
-            if let Some(send_msg) = hydromancer_rewards_send_msg {
-                messages.push(send_msg);
-            }
+            reward_amount = amount_to_distribute.to_uint_floor();
+        }
+
+        if !reward_amount.is_zero() {
+            let send_msg = BankMsg::Send {
+                to_address: sender.to_string(),
+                amount: vec![Coin {
+                    denom: tribute.amount.denom.clone(),
+                    amount: reward_amount,
+                }],
+            };
+            messages.push(send_msg);
+        }
+
+        // Process the case that the vessel owner is also the hydromancer and send its commission to the message sender
+        let hydromancer_rewards_send_msg = process_hydromancer_claiming_rewards(
+            &mut deps,
+            sender.clone(),
+            round_id,
+            tribute.tribute_id,
+        )?;
+
+        if let Some(send_msg) = hydromancer_rewards_send_msg {
+            messages.push(send_msg);
         }
     }
 

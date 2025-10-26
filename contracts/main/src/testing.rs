@@ -2307,6 +2307,7 @@ fn claim_rewards_fail_unauthorized_vessel() {
         round_id: deps.querier.get_current_round(),
         tranche_id: 1,
         vessel_ids: vec![999], // Non-existent vessel
+        tribute_ids: vec![1, 2],
     };
 
     let res = execute(
@@ -2372,6 +2373,7 @@ fn claim_rewards_fail_wrong_owner() {
         round_id: deps.querier.get_current_round(),
         tranche_id: 1,
         vessel_ids: vec![0],
+        tribute_ids: vec![1, 2],
     };
 
     let res = execute(
@@ -2387,6 +2389,63 @@ fn claim_rewards_fail_wrong_owner() {
     // Should fail because Bob doesn't own the vessel
     assert!(res.is_err());
     assert_eq!(res.unwrap_err(), ContractError::Unauthorized);
+}
+
+#[test]
+fn claim_rewards_inconsistent_tribute_ids() {
+    let mut deps = mock_dependencies();
+    init_contract(deps.as_mut());
+
+    let alice_address = make_valid_addr("alice");
+    let _user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("Should create user id");
+    let constants = state::get_constants(deps.as_mut().storage).unwrap();
+    // Create vessel owned by Alice
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "0".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: constants.default_hydromancer_id,
+            class_period: 3_000_000,
+        })
+        .unwrap(),
+    });
+
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: constants.hydro_config.hydro_contract_address.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok());
+    let claim_msg = ExecuteMsg::Claim {
+        round_id: 2,
+        tranche_id: 1,
+        vessel_ids: vec![0],
+        tribute_ids: vec![1, 2],
+    };
+
+    let res = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        claim_msg,
+    );
+    assert!(res.is_err());
+    assert_eq!(
+        res.unwrap_err(),
+        ContractError::CustomError {
+            msg: "Round and tranche ID mismatch in tributes".to_string()
+        }
+    );
 }
 
 #[test]

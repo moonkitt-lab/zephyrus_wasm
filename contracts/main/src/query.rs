@@ -6,7 +6,7 @@ use zephyrus_core::{
     msgs::{
         ConstantsResponse, HydromancerId, QueryMsg, RewardInfo, RoundId, TributeId,
         VesselHarborInfo, VesselHarborResponse, VesselsResponse, VesselsRewardsResponse,
-        VotedProposalsResponse, VotingPowerResponse,
+        VotedProposalsResponse,
     },
     state::HydromancerTribute,
 };
@@ -35,7 +35,6 @@ const DEFAULT_PAGINATION_LIMIT: usize = 100;
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
     match msg {
-        QueryMsg::VotingPower {} => to_json_binary(&query_voting_power(deps, env)?),
         QueryMsg::VesselsByOwner {
             owner,
             start_index,
@@ -74,10 +73,6 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             to_json_binary(&query_voted_proposals(deps, round_id)?)
         }
     }
-}
-
-fn query_voting_power(_deps: Deps, _env: Env) -> Result<VotingPowerResponse, StdError> {
-    todo!()
 }
 
 fn query_voted_proposals(deps: Deps, round_id: u64) -> StdResult<VotedProposalsResponse> {

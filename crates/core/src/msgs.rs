@@ -177,11 +177,6 @@ pub enum ExecuteMsg {
 }
 
 #[cw_serde]
-pub struct VotingPowerResponse {
-    pub voting_power: u64,
-}
-
-#[cw_serde]
 pub struct VesselHarborInfo {
     pub vessel_to_harbor: Option<VesselHarbor>,
     pub vessel_id: u64,
@@ -209,8 +204,6 @@ pub struct ConstantsResponse {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    #[returns(VotingPowerResponse)]
-    VotingPower {},
     #[returns(VesselsResponse)]
     VesselsByOwner {
         owner: String,

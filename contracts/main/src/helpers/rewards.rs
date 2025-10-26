@@ -139,7 +139,7 @@ pub fn calculate_total_voting_power_on_proposal(
     round_id: RoundId,
     token_info_provider: &HashMap<String, DenomInfoResponse>,
 ) -> Result<Decimal, ContractError> {
-    let list_tws = state::get_proposal_time_weighted_shares(storage, proposal_id);
+    let list_tws = state::get_proposal_time_weighted_shares(storage, round_id, proposal_id);
     let list_tws = list_tws.unwrap();
     let mut total_voting_power = Decimal::zero();
 

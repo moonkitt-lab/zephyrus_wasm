@@ -470,8 +470,13 @@ mod tests {
         let token_group_id = "dAtom".to_string();
         let key = (proposal_id, token_group_id.clone());
         proposal_tws_changes.insert(key, 1000i128);
+        let current_round_id = 1;
 
-        let result = apply_proposal_tws_changes(deps.as_mut().storage, proposal_tws_changes);
+        let result = apply_proposal_tws_changes(
+            deps.as_mut().storage,
+            current_round_id,
+            proposal_tws_changes,
+        );
 
         assert!(result.is_ok());
         // Function should execute without error - storage verification would require internal access
@@ -484,10 +489,11 @@ mod tests {
 
         let proposal_id = 1;
         let token_group_id = "dAtom".to_string();
-
+        let current_round_id = 1;
         // First add some TWS
         state::add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id, // round_id
             proposal_id,
             &token_group_id,
             1500,
@@ -498,7 +504,11 @@ mod tests {
         let key = (proposal_id, token_group_id.clone());
         proposal_tws_changes.insert(key, -500i128);
 
-        let result = apply_proposal_tws_changes(deps.as_mut().storage, proposal_tws_changes);
+        let result = apply_proposal_tws_changes(
+            deps.as_mut().storage,
+            current_round_id,
+            proposal_tws_changes,
+        );
 
         assert!(result.is_ok());
         // Function should execute without error - storage verification would require internal access
@@ -851,6 +861,7 @@ mod tests {
         // Add some TWS to proposal and hydromancer proposal
         state::add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             "dAtom",
             1000,
@@ -953,6 +964,7 @@ mod tests {
         // Add some TWS to proposal (no hydromancer TWS for user-controlled vessels)
         state::add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             "stAtom",
             500,

@@ -71,7 +71,7 @@ const PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
     u128,
 > = Map::new("proposal_hydromancer_tw_shares_by_token_group_id");
 
-const PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID: Map<(HydroProposalId, &str), u128> =
+const PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID: Map<(RoundId, HydroProposalId, &str), u128> =
     Map::new("proposal_total_tw_shares_by_token_group_id");
 
 const VESSEL_SHARES_INFO: Map<(RoundId, HydroLockId), VesselSharesInfo> =
@@ -885,24 +885,46 @@ pub fn substract_time_weighted_shares_from_hydromancer(
 
 pub fn get_proposal_time_weighted_shares(
     storage: &dyn Storage,
+    round_id: RoundId,
     proposal_id: HydroProposalId,
 ) -> StdResult<Vec<(String, u128)>> {
-    let prefix = proposal_id;
+    let prefix = (round_id, proposal_id);
     PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID
         .prefix(prefix)
         .range(storage, None, None, Order::Ascending)
         .collect()
 }
 
+pub fn get_voted_proposals(
+    storage: &dyn Storage,
+    round_id: RoundId,
+) -> StdResult<Vec<HydroProposalId>> {
+    let sub_prefix = round_id;
+    let mut proposal_ids = std::collections::HashSet::new();
+
+    for item in PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID
+        .sub_prefix(sub_prefix)
+        .range(storage, None, None, Order::Ascending)
+    {
+        let ((proposal_id, _), tws) = item?;
+        if tws > 0 {
+            proposal_ids.insert(proposal_id);
+        }
+    }
+
+    Ok(proposal_ids.into_iter().collect())
+}
+
 pub fn add_time_weighted_shares_to_proposal(
     storage: &mut dyn Storage,
+    round_id: RoundId,
     proposal_id: HydroProposalId,
     token_group_id: &str,
     time_weighted_shares: u128,
 ) -> StdResult<u128> {
     PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
-        (proposal_id, token_group_id),
+        (round_id, proposal_id, token_group_id),
         |current_shares| {
             Ok(current_shares
                 .unwrap_or_default()
@@ -914,13 +936,14 @@ pub fn add_time_weighted_shares_to_proposal(
 
 pub fn substract_time_weighted_shares_from_proposal(
     storage: &mut dyn Storage,
+    round_id: RoundId,
     proposal_id: HydroProposalId,
     token_group_id: &str,
     time_weighted_shares: u128,
 ) -> StdResult<u128> {
     PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
-        (proposal_id, token_group_id),
+        (round_id, proposal_id, token_group_id),
         |current_shares| {
             Ok(current_shares
                 .unwrap_or_default()

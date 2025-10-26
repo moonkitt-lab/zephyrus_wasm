@@ -43,6 +43,7 @@ pub fn assign_vessel_to_hydromancer(
             // Remove vessel TWS from proposal totals
             state::substract_time_weighted_shares_from_proposal(
                 storage,
+                current_round_id,
                 proposal_id,
                 &vessel_shares.token_group_id,
                 vessel_shares.time_weighted_shares,
@@ -132,6 +133,7 @@ pub fn assign_vessel_to_user_control(
             // Remove vessel TWS from proposal totals
             state::substract_time_weighted_shares_from_proposal(
                 storage,
+                current_round_id,
                 proposal_id,
                 &vessel_shares.token_group_id,
                 vessel_shares.time_weighted_shares,

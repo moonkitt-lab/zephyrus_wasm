@@ -238,6 +238,8 @@ pub enum QueryMsg {
         tranche_id: u64,
         vessel_ids: Vec<u64>,
     },
+    #[returns(VotedProposalsResponse)]
+    VotedProposals { round_id: u64 },
 }
 
 #[cw_serde]
@@ -295,4 +297,9 @@ pub struct VesselsRewardsResponse {
     pub round_id: u64,
     pub tranche_id: u64,
     pub rewards: Vec<RewardInfo>,
+}
+
+#[cw_serde]
+pub struct VotedProposalsResponse {
+    pub voted_proposals: Vec<u64>,
 }

@@ -984,10 +984,12 @@ mod tests {
         let proposal_id = 1;
         let token_group_id = "test_token";
         let shares = 1000u128;
+        let current_round_id = 1;
 
         // Test adding proposal shares
         let result = add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             token_group_id,
             shares,
@@ -995,7 +997,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Test getting proposal shares
-        let proposal_tws = get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id);
+        let proposal_tws =
+            get_proposal_time_weighted_shares(deps.as_ref().storage, current_round_id, proposal_id);
         assert!(proposal_tws.is_ok());
         let tws = proposal_tws.unwrap();
         assert_eq!(tws.len(), 1);
@@ -1005,6 +1008,7 @@ mod tests {
         // Test subtracting proposal shares
         let result = substract_time_weighted_shares_from_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             token_group_id,
             500u128,
@@ -1012,7 +1016,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify shares are reduced
-        let proposal_tws = get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id);
+        let proposal_tws =
+            get_proposal_time_weighted_shares(deps.as_ref().storage, current_round_id, proposal_id);
         assert!(proposal_tws.is_ok());
         let tws = proposal_tws.unwrap();
         assert_eq!(tws[0].1, 500u128);

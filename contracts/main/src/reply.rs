@@ -279,7 +279,11 @@ pub fn handle_refresh_time_weighted_shares_reply(
     // Apply all batched changes in single write operations
     apply_hydromancer_tws_changes(deps.storage, hydromancer_tws_changes)?;
 
-    apply_proposal_tws_changes(deps.storage, tws_changes.proposal_changes)?;
+    apply_proposal_tws_changes(
+        deps.storage,
+        payload.current_round_id,
+        tws_changes.proposal_changes,
+    )?;
 
     apply_proposal_hydromancer_tws_changes(deps.storage, tws_changes.proposal_hydromancer_changes)?;
 
@@ -350,6 +354,7 @@ pub fn handle_vote_reply(
 
                         state::substract_time_weighted_shares_from_proposal(
                             deps.storage,
+                            payload.round_id,
                             previous_harbor_id,
                             &vessel_shares_info.token_group_id,
                             vessel_shares_info.time_weighted_shares.u128(),
@@ -357,6 +362,7 @@ pub fn handle_vote_reply(
 
                         state::add_time_weighted_shares_to_proposal(
                             deps.storage,
+                            payload.round_id,
                             vessels_to_harbor.harbor_id,
                             &vessel_shares_info.token_group_id,
                             vessel_shares_info.time_weighted_shares.u128(),
@@ -397,6 +403,7 @@ pub fn handle_vote_reply(
                     // update time weighted shares for proposal
                     state::add_time_weighted_shares_to_proposal(
                         deps.storage,
+                        payload.round_id,
                         vessels_to_harbor.harbor_id,
                         &vessel_shares_info.token_group_id,
                         vessel_shares_info.time_weighted_shares.u128(),

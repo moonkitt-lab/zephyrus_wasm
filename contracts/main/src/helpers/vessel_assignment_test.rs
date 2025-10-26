@@ -214,6 +214,7 @@ mod tests {
         // Add TWS to proposal totals
         state::add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             "dAtom",
             1000,

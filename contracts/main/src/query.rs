@@ -6,7 +6,7 @@ use zephyrus_core::{
     msgs::{
         ConstantsResponse, HydromancerId, QueryMsg, RewardInfo, RoundId, TributeId,
         VesselHarborInfo, VesselHarborResponse, VesselsResponse, VesselsRewardsResponse,
-        VotingPowerResponse,
+        VotedProposalsResponse, VotingPowerResponse,
     },
     state::HydromancerTribute,
 };
@@ -70,11 +70,19 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             tranche_id,
             vessel_ids,
         )?),
+        QueryMsg::VotedProposals { round_id } => {
+            to_json_binary(&query_voted_proposals(deps, round_id)?)
+        }
     }
 }
 
 fn query_voting_power(_deps: Deps, _env: Env) -> Result<VotingPowerResponse, StdError> {
     todo!()
+}
+
+fn query_voted_proposals(deps: Deps, round_id: u64) -> StdResult<VotedProposalsResponse> {
+    let voted_proposals = state::get_voted_proposals(deps.storage, round_id)?;
+    Ok(VotedProposalsResponse { voted_proposals })
 }
 
 fn query_vessels_by_owner(

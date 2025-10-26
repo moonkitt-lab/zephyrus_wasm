@@ -150,6 +150,7 @@ pub fn apply_hydromancer_tws_changes(
 /// Apply batched proposal TWS changes in single write operations
 pub fn apply_proposal_tws_changes(
     storage: &mut dyn Storage,
+    round_id: RoundId,
     proposal_tws_changes: HashMap<(HydroProposalId, String), i128>,
 ) -> Result<(), ContractError> {
     for ((proposal_id, token_group_id), tws_delta) in proposal_tws_changes {
@@ -157,6 +158,7 @@ pub fn apply_proposal_tws_changes(
             Ordering::Greater => {
                 state::add_time_weighted_shares_to_proposal(
                     storage,
+                    round_id,
                     proposal_id,
                     &token_group_id,
                     tws_delta as u128,
@@ -165,6 +167,7 @@ pub fn apply_proposal_tws_changes(
             Ordering::Less => {
                 state::substract_time_weighted_shares_from_proposal(
                     storage,
+                    round_id,
                     proposal_id,
                     &token_group_id,
                     (-tws_delta) as u128,
@@ -333,6 +336,7 @@ pub fn reset_vessel_vote(
             .expect("Vessel shares for voted vessels should be initialized ");
     state::substract_time_weighted_shares_from_proposal(
         storage,
+        current_round_id,
         proposal_id,
         &vessel_shares.token_group_id,
         vessel_shares.time_weighted_shares,

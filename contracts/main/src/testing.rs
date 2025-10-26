@@ -1,3 +1,5 @@
+use std::thread::current;
+
 use crate::helpers::hydro_queries::query_hydro_lockups_shares;
 use crate::reply::handle_refresh_time_weighted_shares_reply;
 use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};
@@ -1913,10 +1915,11 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     } else {
         panic!("Message is not message that it should be !");
     }
+    let current_round_id = deps.querier.get_current_round();
     // Step 6: Check that the proposal time weighted shares, vessel tws and hydromancer tws are correct
     let hydromancer_tws = state::get_hydromancer_time_weighted_shares_by_round(
         deps.as_ref().storage,
-        deps.querier.get_current_round(),
+        current_round_id,
         default_hydromancer_id,
     )
     .expect("Should get hydromancer tws even if there's no tws an empty list should be returned");
@@ -1941,12 +1944,11 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
         0
     ));
 
-    let vessel_shares =
-        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
+    let vessel_shares = state::get_vessel_shares_info(deps.as_ref().storage, current_round_id, 0);
     assert!(vessel_shares.is_ok());
 
     let vessel_shares_info =
-        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
+        state::get_vessel_shares_info(deps.as_ref().storage, current_round_id, 0);
     assert!(vessel_shares_info.is_ok());
     assert_eq!(
         vessel_shares_info.unwrap().time_weighted_shares,
@@ -1968,8 +1970,12 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     assert_eq!(hydromancer_tws[0].0 .0, lockup_shares.locked_rounds);
     assert_eq!(hydromancer_tws[0].0 .1, lockup_shares.token_group_id);
 
-    let proposal_tws = state::get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id)
-        .expect("Should get proposal tws");
+    let proposal_tws = state::get_proposal_time_weighted_shares(
+        deps.as_ref().storage,
+        current_round_id,
+        proposal_id,
+    )
+    .expect("Should get proposal tws");
     assert_eq!(proposal_tws.len(), 1);
     assert_eq!(proposal_tws[0].1, 0); // user vote should have been removed so tws should be 0
     assert_eq!(proposal_tws[0].0, lockup_shares.token_group_id);
@@ -2098,8 +2104,12 @@ fn user_take_control_after_new_round_succeed() {
     .expect("Should get hydromancer proposal tws even if there's no tws an empty list should be returned");
     assert!(hydromancer_proposal_tws.is_empty());
 
-    let proposal_tws = state::get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id)
-        .expect("Should get proposal tws");
+    let proposal_tws = state::get_proposal_time_weighted_shares(
+        deps.as_ref().storage,
+        deps.querier.get_current_round(),
+        proposal_id,
+    )
+    .expect("Should get proposal tws");
     assert_eq!(proposal_tws.len(), 1);
     assert_eq!(proposal_tws[0].1, lockup_shares.time_weighted_shares.u128());
     assert_eq!(proposal_tws[0].0, lockup_shares.token_group_id);

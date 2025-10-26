@@ -25,6 +25,7 @@ fn create_mock_constants() -> Constants {
         commission_recipient: Addr::unchecked("commission_recipient"),
         default_hydromancer_id: 1u64,
         paused_contract: false,
+        min_tokens_per_vessel: 5_000_000,
     }
 }
 

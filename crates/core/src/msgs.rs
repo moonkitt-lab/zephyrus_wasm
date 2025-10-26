@@ -21,6 +21,7 @@ pub struct InstantiateMsg {
     pub default_hydromancer_commission_rate: Decimal,
     pub default_hydromancer_address: String,
     pub commission_recipient: String,
+    pub min_tokens_per_vessel: u128,
 }
 
 #[cw_serde]

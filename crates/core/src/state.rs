@@ -37,6 +37,7 @@ pub struct Constants {
     pub hydro_config: HydroConfig,
     pub commission_rate: Decimal,
     pub commission_recipient: Addr,
+    pub min_tokens_per_vessel: u128,
 }
 
 #[cw_serde]

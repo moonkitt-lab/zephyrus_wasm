@@ -1,6 +1,6 @@
 use crate::{errors::ContractError, state};
 use cosmwasm_std::{Addr, Storage};
-use hydro_interface::msgs::{LockupWithPerTrancheInfo, RoundLockPowerSchedule};
+use hydro_interface::msgs::{LockupWithPerTrancheInfo, RoundLockPowerSchedule, TributeClaim};
 use zephyrus_core::msgs::{HydroLockId, HydromancerId, VesselsToHarbor};
 use zephyrus_core::state::{Constants, Vessel};
 
@@ -177,6 +177,21 @@ pub fn validate_user_controls_vessel(
         let hydromancer_id = state::get_hydromancer_id_by_address(storage, user_addr)?;
         if vessel.hydromancer_id != Some(hydromancer_id) {
             return Err(ContractError::Unauthorized {});
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_round_tranche_consistency(
+    outstanding_tributes: &[TributeClaim],
+    round_id: u64,
+    tranche_id: u64,
+) -> Result<(), ContractError> {
+    for tribute in outstanding_tributes {
+        if tribute.round_id != round_id || tribute.tranche_id != tranche_id {
+            return Err(ContractError::CustomError {
+                msg: "Round and tranche ID mismatch in tributes".to_string(),
+            });
         }
     }
     Ok(())

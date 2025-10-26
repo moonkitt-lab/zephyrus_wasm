@@ -7,8 +7,9 @@ use hydro_interface::msgs::{
     CurrentRoundResponse, DenomInfoResponse, DerivativeTokenInfoProviderQueryMsg,
     HydroConstantsResponse, HydroQueryMsg, LockupWithPerTrancheInfo, LockupsSharesResponse,
     OutstandingTributeClaimsResponse, Proposal, ProposalResponse, RoundProposalsResponse,
-    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider,
-    TokenInfoProvidersResponse, TranchesResponse,
+    SpecificTributesResponse, SpecificUserLockupsResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse,
+    TranchesResponse,
 };
 use zephyrus_core::msgs::{RoundId, TrancheId};
 use zephyrus_core::state::Constants;
@@ -210,4 +211,16 @@ pub fn query_hydro_round_all_proposals(
     }
 
     Ok(all_proposals)
+}
+
+pub fn query_hydro_specific_tributes(
+    deps: &Deps,
+    constants: &Constants,
+    tribute_ids: Vec<u64>,
+) -> StdResult<SpecificTributesResponse> {
+    let specific_tributes: SpecificTributesResponse = deps.querier.query_wasm_smart(
+        constants.hydro_config.hydro_contract_address.to_string(),
+        &HydroQueryMsg::SpecificTributes { tribute_ids },
+    )?;
+    Ok(specific_tributes)
 }

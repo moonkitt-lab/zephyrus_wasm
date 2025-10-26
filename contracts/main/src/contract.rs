@@ -26,7 +26,7 @@ use crate::{
         hydro_queries::{
             query_hydro_constants, query_hydro_current_round, query_hydro_lockups_shares,
             query_hydro_lockups_with_tranche_infos, query_hydro_outstanding_tribute_claims,
-            query_hydro_specific_user_lockups, query_hydro_tranches,
+            query_hydro_specific_tributes, query_hydro_specific_user_lockups, query_hydro_tranches,
         },
         rewards::{build_claim_tribute_sub_msg, distribute_rewards_for_all_round_proposals},
         tws::{
@@ -35,7 +35,8 @@ use crate::{
         validation::{
             validate_admin_address, validate_contract_is_not_paused, validate_contract_is_paused,
             validate_hydromancer_controls_vessels, validate_hydromancer_exists,
-            validate_lock_duration, validate_user_controls_vessel, validate_user_owns_vessels,
+            validate_lock_duration, validate_round_tranche_consistency,
+            validate_user_controls_vessel, validate_user_owns_vessels,
             validate_vessels_not_tied_to_proposal, validate_vote_duplicates,
         },
         vectors::join_u64_ids,
@@ -159,7 +160,16 @@ pub fn execute(
             round_id,
             tranche_id,
             vessel_ids,
-        } => execute_claim(deps, env, info, round_id, tranche_id, vessel_ids),
+            tribute_ids,
+        } => execute_claim(
+            deps,
+            env,
+            info,
+            round_id,
+            tranche_id,
+            vessel_ids,
+            tribute_ids,
+        ),
         ExecuteMsg::UpdateCommissionRate {
             new_commission_rate,
         } => execute_update_commission_rate(deps, info, new_commission_rate),
@@ -215,6 +225,7 @@ fn execute_claim(
     round_id: u64,
     tranche_id: u64,
     vessel_ids: Vec<u64>,
+    tribute_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
@@ -222,32 +233,32 @@ fn execute_claim(
 
     let contract_address = env.contract.address.clone();
 
-    // Check if zephyrus has outstanding tributes to claim
-    let outstanding_tributes_result = query_hydro_outstanding_tribute_claims(
-        &deps.as_ref(),
-        env,
-        &constants,
-        round_id,
-        tranche_id,
-    );
+    let tributes = query_hydro_specific_tributes(&deps.as_ref(), &constants, tribute_ids)?;
+    // Validate round and tranche consistency, if round_id is not the same as the round_id in the tributes, return an error
+    validate_round_tranche_consistency(&tributes.tributes, round_id, tranche_id)?;
+    let mut outstanding_tributes = Vec::new();
+    for tribute in tributes.tributes {
+        if state::is_tribute_processed(deps.storage, tribute.tribute_id) {
+            continue;
+        }
+        outstanding_tributes.push(tribute);
+    }
 
     let mut response = Response::new().add_attribute("action", "claim");
 
-    if let Ok(outstanding_tributes) = outstanding_tributes_result {
-        // Note: We still need to process, even if we found 0 outstanding tributes to claim,
-        // because they may have already been claimed previously
-        response = process_outstanding_tribute_claims(
-            deps.branch(),
-            info,
-            round_id,
-            tranche_id,
-            vessel_ids,
-            &constants,
-            &contract_address,
-            outstanding_tributes.claims,
-            response,
-        )?;
-    }
+    // Note: We still need to process, even if we found 0 outstanding tributes to claim,
+    // because they may have already been claimed previously
+    response = process_outstanding_tribute_claims(
+        deps.branch(),
+        info,
+        round_id,
+        tranche_id,
+        vessel_ids,
+        &constants,
+        &contract_address,
+        outstanding_tributes,
+        response,
+    )?;
 
     // Clear temporary distribution tracking data after successful batch completion
     state::clear_distribution_tracking(deps.storage)?;

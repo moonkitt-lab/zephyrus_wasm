@@ -160,6 +160,7 @@ pub enum ExecuteMsg {
         round_id: u64,
         tranche_id: u64,
         vessel_ids: Vec<u64>,
+        tribute_ids: Vec<u64>,
     },
     /// Executable message for admins
     /// to update the commission rate

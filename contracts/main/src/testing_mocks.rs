@@ -95,6 +95,9 @@ impl MockWasmQuerier {
                         start_from: _,
                         limit: _,
                     } => Err(StdError::generic_err("unsupported query type")),
+                    HydroQueryMsg::SpecificTributes { tribute_ids: _ } => {
+                        Err(StdError::generic_err("unsupported query type"))
+                    }
                 };
 
                 SystemResult::Ok(ContractResult::Ok(response.unwrap()))

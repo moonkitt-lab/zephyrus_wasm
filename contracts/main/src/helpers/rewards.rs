@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cosmwasm_std::{
     to_json_binary, Addr, BankMsg, Coin, Decimal, Deps, DepsMut, Storage, SubMsg, Uint128, WasmMsg,
@@ -584,4 +584,23 @@ pub fn calculate_hydromancer_claiming_rewards(
         }
     }
     Ok(None)
+}
+
+pub fn get_current_balances_for_outstanding_tributes_denoms(
+    deps: &DepsMut<'_>,
+    contract_address: &Addr,
+    outstanding_tributes: &[TributeClaim],
+) -> Result<Vec<cosmwasm_std::Coin>, ContractError> {
+    let mut tribute_denoms: HashSet<String> = HashSet::new();
+    for tribute in outstanding_tributes.iter() {
+        tribute_denoms.insert(tribute.amount.denom.clone());
+    }
+    let mut balances = Vec::new();
+    for tribute_denom in tribute_denoms {
+        let balance = deps
+            .querier
+            .query_balance(contract_address.clone(), tribute_denom.clone())?;
+        balances.push(balance);
+    }
+    Ok(balances)
 }

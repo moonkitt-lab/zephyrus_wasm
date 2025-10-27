@@ -1,9 +1,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankQuery, Binary, Decimal,
-    DepsMut, Env, MessageInfo, QueryRequest, Response as CwResponse, StdError, StdResult, SubMsg,
-    WasmMsg,
+    entry_point, from_json, to_json_binary, Addr, Binary, Coin, Decimal, DepsMut, Env, MessageInfo,
+    Response as CwResponse, StdError, StdResult, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups, TributeClaim};
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -31,6 +30,7 @@ use crate::{
         rewards::{
             build_claim_tribute_sub_msg,
             distribute_rewards_for_all_tributes_already_claimed_on_hydro,
+            get_current_balances_for_outstanding_tributes_denoms,
         },
         tws::{
             complete_hydromancer_time_weighted_shares, initialize_vessel_tws, reset_vessel_vote,
@@ -292,7 +292,12 @@ fn process_outstanding_tribute_claims(
     mut response: Response,
 ) -> Result<Response, ContractError> {
     let mut tributes_process_in_reply = BTreeSet::new();
-    let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
+    // To prevent denial of service on balance queries, we get only the current balances for the denoms of the outstanding tributes
+    let mut balances = get_current_balances_for_outstanding_tributes_denoms(
+        &deps,
+        contract_address,
+        &outstanding_tributes,
+    )?;
 
     for outstanding_tribute in outstanding_tributes {
         let sub_msg = build_claim_tribute_sub_msg(
@@ -701,11 +706,6 @@ fn execute_decommission_vessels(
     validate_user_owns_vessels(deps.storage, &info.sender, &hydro_lock_ids)?;
 
     // Check the current balance before unlocking tokens
-    let balance_query = BankQuery::AllBalances {
-        address: env.contract.address.to_string(),
-    };
-    let previous_balances: AllBalanceResponse =
-        deps.querier.query(&QueryRequest::Bank(balance_query))?;
 
     // Retrieve the lock_entries from Hydro, and check which ones are expired
     let user_specific_lockups = query_hydro_specific_user_lockups(
@@ -718,10 +718,20 @@ fn execute_decommission_vessels(
     let lock_entries = user_specific_lockups.lockups;
 
     let mut expected_unlocked_ids = vec![];
+    let mut lockup_denoms = HashSet::new();
     for lock_entry in lock_entries {
         if lock_entry.lock_entry.lock_end < env.block.time {
             expected_unlocked_ids.push(lock_entry.lock_entry.lock_id);
         }
+        lockup_denoms.insert(lock_entry.lock_entry.funds.denom.clone());
+    }
+    let mut previous_balances: Vec<Coin> = Vec::new();
+    // to prevent denial of service on balance queries, we get only the current balances for the denoms of the lockups
+    for lockup_denom in lockup_denoms {
+        let balance = deps
+            .querier
+            .query_balance(env.contract.address.clone(), lockup_denom.clone())?;
+        previous_balances.push(balance);
     }
 
     // Create the execute message for unlocking
@@ -736,7 +746,7 @@ fn execute_decommission_vessels(
     };
 
     let decommission_vessels_params = DecommissionVesselsReplyPayload {
-        previous_balances: previous_balances.amount,
+        previous_balances,
         expected_unlocked_ids,
         vessel_owner: info.sender.clone(),
     };

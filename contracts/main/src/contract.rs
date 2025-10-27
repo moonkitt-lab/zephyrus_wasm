@@ -461,13 +461,14 @@ fn execute_receive_nft(
     let locked_rounds = lockup_info.locked_rounds;
 
     // Always save vessel shares info
-    state::save_vessel_shares_info(
+    state::save_vessel_info_snapshot(
         deps.storage,
         vessel.hydro_lock_id,
         current_round,
         current_time_weighted_shares,
         token_group_id.clone(),
         locked_rounds,
+        Some(vessel_info.hydromancer_id),
     )?;
 
     if current_time_weighted_shares > 0 {
@@ -1002,13 +1003,14 @@ fn execute_user_vote(
                 lockup_shares_info.lock_id,
             );
             if vessel_shares_info.is_err() {
-                state::save_vessel_shares_info(
+                state::save_vessel_info_snapshot(
                     deps.storage,
                     lockup_shares_info.lock_id,
                     current_round_id,
                     lockup_shares_info.time_weighted_shares.u128(),
                     lockup_shares_info.token_group_id,
                     lockup_shares_info.locked_rounds,
+                    None,
                 )?;
             }
         }

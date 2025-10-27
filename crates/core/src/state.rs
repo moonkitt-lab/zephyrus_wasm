@@ -24,10 +24,17 @@ impl Vessel {
 }
 
 #[cw_serde]
-pub struct VesselSharesInfo {
+pub struct VesselInfoSnapshot {
     pub time_weighted_shares: u128,
     pub token_group_id: String,
     pub locked_rounds: u64,
+    pub hydromancer_id: Option<HydromancerId>,
+}
+
+impl VesselInfoSnapshot {
+    pub fn was_under_user_control(&self) -> bool {
+        self.hydromancer_id.is_some()
+    }
 }
 
 #[cw_serde]

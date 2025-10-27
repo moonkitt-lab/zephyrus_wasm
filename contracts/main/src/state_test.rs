@@ -20,7 +20,7 @@ mod tests {
             is_tokenized_share_record_used, is_vessel_owned_by, is_vessel_used_under_user_control,
             is_whitelisted_admin, iterate_vessels_with_predicate, mark_hydromancer_tws_complete,
             modify_auto_maintenance, remove_vessel, remove_vessel_from_hydromancer,
-            remove_vessel_harbor, save_vessel, save_vessel_shares_info,
+            remove_vessel_harbor, save_vessel, save_vessel_info_snapshot,
             substract_time_weighted_shares_from_hydromancer,
             substract_time_weighted_shares_from_proposal,
             substract_time_weighted_shares_from_proposal_for_hydromancer, take_control_of_vessels,
@@ -574,13 +574,14 @@ mod tests {
         let locked_rounds = 5u64;
 
         // Test saving vessel shares info
-        let result = save_vessel_shares_info(
+        let result = save_vessel_info_snapshot(
             deps.as_mut().storage,
             vessel_id,
             round_id,
             time_weighted_shares,
             token_group_id.clone(),
             locked_rounds,
+            None,
         );
         assert!(result.is_ok());
 

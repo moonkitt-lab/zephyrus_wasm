@@ -242,13 +242,14 @@ pub fn handle_refresh_time_weighted_shares_reply(
             state::get_vessel_shares_info(deps.storage, payload.current_round_id, vessel_id).ok();
 
         // Save new vessel shares info
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.storage,
             vessel_id,
             payload.current_round_id,
             updated_lockup_shares.time_weighted_shares.u128(),
             updated_lockup_shares.token_group_id.clone(),
             updated_lockup_shares.locked_rounds,
+            vessel.hydromancer_id,
         )?;
 
         // Batch hydromancer TWS changes if vessel is controlled by hydromancer

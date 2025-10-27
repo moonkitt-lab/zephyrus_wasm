@@ -4,14 +4,14 @@ use hydro_interface::msgs::LockupsSharesInfo;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use zephyrus_core::msgs::{HydroProposalId, HydromancerId, RoundId, TrancheId};
-use zephyrus_core::state::{Constants, Vessel, VesselSharesInfo};
+use zephyrus_core::state::{Constants, Vessel, VesselInfoSnapshot};
 
 /// Batch hydromancer TWS changes in memory
 pub fn batch_hydromancer_tws_changes(
     hydromancer_tws_changes: &mut HashMap<(HydromancerId, RoundId, String, u64), i128>,
     hydromancer_id: HydromancerId,
     current_round_id: RoundId,
-    old_vessel_shares: &Option<VesselSharesInfo>,
+    old_vessel_shares: &Option<VesselInfoSnapshot>,
     new_lockup_shares: &LockupsSharesInfo,
 ) {
     // Subtract old TWS
@@ -58,7 +58,7 @@ pub fn batch_proposal_tws_changes(
     storage: &dyn Storage,
     tws_changes: &mut TwsChanges,
     vessel: &Vessel,
-    old_vessel_shares: &Option<VesselSharesInfo>,
+    old_vessel_shares: &Option<VesselInfoSnapshot>,
     new_lockup_shares: &LockupsSharesInfo,
     tranche_ids: &[TrancheId],
     current_round_id: RoundId,
@@ -243,13 +243,14 @@ pub fn complete_hydromancer_time_weighted_shares(
         if state::has_vessel_shares_info(deps.storage, current_round_id, lockup_shares.lock_id) {
             continue;
         }
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.storage,
             lockup_shares.lock_id,
             current_round_id,
             lockup_shares.time_weighted_shares.u128(),
             lockup_shares.token_group_id.clone(),
             lockup_shares.locked_rounds,
+            Some(hydromancer_id),
         )?;
 
         // Vessel has voting power
@@ -295,14 +296,16 @@ pub fn initialize_vessel_tws(
 
     // Process each vessel's TWS data
     for lockup_info in &lockups_shares_response.lockups_shares_info {
+        let vessel = state::get_vessel(deps.storage, lockup_info.lock_id)?;
         // Save vessel TWS info
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.storage,
             lockup_info.lock_id,
             current_round_id,
             lockup_info.time_weighted_shares.u128(),
             lockup_info.token_group_id.clone(),
             lockup_info.locked_rounds,
+            vessel.hydromancer_id,
         )?;
 
         // Update hydromancer TWS if vessel is controlled by one

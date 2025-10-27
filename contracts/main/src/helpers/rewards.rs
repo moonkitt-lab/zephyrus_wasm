@@ -7,10 +7,10 @@ use hydro_interface::msgs::{DenomInfoResponse, ExecuteMsg as HydroExecuteMsg, Tr
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::{
     msgs::{
-        ClaimTributeReplyPayload, HydroLockId, HydroProposalId, HydromancerId, RoundId, TrancheId,
-        TributeId, CLAIM_TRIBUTE_REPLY_ID,
+        ClaimTributeReplyPayload, HydroProposalId, HydromancerId, RoundId, TrancheId, TributeId,
+        CLAIM_TRIBUTE_REPLY_ID,
     },
-    state::{Constants, HydromancerTribute},
+    state::{Constants, HydromancerTribute, VesselInfoSnapshot},
 };
 
 use crate::{
@@ -161,24 +161,17 @@ pub fn calculate_total_voting_power_on_proposal(
 
 /// Calculate the voting power of a vessel for a specific round.
 pub fn calculate_voting_power_of_vessel(
-    storage: &dyn Storage,
-    vessel_id: HydroLockId,
     round_id: RoundId,
     token_info_provider: &HashMap<String, DenomInfoResponse>,
+    vessel_snapshot: &VesselInfoSnapshot,
 ) -> Result<Decimal, ContractError> {
-    // Vessel shares should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
-    let vessel_share_info = state::get_vessel_shares_info(storage, round_id, vessel_id);
-    if vessel_share_info.is_err() {
-        return Ok(Decimal::zero());
-    }
-    let vessel_share_info = vessel_share_info.unwrap();
     let token_info = token_info_provider
-        .get(&vessel_share_info.token_group_id)
+        .get(&vessel_snapshot.token_group_id)
         .ok_or(ContractError::TokenInfoProviderNotFound {
-            token_group_id: vessel_share_info.token_group_id.clone(),
+            token_group_id: vessel_snapshot.token_group_id.clone(),
             round_id,
         })?;
-    let voting_power = Decimal::from_ratio(vessel_share_info.time_weighted_shares, 1u128)
+    let voting_power = Decimal::from_ratio(vessel_snapshot.time_weighted_shares, 1u128)
         .saturating_mul(token_info.ratio);
 
     Ok(voting_power)
@@ -199,11 +192,16 @@ pub fn calculate_rewards_amount_for_vessel_on_tribute(
     vessel_id: u64,
     data_loader: &dyn DataLoader,
 ) -> Result<Decimal, ContractError> {
-    let vessel = state::get_vessel(deps.storage, vessel_id)?;
+    let vessel_snapshot = state::get_vessel_shares_info(deps.storage, round_id, vessel_id);
+    if vessel_snapshot.is_err() {
+        // Vessel snapshot should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
+        return Ok(Decimal::zero());
+    }
+    let vessel_snapshot = vessel_snapshot.unwrap();
     let voting_power =
-        calculate_voting_power_of_vessel(deps.storage, vessel_id, round_id, token_info_provider)?;
+        calculate_voting_power_of_vessel(round_id, token_info_provider, &vessel_snapshot)?;
 
-    if vessel.is_under_user_control() {
+    if vessel_snapshot.was_under_user_control() {
         let vessel_harbor =
             state::get_harbor_of_vessel(deps.storage, tranche_id, round_id, vessel_id)?;
 
@@ -226,27 +224,20 @@ pub fn calculate_rewards_amount_for_vessel_on_tribute(
         Ok(Decimal::zero())
     } else {
         // Vessel is under hydromancer control, we don't care if it was used or not, it take a portion of hydromancer rewards
-
-        // Vessel shares should exist, but if not, the voting power is 0 — though doing it this way might let some errors go unnoticed.
-        let vessel_shares = state::get_vessel_shares_info(deps.storage, round_id, vessel_id);
-        if vessel_shares.is_err() {
-            return Ok(Decimal::zero());
-        }
-        let vessel_shares = vessel_shares.unwrap();
         let proposal = query_hydro_proposal(&deps, constants, round_id, tranche_id, proposal_id)?;
 
-        if proposal.deployment_duration <= vessel_shares.locked_rounds {
+        if proposal.deployment_duration <= vessel_snapshot.locked_rounds {
             let total_hydromancer_locked_rounds_voting_power =
                 calculate_total_voting_power_of_hydromancer_for_locked_rounds(
                     deps.storage,
-                    vessel.hydromancer_id.unwrap(),
+                    vessel_snapshot.hydromancer_id.unwrap(),
                     round_id,
                     proposal.deployment_duration,
                     token_info_provider,
                 )?;
             let rewards_allocated_to_hydromancer = data_loader.load_hydromancer_tribute(
                 deps.storage,
-                vessel.hydromancer_id.unwrap(),
+                vessel_snapshot.hydromancer_id.unwrap(),
                 round_id,
                 tribute_id,
             )?;

@@ -6,7 +6,7 @@ use zephyrus_core::{
     msgs::{HydroProposalId, RoundId, TrancheId, TributeId, UserId},
     state::{
         Constants, HydroLockId, HydromancerId, HydromancerTribute, Vessel, VesselHarbor,
-        VesselSharesInfo,
+        VesselInfoSnapshot,
     },
 };
 
@@ -74,8 +74,8 @@ const PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
 const PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID: Map<(RoundId, HydroProposalId, &str), u128> =
     Map::new("proposal_total_tw_shares_by_token_group_id");
 
-const VESSEL_SHARES_INFO: Map<(RoundId, HydroLockId), VesselSharesInfo> =
-    Map::new("vessel_shares_info");
+const VESSEL_INFO_SNAPSHOTS: Map<(RoundId, HydroLockId), VesselInfoSnapshot> =
+    Map::new("vessel_info_snapshots");
 
 // Track hydromancers with completed TWS per round for efficient checking
 const HYDROMANCER_TWS_COMPLETED_PER_ROUND: Map<(RoundId, HydromancerId), bool> =
@@ -330,28 +330,30 @@ pub fn add_vessel(storage: &mut dyn Storage, vessel: &Vessel, owner: &Addr) -> S
     Ok(())
 }
 
-pub fn save_vessel_shares_info(
+pub fn save_vessel_info_snapshot(
     storage: &mut dyn Storage,
     vessel_id: HydroLockId,
     round_id: RoundId,
     time_weighted_shares: u128,
     token_group_id: String,
     locked_rounds: u64,
+    hydromancer_id: Option<HydromancerId>,
 ) -> StdResult<()> {
-    let vessel_shares_info = VesselSharesInfo {
+    let vessel_shares_info = VesselInfoSnapshot {
         time_weighted_shares,
         token_group_id,
         locked_rounds,
+        hydromancer_id,
     };
-    VESSEL_SHARES_INFO.save(storage, (round_id, vessel_id), &vessel_shares_info)
+    VESSEL_INFO_SNAPSHOTS.save(storage, (round_id, vessel_id), &vessel_shares_info)
 }
 
 pub fn get_vessel_shares_info(
     storage: &dyn Storage,
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
-) -> StdResult<VesselSharesInfo> {
-    VESSEL_SHARES_INFO.load(storage, (round_id, hydro_lock_id))
+) -> StdResult<VesselInfoSnapshot> {
+    VESSEL_INFO_SNAPSHOTS.load(storage, (round_id, hydro_lock_id))
 }
 
 pub fn is_tokenized_share_record_used(
@@ -1036,7 +1038,7 @@ pub fn has_vessel_shares_info(
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
 ) -> bool {
-    VESSEL_SHARES_INFO.has(storage, (round_id, hydro_lock_id))
+    VESSEL_INFO_SNAPSHOTS.has(storage, (round_id, hydro_lock_id))
 }
 
 // Helper functions for tracking distributed amounts during transaction batch

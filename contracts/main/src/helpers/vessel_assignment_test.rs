@@ -153,19 +153,20 @@ mod tests {
         vessel_id: u64,
         current_round_id: u64,
     ) {
+        // Get vessel to check if it has hydromancer
+        let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
+
         // Add vessel shares info to simulate TWS
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             vessel_id,
             current_round_id,
             1000,
             "dAtom".to_string(),
             2,
+            vessel.hydromancer_id,
         )
         .unwrap();
-
-        // Get vessel to check if it has hydromancer
-        let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
 
         // If vessel has hydromancer, add TWS to hydromancer totals
         if let Some(hydromancer_id) = vessel.hydromancer_id {

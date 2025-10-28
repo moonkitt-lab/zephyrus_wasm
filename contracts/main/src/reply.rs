@@ -86,7 +86,12 @@ pub fn handle_claim_tribute_reply(
     // Get total amount distributed by previous tributes in this batch
     let total_distributed =
         state::get_total_distributed_amount(deps.storage, &payload.amount.denom)?;
-    let balance_expected_adjusted = balance_expected.saturating_sub(total_distributed);
+    let balance_expected_adjusted =
+        balance_expected
+            .checked_sub(total_distributed)
+            .map_err(|_| ContractError::CustomError {
+                msg: "Insufficient balance for distribution".to_string(),
+            })?;
 
     // Check if the amount received is correct, accounting for previous distributions
     if balance_query.amount != balance_expected_adjusted {

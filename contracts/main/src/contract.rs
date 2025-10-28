@@ -53,13 +53,18 @@ use crate::{
 
 type Response = CwResponse<NeutronMsg>;
 
+const WHITELIST_ADMINS_MAX_COUNT: usize = 50;
+
 #[entry_point]
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
+    if msg.whitelist_admins.is_empty() {
+        return Err(ContractError::WhitelistAdminsMustBeProvided);
+    }
     state::initialize_sequences(deps.storage)?;
 
     let mut whitelist_admins: Vec<Addr> = vec![];
@@ -68,6 +73,9 @@ pub fn instantiate(
         if !whitelist_admins.contains(&admin_addr) {
             whitelist_admins.push(admin_addr.clone());
         }
+    }
+    if whitelist_admins.len() > WHITELIST_ADMINS_MAX_COUNT {
+        return Err(ContractError::WhitelistAdminsMaxCountExceeded {});
     }
     state::update_whitelist_admins(deps.storage, whitelist_admins)?;
     let hydro_config = HydroConfig {
@@ -81,9 +89,7 @@ pub fn instantiate(
     if msg.commission_rate >= Decimal::one()
         || msg.default_hydromancer_commission_rate >= Decimal::one()
     {
-        return Err(StdError::generic_err(
-            "Commission rate must be less than 1 (100%)",
-        ));
+        return Err(ContractError::CommissionRateMustBeLessThan100 {});
     }
     let default_hydromancer_id = state::insert_new_hydromancer(
         deps.storage,
@@ -179,7 +185,36 @@ pub fn execute(
         ExecuteMsg::UpdateCommissionRecipient {
             new_commission_recipient,
         } => execute_update_commission_recipient(deps, info, new_commission_recipient),
+        ExecuteMsg::SetAdminAddresses { admins } => execute_set_admin_addresses(deps, info, admins),
     }
+}
+
+fn execute_set_admin_addresses(
+    deps: DepsMut,
+    info: MessageInfo,
+    admins: Vec<String>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    let old_whitelist_admins = state::get_whitelist_admins(deps.storage)?;
+    validate_admin_address(deps.storage, &info.sender)?;
+    let new_whitelist_admins: HashSet<Addr> = admins
+        .into_iter()
+        .map(|admin| deps.api.addr_validate(&admin))
+        .collect::<Result<HashSet<Addr>, StdError>>()?;
+
+    if new_whitelist_admins.len() > WHITELIST_ADMINS_MAX_COUNT {
+        return Err(ContractError::WhitelistAdminsMaxCountExceeded {});
+    }
+
+    let old_whitelist_admins = state::get_whitelist_admins(deps.storage)?;
+    let old_whitelist_admins_set: HashSet<Addr> = old_whitelist_admins.into_iter().collect();
+    if new_whitelist_admins.is_disjoint(&old_whitelist_admins_set) {
+        return Err(ContractError::CannotReplaceAllAdmins {});
+    }
+
+    state::update_whitelist_admins(deps.storage, new_whitelist_admins.into_iter().collect())?;
+    Ok(Response::default().add_attribute("action", "set_admin_addresses"))
 }
 
 fn execute_update_commission_rate(

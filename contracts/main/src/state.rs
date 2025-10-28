@@ -675,6 +675,10 @@ pub fn is_whitelisted_admin(storage: &dyn Storage, sender: &Addr) -> StdResult<b
     Ok(whitelist_admins.contains(sender))
 }
 
+pub fn get_whitelist_admins(storage: &dyn Storage) -> StdResult<Vec<Addr>> {
+    WHITELIST_ADMINS.load(storage)
+}
+
 pub fn change_vessel_hydromancer(
     storage: &mut dyn Storage,
     tranche_id: TrancheId,

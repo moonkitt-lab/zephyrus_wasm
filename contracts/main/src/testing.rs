@@ -40,6 +40,27 @@ fn instantiate_test() {
     assert!(res.is_ok(), "error: {:?}", res);
 }
 
+#[test]
+fn instantiate_test_empty_whitelist_admins() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+    let info = message_info(&Addr::unchecked("sender"), &[]);
+    let user_address = get_address_as_str(&deps.api, "addr0000");
+    let mut msg = get_default_instantiate_msg(&deps, user_address);
+    msg.whitelist_admins = vec![]; // Empty whitelist admins
+    let res = instantiate(deps.as_mut(), env, info, msg);
+    assert!(
+        res.is_err(),
+        "Should return error for empty whitelist admins"
+    );
+    match res.unwrap_err() {
+        ContractError::WhitelistAdminsMustBeProvided => {
+            // Expected error
+        }
+        _ => panic!("Expected WhitelistAdminsMustBeProvided error"),
+    }
+}
+
 fn get_default_instantiate_msg(
     deps: &cosmwasm_std::OwnedDeps<
         cosmwasm_std::MemoryStorage,
@@ -2488,4 +2509,127 @@ fn handle_claim_tribute_reply_insufficient_balance() {
         res.unwrap_err(),
         ContractError::InsufficientTributeReceived { tribute_id: 1 }
     );
+}
+
+#[test]
+fn test_set_admin_addresses_success() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let user_address = get_address_as_str(&deps.api, "admin1");
+    let msg = get_default_instantiate_msg(&deps, user_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test setting new admin addresses (keeping one existing admin)
+    let admin1_addr = get_address_as_str(&deps.api, "admin1");
+    let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
+    let admin2_addr = get_address_as_str(&deps.api, "admin2");
+    let admin3_addr = get_address_as_str(&deps.api, "admin3");
+
+    let msg = ExecuteMsg::SetAdminAddresses {
+        admins: vec![admin1_addr, admin2_addr, admin3_addr],
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    println!("res: {:?}", res);
+    assert!(
+        res.is_ok(),
+        "Should succeed when keeping at least one existing admin"
+    );
+
+    // Verify the new admins are set
+    let admins = state::get_whitelist_admins(deps.as_ref().storage).unwrap();
+    assert_eq!(admins.len(), 3);
+}
+
+#[test]
+fn test_set_admin_addresses_cannot_replace_all() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let user_address = get_address_as_str(&deps.api, "admin1");
+    let msg = get_default_instantiate_msg(&deps, user_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test trying to replace all admins (should fail)
+    let admin1_addr = get_address_as_str(&deps.api, "admin1");
+    let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
+    let new_admin1 = get_address_as_str(&deps.api, "newadmin1");
+    let new_admin2 = get_address_as_str(&deps.api, "newadmin2");
+
+    let msg = ExecuteMsg::SetAdminAddresses {
+        admins: vec![new_admin1, new_admin2],
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    assert!(
+        res.is_err(),
+        "Should fail when trying to replace all admins"
+    );
+
+    match res.unwrap_err() {
+        ContractError::CannotReplaceAllAdmins {} => {
+            // Expected error
+        }
+        _ => panic!("Expected CannotReplaceAllAdmins error"),
+    }
+}
+
+#[test]
+fn test_set_admin_addresses_unauthorized() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let user_address = get_address_as_str(&deps.api, "admin1");
+    let msg = get_default_instantiate_msg(&deps, user_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test with non-admin user (should fail)
+    let info = message_info(&Addr::unchecked("nonadmin"), &[]);
+    let new_admin1 = get_address_as_str(&deps.api, "newadmin1");
+
+    let msg = ExecuteMsg::SetAdminAddresses {
+        admins: vec![new_admin1],
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    assert!(res.is_err(), "Should fail when called by non-admin");
+
+    match res.unwrap_err() {
+        ContractError::Unauthorized => {
+            // Expected error
+        }
+        _ => panic!("Expected Unauthorized error"),
+    }
+}
+
+#[test]
+fn test_set_admin_addresses_invalid_address() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let user_address = get_address_as_str(&deps.api, "admin1");
+    let msg = get_default_instantiate_msg(&deps, user_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test with invalid address (should fail)
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let msg = ExecuteMsg::SetAdminAddresses {
+        admins: vec!["invalid_address".to_string()],
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    assert!(res.is_err(), "Should fail with invalid address");
 }

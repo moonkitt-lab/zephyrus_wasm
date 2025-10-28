@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{errors::ContractError, state};
 use cosmwasm_std::{Addr, Storage};
 use hydro_interface::msgs::{LockupWithPerTrancheInfo, RoundLockPowerSchedule, TributeClaim};

@@ -174,6 +174,14 @@ pub enum ExecuteMsg {
     /// - The caller must be an admin.
     /// - The new commission recipient must be a valid address.
     UpdateCommissionRecipient { new_commission_recipient: String },
+
+    /// Executable message for admins
+    /// to set the admin addresses
+    /// Preconditions:
+    /// - The caller must be an admin.
+    /// - The admin addresses must be valid addresses.
+    /// - intersection of new admin addresses and existing admin addresses must not be empty.
+    SetAdminAddresses { admins: Vec<String> },
 }
 
 #[cw_serde]

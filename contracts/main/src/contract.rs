@@ -196,7 +196,6 @@ fn execute_set_admin_addresses(
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
-    let old_whitelist_admins = state::get_whitelist_admins(deps.storage)?;
     validate_admin_address(deps.storage, &info.sender)?;
     let new_whitelist_admins: HashSet<Addr> = admins
         .into_iter()

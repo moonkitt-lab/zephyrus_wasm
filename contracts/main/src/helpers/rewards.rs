@@ -205,9 +205,7 @@ pub fn calculate_rewards_amount_for_vessel_on_tribute(
         let vessel_harbor =
             state::get_harbor_of_vessel(deps.storage, tranche_id, round_id, vessel_id)?;
 
-        if vessel_harbor.is_some() {
-            let vessel_harbor = vessel_harbor.unwrap();
-
+        if let Some(vessel_harbor) = vessel_harbor {
             if vessel_harbor == proposal_id {
                 let vp_ratio = voting_power
                     .checked_div(total_proposal_voting_power)

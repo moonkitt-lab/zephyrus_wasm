@@ -20,22 +20,6 @@ pub fn compare_coin_vectors(hydro_unlocked_tokens: Vec<Coin>, received_coins: Ve
     consolidated_hydro == received_map
 }
 
-// Helper function if we need the consolidated hydro tokens as Vec<Coin>
-pub fn consolidate_coins(coins: Vec<Coin>) -> Vec<Coin> {
-    let mut consolidated: BTreeMap<String, Uint128> = BTreeMap::new();
-
-    // Sum up amounts for same denoms
-    for coin in coins {
-        *consolidated.entry(coin.denom).or_default() += coin.amount;
-    }
-
-    // Convert back to Vec<Coin>
-    consolidated
-        .into_iter()
-        .map(|(denom, amount)| Coin { denom, amount })
-        .collect()
-}
-
 // Function to compare two Vec<u64>. There should be no duplicates in the vectors, or they should be in both.
 pub fn compare_u64_vectors(mut vec1: Vec<u64>, mut vec2: Vec<u64>) -> bool {
     // First check if lengths are different

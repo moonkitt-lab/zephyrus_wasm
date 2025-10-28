@@ -12,16 +12,15 @@ mod tests {
             get_all_hydromancers, get_constants, get_harbor_of_vessel, get_hydromancer,
             get_hydromancer_id_by_address, get_hydromancer_proposal_time_weighted_shares,
             get_hydromancer_time_weighted_shares_by_round, get_proposal_time_weighted_shares,
-            get_user_id, get_user_id_by_address, get_vessel, get_vessel_harbor,
-            get_vessel_ids_auto_maintained_by_class, get_vessel_shares_info,
-            get_vessel_to_harbor_by_harbor_id, get_vessels_by_hydromancer, get_vessels_by_ids,
-            get_vessels_by_owner, has_vessel_shares_info, hydromancer_exists, initialize_sequences,
-            insert_new_hydromancer, insert_new_user, is_hydromancer_tws_complete,
-            is_tokenized_share_record_used, is_vessel_owned_by, is_vessel_used_under_user_control,
-            is_whitelisted_admin, iterate_vessels_with_predicate, mark_hydromancer_tws_complete,
-            modify_auto_maintenance, remove_vessel, remove_vessel_from_hydromancer,
-            remove_vessel_harbor, save_vessel, save_vessel_info_snapshot,
-            substract_time_weighted_shares_from_hydromancer,
+            get_user_id, get_vessel, get_vessel_harbor, get_vessel_ids_auto_maintained_by_class,
+            get_vessel_shares_info, get_vessel_to_harbor_by_harbor_id, get_vessels_by_hydromancer,
+            get_vessels_by_ids, get_vessels_by_owner, has_vessel_shares_info, hydromancer_exists,
+            initialize_sequences, insert_new_hydromancer, insert_new_user,
+            is_hydromancer_tws_complete, is_tokenized_share_record_used, is_vessel_owned_by,
+            is_vessel_used_under_user_control, is_whitelisted_admin,
+            iterate_vessels_with_predicate, mark_hydromancer_tws_complete, modify_auto_maintenance,
+            remove_vessel, remove_vessel_from_hydromancer, remove_vessel_harbor, save_vessel,
+            save_vessel_info_snapshot, substract_time_weighted_shares_from_hydromancer,
             substract_time_weighted_shares_from_proposal,
             substract_time_weighted_shares_from_proposal_for_hydromancer, take_control_of_vessels,
             update_constants, update_whitelist_admins, vessel_exists,
@@ -116,7 +115,7 @@ mod tests {
         assert_eq!(user_id, 0);
 
         // Test getting user ID by address
-        let retrieved_id = get_user_id_by_address(deps.as_ref().storage, user_address.clone());
+        let retrieved_id = get_user_id(deps.as_ref().storage, &user_address);
         assert!(retrieved_id.is_ok());
         assert_eq!(retrieved_id.unwrap(), user_id);
 
@@ -143,14 +142,8 @@ mod tests {
         assert_eq!(user1_id, 0);
         assert_eq!(user2_id, 1);
 
-        assert_eq!(
-            get_user_id_by_address(deps.as_ref().storage, user1).unwrap(),
-            0
-        );
-        assert_eq!(
-            get_user_id_by_address(deps.as_ref().storage, user2).unwrap(),
-            1
-        );
+        assert_eq!(get_user_id(deps.as_ref().storage, &user1).unwrap(), 0);
+        assert_eq!(get_user_id(deps.as_ref().storage, &user2).unwrap(), 1);
     }
 
     #[test]
@@ -1170,7 +1163,7 @@ mod tests {
 
         // Test getting non-existent user
         let non_existent_user = make_valid_addr("non_existent");
-        let result = get_user_id_by_address(deps.as_ref().storage, non_existent_user);
+        let result = get_user_id(deps.as_ref().storage, &non_existent_user);
         assert!(result.is_err());
 
         // Test getting non-existent hydromancer

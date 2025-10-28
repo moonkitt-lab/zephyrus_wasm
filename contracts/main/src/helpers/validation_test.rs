@@ -806,7 +806,7 @@ mod tests {
         let mut deps = mock_dependencies();
         let (user1, _, _, _) = setup_test_data(&mut deps);
 
-        let user1_id = state::get_user_id_by_address(deps.as_ref().storage, user1.clone()).unwrap();
+        let user1_id = state::get_user_id(deps.as_ref().storage, &user1).unwrap();
         // Test with user controlling vessel
         let vessel = Vessel {
             hydro_lock_id: 1,
@@ -825,7 +825,7 @@ mod tests {
         let mut deps = mock_dependencies();
         let (user1, _, hydromancer_id, hydromancer_addr) = setup_test_data(&mut deps);
 
-        let user1_id = state::get_user_id_by_address(deps.as_ref().storage, user1.clone()).unwrap();
+        let user1_id = state::get_user_id(deps.as_ref().storage, &user1).unwrap();
         // Test with user controlling vessel
         let vessel = Vessel {
             hydro_lock_id: 1,
@@ -844,7 +844,7 @@ mod tests {
         let mut deps = mock_dependencies();
         let (user1, user2, hydromancer_id, _) = setup_test_data(&mut deps);
 
-        let user1_id = state::get_user_id_by_address(deps.as_ref().storage, user1.clone()).unwrap();
+        let user1_id = state::get_user_id(deps.as_ref().storage, &user1).unwrap();
         // Test with user controlling vessel
         let vessel = Vessel {
             hydro_lock_id: 1,
@@ -870,7 +870,7 @@ mod tests {
             "0.1".parse().unwrap(),
         )
         .unwrap();
-        let user1_id = state::get_user_id_by_address(deps.as_ref().storage, user1.clone()).unwrap();
+        let user1_id = state::get_user_id(deps.as_ref().storage, &user1).unwrap();
         // Test with user controlling vessel
         let vessel = Vessel {
             hydro_lock_id: 1,

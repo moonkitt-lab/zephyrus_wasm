@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::{errors::ContractError, state};
 use cosmwasm_std::{Addr, Storage};
 use hydro_interface::msgs::{LockupWithPerTrancheInfo, RoundLockPowerSchedule, TributeClaim};
@@ -171,7 +169,7 @@ pub fn validate_user_controls_vessel(
 ) -> Result<(), ContractError> {
     // vessel is under user control, check that user is the owner, otherwise check that user is the hydromancer of the vessel
     if vessel.is_under_user_control() {
-        let user_id = state::get_user_id_by_address(storage, user_addr)?;
+        let user_id = state::get_user_id(storage, &user_addr)?;
         if vessel.owner_id != user_id {
             return Err(ContractError::Unauthorized {});
         }

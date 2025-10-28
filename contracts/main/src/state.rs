@@ -220,7 +220,7 @@ pub fn get_vessel_harbor(
 
 pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> StdResult<UserId> {
     // Check if user already exists
-    if let Ok(user_id) = get_user_id_by_address(storage, user_address.clone()) {
+    if let Ok(user_id) = get_user_id(storage, &user_address) {
         return Err(StdError::generic_err(format!(
             "User {} already exists with id {}",
             user_address, user_id
@@ -241,10 +241,6 @@ pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> StdResu
     USER_NEXT_ID.save(storage, &(user_id + 1))?;
 
     Ok(user_id)
-}
-
-pub fn get_user_id_by_address(storage: &dyn Storage, user_addr: Addr) -> StdResult<UserId> {
-    USERID_BY_ADDR.load(storage, user_addr.as_str())
 }
 
 pub fn insert_new_hydromancer(

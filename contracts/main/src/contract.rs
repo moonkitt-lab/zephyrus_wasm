@@ -473,7 +473,7 @@ fn execute_receive_nft(
     }
 
     // 6. Owner could be a new user, so we need to insert it in state
-    let owner_id = state::get_user_id_by_address(deps.storage, owner_addr.clone())
+    let owner_id = state::get_user_id(deps.storage, &owner_addr)
         .or_else(|_| state::insert_new_user(deps.storage, owner_addr.clone()))?;
 
     // 7. Store the vessel in state
@@ -1000,12 +1000,11 @@ fn execute_user_vote(
 
     validate_vote_duplicates(&vessels_harbors)?;
 
-    let user_id =
-        state::get_user_id_by_address(deps.storage, info.sender.clone()).map_err(|_| {
-            ContractError::UserNotFound {
-                identifier: info.sender.to_string(),
-            }
-        })?;
+    let user_id = state::get_user_id(deps.storage, &info.sender).map_err(|_| {
+        ContractError::UserNotFound {
+            identifier: info.sender.to_string(),
+        }
+    })?;
 
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
     let mut proposal_votes = vec![];

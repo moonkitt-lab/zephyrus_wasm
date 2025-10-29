@@ -112,19 +112,17 @@ pub fn calculate_total_voting_power_of_hydromancer_for_locked_rounds(
     let mut total_voting_power = Decimal::zero();
 
     for ((locked_round, token_group_id), tws) in &list_tws {
+        if *locked_round < locked_rounds {
+            continue;
+        }
         let token_info = token_info_provider.get(token_group_id).ok_or(
             ContractError::TokenInfoProviderNotFound {
                 token_group_id: token_group_id.clone(),
                 round_id,
             },
         )?;
-
         let voting_power_contribution =
             Decimal::from_ratio(*tws, 1u128).saturating_mul(token_info.ratio);
-
-        if *locked_round < locked_rounds {
-            continue;
-        }
 
         total_voting_power = total_voting_power.saturating_add(voting_power_contribution);
     }

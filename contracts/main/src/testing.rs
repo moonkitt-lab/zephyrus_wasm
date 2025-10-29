@@ -158,6 +158,7 @@ fn pause_basic_test() {
     let msg_auto_maintain = ExecuteMsg::AutoMaintain {
         start_from_vessel_id: None,
         limit: None,
+        class_period: 3_000_000, // 3 lock_epoch_length
     };
     let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg_auto_maintain);
     assert!(res.is_err());
@@ -2207,6 +2208,7 @@ fn auto_maintain_after_new_round_succeed() {
     let auto_maintain_msg = ExecuteMsg::AutoMaintain {
         start_from_vessel_id: Some(0),
         limit: None,
+        class_period: 1_000_000, // 3 lock_epoch_length
     };
     let result = execute(
         deps.as_mut(),

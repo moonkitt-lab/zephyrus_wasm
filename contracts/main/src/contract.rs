@@ -122,7 +122,8 @@ pub fn execute(
         ExecuteMsg::AutoMaintain {
             start_from_vessel_id,
             limit,
-        } => execute_auto_maintain(deps, info, start_from_vessel_id, limit),
+            class_period,
+        } => execute_auto_maintain(deps, info, start_from_vessel_id, limit, class_period),
         ExecuteMsg::UpdateVesselsClass {
             hydro_lock_ids,
             hydro_lock_duration,
@@ -527,6 +528,7 @@ fn execute_auto_maintain(
     _info: MessageInfo,
     start_from_vessel_id: Option<u64>,
     limit: Option<usize>,
+    class_period: u64,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
@@ -543,6 +545,7 @@ fn execute_auto_maintain(
         start_from_vessel_id,
         max_vessels,
         lock_epoch_length,
+        class_period,
     )?;
 
     if vessels_needing_maintenance.is_empty() {

@@ -82,6 +82,7 @@ pub enum ExecuteMsg {
     AutoMaintain {
         start_from_vessel_id: Option<u64>,
         limit: Option<usize>,
+        class_period: u64,
     },
     /// Executable message for Zephyrus users that allows the caller
     /// to modify the auto_maintenance of the specified vessels (provided as parameters).

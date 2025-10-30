@@ -85,9 +85,10 @@ pub fn instantiate(
 
     let hydromancer_address = deps.api.addr_validate(&msg.default_hydromancer_address)?;
     let commission_recipient = deps.api.addr_validate(&msg.commission_recipient)?;
-    // Validate commission rate is less than 1 (100%)
-    if msg.commission_rate >= Decimal::one()
-        || msg.default_hydromancer_commission_rate >= Decimal::one()
+    // Validate commission rate is less than 0.5 (50%)
+    let max_commission_rate: Decimal = Decimal::from_ratio(50_u128, 100_u128);
+    if msg.commission_rate >= max_commission_rate
+        || msg.default_hydromancer_commission_rate >= max_commission_rate
     {
         return Err(ContractError::CommissionRateMustBeLessThan100 {});
     }

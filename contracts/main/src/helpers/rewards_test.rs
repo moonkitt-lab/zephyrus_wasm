@@ -190,16 +190,19 @@ fn test_calculate_rewards_amount_for_vessel_on_proposal() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_tribute(
-        deps.as_ref(),
+    let ctx = super::rewards::VesselRewardContext {
         round_id,
         tranche_id,
         proposal_id,
         tribute_id,
-        &constants,
-        &token_info_provider,
+        constants: &constants,
+        token_info_provider: &token_info_provider,
         total_proposal_voting_power,
-        proposal_rewards,
+        proposal_rewards: proposal_rewards.clone(),
+    };
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
+        deps.as_ref(),
+        &ctx,
         vessel_id,
         &mock_data_loader,
     );
@@ -650,16 +653,19 @@ fn test_calculate_rewards_amount_for_vessel_on_tribute_zero_voting_power() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_tribute(
-        deps.as_ref(),
+    let ctx = super::rewards::VesselRewardContext {
         round_id,
         tranche_id,
         proposal_id,
         tribute_id,
-        &constants,
-        &token_info_provider,
+        constants: &constants,
+        token_info_provider: &token_info_provider,
         total_proposal_voting_power,
-        proposal_rewards,
+        proposal_rewards: proposal_rewards.clone(),
+    };
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
+        deps.as_ref(),
+        &ctx,
         vessel_id,
         &mock_data_loader,
     );
@@ -684,16 +690,19 @@ fn test_calculate_rewards_amount_for_vessel_on_tribute_vessel_snapshot_not_exist
     let vessel_id = 999u64; // Non-existent vessel
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_tribute(
-        deps.as_ref(),
+    let ctx = super::rewards::VesselRewardContext {
         round_id,
         tranche_id,
         proposal_id,
         tribute_id,
-        &constants,
-        &token_info_provider,
+        constants: &constants,
+        token_info_provider: &token_info_provider,
         total_proposal_voting_power,
-        proposal_rewards,
+        proposal_rewards: proposal_rewards.clone(),
+    };
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
+        deps.as_ref(),
+        &ctx,
         vessel_id,
         &mock_data_loader,
     );

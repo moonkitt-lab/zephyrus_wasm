@@ -310,7 +310,6 @@ pub fn handle_vote_reply(
     skipped_locks: Vec<u64>,
 ) -> Result<Response, ContractError> {
     for vessels_to_harbor in payload.vessels_harbors.clone() {
-        let mut lock_ids = vec![];
         let constants = state::get_constants(deps.storage)?;
 
         let vessels_shares = query_hydro_lockups_shares(
@@ -428,11 +427,11 @@ pub fn handle_vote_reply(
                     }
                 }
             }
-
-            lock_ids.push(vessel.hydro_lock_id);
         }
     }
-    Ok(Response::new().add_attribute("skipped_locks", join_u64_ids(skipped_locks)))
+    Ok(Response::new()
+        .add_attribute("skipped_locks", join_u64_ids(skipped_locks))
+        .add_attribute("action", "handle_vote_reply"))
 }
 
 pub(crate) fn parse_u64_list_from_reply(

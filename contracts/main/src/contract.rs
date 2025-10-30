@@ -647,6 +647,14 @@ fn execute_update_vessels_class(
 
     validate_user_owns_vessels(deps.storage, &info.sender, &hydro_lock_ids)?;
 
+    // Check that class_period represents a valid lock duration
+    let constant_response = query_hydro_constants(&deps.as_ref(), &constants)?;
+    validate_lock_duration(
+        &constant_response.constants.round_lock_power_schedule,
+        constant_response.constants.lock_epoch_length,
+        hydro_lock_duration,
+    )?;
+
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
 
     initialize_vessel_tws(

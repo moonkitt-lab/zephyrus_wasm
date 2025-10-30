@@ -1099,13 +1099,7 @@ pub fn get_total_distributed_amount(
 
 pub fn clear_distribution_tracking(storage: &mut dyn Storage) -> Result<(), ContractError> {
     // Clear all temporary distribution tracking data
-    let keys: Vec<TributeId> = TRIBUTE_DISTRIBUTED_AMOUNTS
-        .keys(storage, None, None, cosmwasm_std::Order::Ascending)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    for key in keys {
-        TRIBUTE_DISTRIBUTED_AMOUNTS.remove(storage, key);
-    }
+    TRIBUTE_DISTRIBUTED_AMOUNTS.clear(storage);
 
     Ok(())
 }

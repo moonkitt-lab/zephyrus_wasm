@@ -320,12 +320,12 @@ pub fn handle_vote_reply(
         )?;
 
         for vessel_shares_info in vessels_shares.lockups_shares_info.iter() {
+            let vessel_id = vessel_shares_info.lock_id;
             // if vessel is skipped, it means that hydro was not able to vote for it, zephyrus skips it too
-            if skipped_locks.contains(&vessel_shares_info.lock_id) {
+            if skipped_locks.contains(&vessel_id) {
                 continue;
             }
 
-            let vessel_id = vessel_shares_info.lock_id;
             let vessel = state::get_vessel(deps.storage, vessel_id)?;
 
             let previous_harbor_id = state::get_harbor_of_vessel(

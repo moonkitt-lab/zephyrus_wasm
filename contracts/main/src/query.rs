@@ -239,7 +239,9 @@ pub fn query_vessels_rewards(
             } else {
                 // Tribute has been already claimed by zephyrus on hydro, we will get the rewards from the state
                 users_funds = state::get_tribute_processed(deps.storage, tribute.tribute_id)?
-                    .expect("Tribute has been processed, Rewards should exist here");
+                    .ok_or(StdError::generic_err(
+                        "Tribute has been processed, Rewards should exist here",
+                    ))?;
             }
 
             if !tribute_processed {

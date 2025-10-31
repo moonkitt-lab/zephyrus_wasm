@@ -577,7 +577,7 @@ fn execute_auto_maintain(
     let last_processed_vessel_id = vessels_needing_maintenance
         .last()
         .map(|(id, _)| *id)
-        .expect("non empty vessels_needing_maintenance");
+        .ok_or(ContractError::NoVesselsToAutoMaintain {})?;
 
     // Process each class period batch
     for (target_class_period, vessel_ids) in &vessels_by_class {

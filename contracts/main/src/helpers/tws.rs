@@ -336,7 +336,7 @@ pub fn reset_vessel_vote(
 ) -> Result<(), ContractError> {
     let vessel_shares =
         state::get_vessel_shares_info(storage, current_round_id, vessel.hydro_lock_id)
-            .map_err(|e| ContractError::Std(e))?;
+            .map_err(ContractError::Std)?;
     state::substract_time_weighted_shares_from_proposal(
         storage,
         current_round_id,

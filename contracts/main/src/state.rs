@@ -857,10 +857,10 @@ pub fn add_time_weighted_shares_to_hydromancer(
         storage,
         ((hydromancer_id, round_id), locked_rounds, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_add(shares)
-                .ok_or(StdError::generic_err("operation should not overflow"))?)
+                .ok_or(StdError::generic_err("operation should not overflow"))
         },
     )
 }
@@ -877,12 +877,12 @@ pub fn substract_time_weighted_shares_from_hydromancer(
         storage,
         ((hydromancer_id, round_id), locked_rounds, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_sub(shares)
                 .ok_or(StdError::generic_err(
                     "current shares >= shares to subtract",
-                ))?)
+                ))
         },
     )
 }
@@ -930,10 +930,10 @@ pub fn add_time_weighted_shares_to_proposal(
         storage,
         (round_id, proposal_id, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_add(time_weighted_shares)
-                .ok_or(StdError::generic_err("operation overflow"))?)
+                .ok_or(StdError::generic_err("operation overflow"))
         },
     )
 }
@@ -949,12 +949,12 @@ pub fn substract_time_weighted_shares_from_proposal(
         storage,
         (round_id, proposal_id, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_sub(time_weighted_shares)
                 .ok_or(StdError::generic_err(
                     "current shares < time_weighted_shares to subtract",
-                ))?)
+                ))
         },
     )
 }
@@ -982,10 +982,10 @@ pub fn add_time_weighted_shares_to_proposal_for_hydromancer(
         storage,
         (proposal_id, hydromancer_id, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_add(time_weighted_shares)
-                .ok_or(StdError::generic_err("operation overflow"))?)
+                .ok_or(StdError::generic_err("operation overflow"))
         },
     )
 }
@@ -1001,12 +1001,12 @@ pub fn substract_time_weighted_shares_from_proposal_for_hydromancer(
         storage,
         (proposal_id, hydromancer_id, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_sub(time_weighted_shares)
                 .ok_or(StdError::generic_err(
                     "current shares < time_weighted_shares to subtract",
-                ))?)
+                ))
         },
     )
 }

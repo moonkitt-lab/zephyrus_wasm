@@ -217,7 +217,13 @@ pub fn handle_claim_tribute_reply(
         payload.tribute_id,
         users_and_hydromancers_funds.clone(),
     )?;
-    Ok(response.add_attribute("action", "handle_claim_tribute_reply"))
+    Ok(response
+        .add_attribute("action", "handle_claim_tribute_reply")
+        .add_attribute("proposal_id", payload.proposal_id.to_string())
+        .add_attribute("tribute_id", payload.tribute_id.to_string())
+        .add_attribute("round_id", payload.round_id.to_string())
+        .add_attribute("tranche_id", payload.tranche_id.to_string())
+        .add_attribute("vessel_ids", join_u64_ids(&payload.vessel_ids)))
 }
 
 pub fn handle_refresh_time_weighted_shares_reply(

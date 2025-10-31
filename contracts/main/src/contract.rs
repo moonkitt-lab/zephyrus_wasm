@@ -277,7 +277,7 @@ fn execute_claim(
     let tributes = query_hydro_specific_tributes(
         &deps.as_ref(),
         &constants,
-        tribute_ids.into_iter().collect(),
+        tribute_ids.clone().into_iter().collect(),
     )?;
     // Validate round and tranche consistency, if round_id is not the same as the round_id in the tributes, return an error
     validate_round_tranche_consistency(&tributes.tributes, round_id, tranche_id)?;
@@ -300,18 +300,28 @@ fn execute_claim(
         info,
         round_id,
         tranche_id,
-        vessel_ids,
+        vessel_ids.clone(),
         &constants,
         &contract_address,
-        tributes_processed,
-        outstanding_tributes,
+        tributes_processed.clone(),
+        outstanding_tributes.clone(),
         response,
     )?;
 
     // Clear temporary distribution tracking data after successful batch completion
     state::clear_distribution_tracking(deps.storage)?;
 
-    Ok(response)
+    Ok(response
+        .add_attribute("action", "claim")
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("vessel_ids", join_u64_ids(&vessel_ids))
+        .add_attribute("tribute_ids", join_u64_ids(&tribute_ids))
+        .add_attribute("tributes_processed", tributes_processed.len().to_string())
+        .add_attribute(
+            "hydro_outstanding_tributes",
+            outstanding_tributes.len().to_string(),
+        ))
 }
 
 #[allow(clippy::too_many_arguments)]

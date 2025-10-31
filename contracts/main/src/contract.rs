@@ -874,7 +874,9 @@ fn execute_change_hydromancer(
     vessel_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
-
+    // Convert to HashSet to avoid duplicates
+    let vessel_ids: HashSet<u64> = vessel_ids.into_iter().collect();
+    let vessel_ids: Vec<u64> = vessel_ids.into_iter().collect();
     validate_contract_is_not_paused(&constants)?;
     validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
     validate_hydromancer_exists(deps.storage, new_hydromancer_id)?;

@@ -6,10 +6,9 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, Uint128, VesselsRewardsResponse, RewardInfo, Coin, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, Uint128, VesselsRewardsResponse, RewardInfo, Coin, VotedProposalsResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainReadOnlyInterface {
   contractAddress: string;
-  votingPower: () => Promise<VotingPowerResponse>;
   vesselsByOwner: ({
     limit,
     owner,
@@ -49,6 +48,11 @@ export interface ZephyrusMainReadOnlyInterface {
     userAddress: string;
     vesselIds: number[];
   }) => Promise<VesselsRewardsResponse>;
+  votedProposals: ({
+    roundId
+  }: {
+    roundId: number;
+  }) => Promise<VotedProposalsResponse>;
 }
 export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   client: CosmWasmClient;
@@ -56,18 +60,13 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
   constructor(client: CosmWasmClient, contractAddress: string) {
     this.client = client;
     this.contractAddress = contractAddress;
-    this.votingPower = this.votingPower.bind(this);
     this.vesselsByOwner = this.vesselsByOwner.bind(this);
     this.vesselsByHydromancer = this.vesselsByHydromancer.bind(this);
     this.constants = this.constants.bind(this);
     this.vesselsHarbor = this.vesselsHarbor.bind(this);
     this.vesselsRewards = this.vesselsRewards.bind(this);
+    this.votedProposals = this.votedProposals.bind(this);
   }
-  votingPower = async (): Promise<VotingPowerResponse> => {
-    return this.client.queryContractSmart(this.contractAddress, {
-      voting_power: {}
-    });
-  };
   vesselsByOwner = async ({
     limit,
     owner,
@@ -144,6 +143,17 @@ export class ZephyrusMainQueryClient implements ZephyrusMainReadOnlyInterface {
       }
     });
   };
+  votedProposals = async ({
+    roundId
+  }: {
+    roundId: number;
+  }): Promise<VotedProposalsResponse> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      voted_proposals: {
+        round_id: roundId
+      }
+    });
+  };
 }
 export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   contractAddress: string;
@@ -168,9 +178,11 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     hydroLockIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   autoMaintain: ({
+    classPeriod,
     limit,
     startFromVesselId
   }: {
+    classPeriod: number;
     limit?: number;
     startFromVesselId?: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
@@ -223,10 +235,12 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
   claim: ({
     roundId,
     trancheId,
+    tributeIds,
     vesselIds
   }: {
     roundId: number;
     trancheId: number;
+    tributeIds: number[];
     vesselIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateCommissionRate: ({
@@ -238,6 +252,11 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     newCommissionRecipient
   }: {
     newCommissionRecipient: string;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  setAdminAddresses: ({
+    admins
+  }: {
+    admins: string[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
@@ -264,6 +283,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.claim = this.claim.bind(this);
     this.updateCommissionRate = this.updateCommissionRate.bind(this);
     this.updateCommissionRecipient = this.updateCommissionRecipient.bind(this);
+    this.setAdminAddresses = this.setAdminAddresses.bind(this);
   }
   takeControl = async ({
     vesselIds
@@ -305,14 +325,17 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     }, fee, memo, _funds);
   };
   autoMaintain = async ({
+    classPeriod,
     limit,
     startFromVesselId
   }: {
+    classPeriod: number;
     limit?: number;
     startFromVesselId?: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       auto_maintain: {
+        class_period: classPeriod,
         limit,
         start_from_vessel_id: startFromVesselId
       }
@@ -418,16 +441,19 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
   claim = async ({
     roundId,
     trancheId,
+    tributeIds,
     vesselIds
   }: {
     roundId: number;
     trancheId: number;
+    tributeIds: number[];
     vesselIds: number[];
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       claim: {
         round_id: roundId,
         tranche_id: trancheId,
+        tribute_ids: tributeIds,
         vessel_ids: vesselIds
       }
     }, fee, memo, _funds);
@@ -451,6 +477,17 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     return await this.client.execute(this.sender, this.contractAddress, {
       update_commission_recipient: {
         new_commission_recipient: newCommissionRecipient
+      }
+    }, fee, memo, _funds);
+  };
+  setAdminAddresses = async ({
+    admins
+  }: {
+    admins: string[];
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      set_admin_addresses: {
+        admins
       }
     }, fee, memo, _funds);
   };

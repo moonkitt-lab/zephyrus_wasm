@@ -219,7 +219,10 @@ pub fn query_hydro_specific_tributes(
     tribute_ids: Vec<u64>,
 ) -> StdResult<SpecificTributesResponse> {
     let specific_tributes: SpecificTributesResponse = deps.querier.query_wasm_smart(
-        constants.hydro_config.hydro_contract_address.to_string(),
+        constants
+            .hydro_config
+            .hydro_tribute_contract_address
+            .to_string(),
         &HydroQueryMsg::SpecificTributes { tribute_ids },
     )?;
     Ok(specific_tributes)

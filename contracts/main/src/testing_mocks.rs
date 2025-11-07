@@ -10,13 +10,10 @@ use cosmwasm_std::{
 use hydro_interface::msgs::{
     CollectionInfo, CurrentRoundResponse, HydroConstants, HydroConstantsResponse, HydroQueryMsg,
     LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo, LockupsInfo,
-    LockupsInfoResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo,
-    RoundLockPowerSchedule, SpecificUserLockupsResponse,
-    LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo, LockupsSharesInfo,
-    LockupsSharesResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo,
-    RoundLockPowerSchedule, SpecificTributesResponse, SpecificUserLockupsResponse,
-    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, Tranche,
-    TranchesResponse, TributeClaim,
+    LockupsInfoResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo, Proposal,
+    ProposalResponse, RoundLockPowerSchedule, SpecificTributesResponse,
+    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
+    TokenInfoProvidersResponse, Tranche, TranchesResponse, TributeClaim,
 };
 use neutron_std::types::ibc::applications::transfer::v1::{
     DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
@@ -86,10 +83,10 @@ impl MockWasmQuerier {
                         to_json_binary(&TokenInfoProvidersResponse { providers: vec![] })
                     }
                     HydroQueryMsg::Proposal {
-                        round_id: _,
-                        tranche_id: _,
-                        proposal_id: _,
-                    } => Err(StdError::generic_err("unsupported query type")),
+                        round_id,
+                        tranche_id,
+                        proposal_id,
+                    } => self.handle_proposal(round_id, tranche_id, proposal_id),
                     HydroQueryMsg::RoundProposals {
                         round_id: _,
                         tranche_id: _,
@@ -107,6 +104,27 @@ impl MockWasmQuerier {
                 kind: "unsupported query type".to_string(),
             }),
         }
+    }
+
+    fn handle_proposal(
+        &self,
+        round_id: u64,
+        tranche_id: u64,
+        proposal_id: u64,
+    ) -> StdResult<Binary> {
+        to_json_binary(&ProposalResponse {
+            proposal: Proposal {
+                round_id,
+                tranche_id,
+                proposal_id,
+                deployment_duration: 1,
+                description: "".to_string(),
+                minimum_atom_liquidity_request: Uint128::from(1000u128),
+                percentage: Uint128::from(1000u128),
+                power: Uint128::from(1000u128),
+                title: "".to_string(),
+            },
+        })
     }
 
     fn handle_specific_tributes(&self, tribute_ids: &[u64]) -> StdResult<Binary> {

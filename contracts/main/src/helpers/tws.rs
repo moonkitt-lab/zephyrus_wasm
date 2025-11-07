@@ -11,10 +11,8 @@ pub fn batch_hydromancer_tws_changes(
     hydromancer_tws_changes: &mut HashMap<(HydromancerId, RoundId, String, u64), i128>,
     hydromancer_id: HydromancerId,
     current_round_id: RoundId,
-    old_vessel_shares: &Option<VesselSharesInfo>,
-    new_lockup_info: &LockupsInfo,
     old_vessel_shares: &Option<VesselInfoSnapshot>,
-    new_lockup_shares: &LockupsSharesInfo,
+    new_lockup_info: &LockupsInfo,
 ) {
     // Subtract old TWS
     if let Some(old_shares) = old_vessel_shares {
@@ -60,10 +58,8 @@ pub fn batch_proposal_tws_changes(
     storage: &dyn Storage,
     tws_changes: &mut TwsChanges,
     vessel: &Vessel,
-    old_vessel_shares: &Option<VesselSharesInfo>,
-    new_lockup_info: &LockupsInfo,
     old_vessel_shares: &Option<VesselInfoSnapshot>,
-    new_lockup_shares: &LockupsSharesInfo,
+    new_lockup_info: &LockupsInfo,
     tranche_ids: &[TrancheId],
     current_round_id: RoundId,
 ) -> Result<(), ContractError> {
@@ -254,9 +250,6 @@ pub fn complete_hydromancer_time_weighted_shares(
             lockup_info.time_weighted_shares.u128(),
             lockup_info.token_group_id.clone(),
             lockup_info.locked_rounds,
-            lockup_shares.time_weighted_shares.u128(),
-            lockup_shares.token_group_id.clone(),
-            lockup_shares.locked_rounds,
             Some(hydromancer_id),
         )?;
 
@@ -303,7 +296,6 @@ pub fn initialize_vessel_tws(
 
     // Process each vessel's TWS data
     for lockup_info in &lockups_info_response.lockups_shares_info {
-    for lockup_info in &lockups_shares_response.lockups_shares_info {
         let vessel = state::get_vessel(deps.storage, lockup_info.lock_id)?;
         // Save vessel TWS info
         state::save_vessel_info_snapshot(

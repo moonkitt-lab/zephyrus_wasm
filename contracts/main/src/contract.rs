@@ -1081,9 +1081,6 @@ fn execute_user_vote(
                     lockup_info.time_weighted_shares.u128(),
                     lockup_info.token_group_id,
                     lockup_info.locked_rounds,
-                    lockup_shares_info.time_weighted_shares.u128(),
-                    lockup_shares_info.token_group_id,
-                    lockup_shares_info.locked_rounds,
                     None,
                 )?;
             }

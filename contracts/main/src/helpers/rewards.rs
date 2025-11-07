@@ -118,14 +118,23 @@ pub fn calculate_total_voting_power_of_hydromancer_for_locked_rounds(
     locked_rounds: u64,
     token_info_provider: &HashMap<String, DenomInfoResponse>,
 ) -> Result<Decimal, ContractError> {
+    println!("calculate_total_voting_power_of_hydromancer_for_locked_rounds");
     let list_tws =
         state::get_hydromancer_time_weighted_shares_by_round(storage, round_id, hydromancer_id)?;
+    println!("list_tws: {:?}", list_tws);
     let mut total_voting_power = Decimal::zero();
 
     for ((locked_round, token_group_id), tws) in &list_tws {
+        println!("locked_round: {:?}", locked_round);
+        println!("locked_rounds: {:?}", locked_rounds);
+        println!(
+            "*locked_round < locked_rounds: {:?}",
+            *locked_round < locked_rounds
+        );
         if *locked_round < locked_rounds {
             continue;
         }
+
         let token_info = token_info_provider.get(token_group_id).ok_or(
             ContractError::TokenInfoProviderNotFound {
                 token_group_id: token_group_id.clone(),
@@ -174,12 +183,16 @@ pub fn calculate_voting_power_of_vessel(
     token_info_provider: &HashMap<String, DenomInfoResponse>,
     vessel_snapshot: &VesselInfoSnapshot,
 ) -> Result<Decimal, ContractError> {
+    println!("vessel_snapshot: {:?}", vessel_snapshot);
+    println!("token_info_provider: {:?}", token_info_provider);
+
     let token_info = token_info_provider
         .get(&vessel_snapshot.token_group_id)
         .ok_or(ContractError::TokenInfoProviderNotFound {
             token_group_id: vessel_snapshot.token_group_id.clone(),
             round_id,
         })?;
+    println!("token_info: {:?}", token_info);
     let voting_power = Decimal::from_ratio(vessel_snapshot.time_weighted_shares, 1u128)
         .saturating_mul(token_info.ratio);
 
@@ -205,9 +218,14 @@ pub fn calculate_rewards_amount_for_vessel_on_tribute(
     if vessel_snapshot.was_under_user_control() {
         let vessel_harbor =
             state::get_harbor_of_vessel(deps.storage, ctx.tranche_id, ctx.round_id, vessel_id)?;
-
+        println!("vessel_harbor: {:?}", vessel_harbor);
         if let Some(vessel_harbor) = vessel_harbor {
             if vessel_harbor == ctx.proposal_id {
+                println!("voting_power: {:?}", voting_power);
+                println!(
+                    "ctx.total_proposal_voting_power: {:?}",
+                    ctx.total_proposal_voting_power
+                );
                 let vp_ratio = voting_power
                     .checked_div(ctx.total_proposal_voting_power)
                     .map_err(|_| ContractError::CustomError {
@@ -222,6 +240,7 @@ pub fn calculate_rewards_amount_for_vessel_on_tribute(
         }
         Ok(Decimal::zero())
     } else {
+        println!("Vessel was under hydromancer control");
         // Vessel is under hydromancer control, we don't care if it was used or not, it take a portion of hydromancer rewards
         let proposal = query_hydro_proposal(
             &deps,
@@ -230,8 +249,10 @@ pub fn calculate_rewards_amount_for_vessel_on_tribute(
             ctx.tranche_id,
             ctx.proposal_id,
         )?;
+        println!("proposal: {:?}", proposal);
 
         if proposal.deployment_duration <= vessel_snapshot.locked_rounds {
+            println!("proposal.deployment_duration <= vessel_snapshot.locked_rounds");
             let total_hydromancer_locked_rounds_voting_power =
                 calculate_total_voting_power_of_hydromancer_for_locked_rounds(
                     deps.storage,
@@ -348,7 +369,8 @@ pub fn distribute_rewards_for_vessels_on_tribute(
                 vessel_id,
                 &StateDataLoader {},
             )?;
-
+            println!("Vessel tribute not claimed");
+            println!("Rewards : {}", proposal_vessel_rewards);
             amount_to_distribute = amount_to_distribute.saturating_add(proposal_vessel_rewards);
 
             let floored_vessel_reward = proposal_vessel_rewards.to_uint_floor();

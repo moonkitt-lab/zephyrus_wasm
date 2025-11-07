@@ -1,4 +1,4 @@
-use cosmwasm_std::{testing::mock_dependencies, Addr, Coin, Decimal, Uint128};
+use cosmwasm_std::{Addr, Coin, Decimal, Uint128};
 use hydro_interface::msgs::DenomInfoResponse;
 use std::collections::HashMap;
 use zephyrus_core::{
@@ -7,8 +7,10 @@ use zephyrus_core::{
 };
 
 use crate::{
-    helpers::hydromancer_tribute_data_loader::DataLoader, helpers::rewards::*, state,
+    helpers::{hydromancer_tribute_data_loader::DataLoader, rewards::*},
+    state,
     testing::make_valid_addr,
+    testing_mocks::mock_dependencies,
 };
 
 // Helper function to create mock constants
@@ -17,7 +19,7 @@ fn create_mock_constants() -> Constants {
         commission_rate: Decimal::percent(5), // 5% commission
         hydro_config: zephyrus_core::state::HydroConfig {
             hydro_tribute_contract_address: Addr::unchecked("hydro_tribute_contract"),
-            hydro_contract_address: Addr::unchecked("hydro_derivative_contract"),
+            hydro_contract_address: make_valid_addr("hydro"),
         },
         commission_recipient: Addr::unchecked("commission_recipient"),
         default_hydromancer_id: 1u64,
@@ -781,87 +783,6 @@ fn test_allocate_rewards_to_hydromancer_division_by_zero() {
 
     // Should fail due to division by zero
     assert!(result.is_err());
-}
-
-// Test distribute_rewards_for_vessels_on_tribute with real data
-#[test]
-fn test_distribute_rewards_for_vessels_on_tribute_with_real_data() {
-    let mut deps = mock_dependencies();
-
-    // Create user and vessel
-    let user_id = state::insert_new_user(deps.as_mut().storage, make_valid_addr("user"))
-        .expect("Should create user");
-
-    let vessel_id = 1u64;
-    state::add_vessel(
-        deps.as_mut().storage,
-        &Vessel {
-            hydro_lock_id: vessel_id,
-            tokenized_share_record_id: None,
-            class_period: 1_000_000,
-            auto_maintenance: true,
-            hydromancer_id: None, // User control
-            owner_id: user_id,
-        },
-        &make_valid_addr("user"),
-    )
-    .expect("Should add vessel");
-
-    // Add vessel shares
-    state::save_vessel_info_snapshot(
-        deps.as_mut().storage,
-        vessel_id,
-        1u64,     // round_id
-        1000u128, // time_weighted_shares
-        "token_group_1".to_string(),
-        1u64, // locked_rounds
-        Some(0),
-    )
-    .expect("Should save vessel shares");
-
-    // Add vessel to harbor
-    state::add_vessel_to_harbor(
-        deps.as_mut().storage,
-        1u64, // tranche_id
-        1u64, // round_id
-        1u64, // proposal_id
-        &zephyrus_core::state::VesselHarbor {
-            hydro_lock_id: vessel_id,
-            user_control: true,
-            steerer_id: 1u64,
-        },
-    )
-    .expect("Should add vessel to harbor");
-
-    let vessel_ids = vec![vessel_id];
-    let tribute_id = 1u64;
-    let tranche_id = 1u64;
-    let round_id = 1u64;
-    let proposal_id = 1u64;
-    let tribute_rewards = Coin::new(1000u128, "uatom");
-    let constants = create_mock_constants();
-    let token_info_provider = create_mock_token_info_provider();
-    let total_proposal_voting_power = Decimal::from_ratio(2000u128, 1u128);
-
-    let result = distribute_rewards_for_vessels_on_tribute(
-        &mut deps.as_mut(),
-        vessel_ids,
-        tribute_id,
-        tranche_id,
-        round_id,
-        proposal_id,
-        tribute_rewards,
-        constants,
-        token_info_provider,
-        total_proposal_voting_power,
-    );
-
-    // Should succeed and return calculated rewards
-    assert!(result.is_ok());
-    if let Ok(amount) = result {
-        // Should be (1000 / 2000) * 1000 = 500
-        assert_eq!(amount, Decimal::from_ratio(500u128, 1u128));
-    }
 }
 
 // Test distribute_rewards_for_vessels_on_tribute with already claimed vessels

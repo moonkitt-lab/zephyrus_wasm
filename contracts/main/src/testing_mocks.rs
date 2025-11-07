@@ -133,7 +133,7 @@ impl MockWasmQuerier {
                 lock_entry: LockEntryV2 {
                     lock_id: *lock_id,
                     owner: Addr::unchecked(address),
-                    funds: coin(1000u128, "uatom"),
+                    funds: coin(5_000_000u128, "uatom"),
                     lock_start: Timestamp::from_seconds(1000),
                     lock_end: Timestamp::from_seconds(2000),
                 },

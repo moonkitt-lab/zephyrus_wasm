@@ -222,7 +222,7 @@ mod tests {
             let lockup = &specific_lockups_response.lockups[i];
             assert_eq!(lockup.lock_entry.lock_id, *lock_id);
             assert_eq!(lockup.lock_entry.owner, env.contract.address);
-            assert_eq!(lockup.lock_entry.funds.amount.u128(), 1000u128);
+            assert_eq!(lockup.lock_entry.funds.amount.u128(), 5_000_000u128);
             assert_eq!(lockup.lock_entry.funds.denom, "uatom");
             assert_eq!(lockup.current_voting_power.u128(), 1000u128);
         }

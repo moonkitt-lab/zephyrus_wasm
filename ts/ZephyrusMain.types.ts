@@ -12,6 +12,7 @@ export interface InstantiateMsg {
   default_hydromancer_commission_rate: Decimal;
   default_hydromancer_name: string;
   hydro_contract_address: string;
+  min_tokens_per_vessel: number;
   tribute_contract_address: string;
   whitelist_admins: string[];
 }
@@ -137,6 +138,7 @@ export interface Constants {
   commission_recipient: Addr;
   default_hydromancer_id: number;
   hydro_config: HydroConfig;
+  min_tokens_per_vessel: number;
   paused_contract: boolean;
 }
 export interface HydroConfig {

@@ -86,7 +86,12 @@ pub fn handle_claim_tribute_reply(
     // Get total amount distributed by previous tributes in this batch
     let total_distributed =
         state::get_total_distributed_amount(deps.storage, &payload.amount.denom)?;
-    let balance_expected_adjusted = balance_expected.saturating_sub(total_distributed);
+    let balance_expected_adjusted =
+        balance_expected
+            .checked_sub(total_distributed)
+            .map_err(|_| ContractError::CustomError {
+                msg: "Insufficient balance for distribution".to_string(),
+            })?;
 
     // Check if the amount received is correct, accounting for previous distributions
     if balance_query.amount != balance_expected_adjusted {
@@ -212,7 +217,13 @@ pub fn handle_claim_tribute_reply(
         payload.tribute_id,
         users_and_hydromancers_funds.clone(),
     )?;
-    Ok(response.add_attribute("action", "handle_claim_tribute_reply"))
+    Ok(response
+        .add_attribute("action", "handle_claim_tribute_reply")
+        .add_attribute("proposal_id", payload.proposal_id.to_string())
+        .add_attribute("tribute_id", payload.tribute_id.to_string())
+        .add_attribute("round_id", payload.round_id.to_string())
+        .add_attribute("tranche_id", payload.tranche_id.to_string())
+        .add_attribute("vessel_ids", join_u64_ids(&payload.vessel_ids)))
 }
 
 pub fn handle_refresh_time_weighted_shares_reply(
@@ -242,13 +253,17 @@ pub fn handle_refresh_time_weighted_shares_reply(
             state::get_vessel_shares_info(deps.storage, payload.current_round_id, vessel_id).ok();
 
         // Save new vessel shares info
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.storage,
             vessel_id,
             payload.current_round_id,
             updated_lockup_info.time_weighted_shares.u128(),
             updated_lockup_info.token_group_id.clone(),
             updated_lockup_info.locked_rounds,
+            updated_lockup_shares.time_weighted_shares.u128(),
+            updated_lockup_shares.token_group_id.clone(),
+            updated_lockup_shares.locked_rounds,
+            vessel.hydromancer_id,
         )?;
 
         // Batch hydromancer TWS changes if vessel is controlled by hydromancer
@@ -279,7 +294,11 @@ pub fn handle_refresh_time_weighted_shares_reply(
     // Apply all batched changes in single write operations
     apply_hydromancer_tws_changes(deps.storage, hydromancer_tws_changes)?;
 
-    apply_proposal_tws_changes(deps.storage, tws_changes.proposal_changes)?;
+    apply_proposal_tws_changes(
+        deps.storage,
+        payload.current_round_id,
+        tws_changes.proposal_changes,
+    )?;
 
     apply_proposal_hydromancer_tws_changes(deps.storage, tws_changes.proposal_hydromancer_changes)?;
 
@@ -300,7 +319,6 @@ pub fn handle_vote_reply(
     skipped_locks: Vec<u64>,
 ) -> Result<Response, ContractError> {
     for vessels_to_harbor in payload.vessels_harbors.clone() {
-        let mut lock_ids = vec![];
         let constants = state::get_constants(deps.storage)?;
 
         let vessels_info = query_hydro_lockups_shares(
@@ -315,6 +333,14 @@ pub fn handle_vote_reply(
             }
 
             let vessel_id = vessel_info.lock_id;
+
+        for vessel_shares_info in vessels_shares.lockups_shares_info.iter() {
+            let vessel_id = vessel_shares_info.lock_id;
+            // if vessel is skipped, it means that hydro was not able to vote for it, zephyrus skips it too
+            if skipped_locks.contains(&vessel_id) {
+                continue;
+            }
+
             let vessel = state::get_vessel(deps.storage, vessel_id)?;
 
             let previous_harbor_id = state::get_harbor_of_vessel(
@@ -349,6 +375,7 @@ pub fn handle_vote_reply(
 
                         state::substract_time_weighted_shares_from_proposal(
                             deps.storage,
+                            payload.round_id,
                             previous_harbor_id,
                             &vessel_info.token_group_id,
                             vessel_info.time_weighted_shares.u128(),
@@ -356,6 +383,7 @@ pub fn handle_vote_reply(
 
                         state::add_time_weighted_shares_to_proposal(
                             deps.storage,
+                            payload.round_id,
                             vessels_to_harbor.harbor_id,
                             &vessel_info.token_group_id,
                             vessel_info.time_weighted_shares.u128(),
@@ -395,6 +423,7 @@ pub fn handle_vote_reply(
                     // update time weighted shares for proposal
                     state::add_time_weighted_shares_to_proposal(
                         deps.storage,
+                        payload.round_id,
                         vessels_to_harbor.harbor_id,
                         &vessel_info.token_group_id,
                         vessel_info.time_weighted_shares.u128(),
@@ -413,11 +442,11 @@ pub fn handle_vote_reply(
                     }
                 }
             }
-
-            lock_ids.push(vessel.hydro_lock_id);
         }
     }
-    Ok(Response::new().add_attribute("skipped_locks", join_u64_ids(skipped_locks)))
+    Ok(Response::new()
+        .add_attribute("skipped_locks", join_u64_ids(skipped_locks))
+        .add_attribute("action", "handle_vote_reply"))
 }
 
 pub(crate) fn parse_u64_list_from_reply(

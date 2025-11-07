@@ -4,7 +4,7 @@ use hydro_interface::msgs::LockupsInfo;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use zephyrus_core::msgs::{HydroProposalId, HydromancerId, RoundId, TrancheId};
-use zephyrus_core::state::{Constants, Vessel, VesselSharesInfo};
+use zephyrus_core::state::{Constants, Vessel, VesselInfoSnapshot};
 
 /// Batch hydromancer TWS changes in memory
 pub fn batch_hydromancer_tws_changes(
@@ -13,6 +13,8 @@ pub fn batch_hydromancer_tws_changes(
     current_round_id: RoundId,
     old_vessel_shares: &Option<VesselSharesInfo>,
     new_lockup_info: &LockupsInfo,
+    old_vessel_shares: &Option<VesselInfoSnapshot>,
+    new_lockup_shares: &LockupsSharesInfo,
 ) {
     // Subtract old TWS
     if let Some(old_shares) = old_vessel_shares {
@@ -60,6 +62,8 @@ pub fn batch_proposal_tws_changes(
     vessel: &Vessel,
     old_vessel_shares: &Option<VesselSharesInfo>,
     new_lockup_info: &LockupsInfo,
+    old_vessel_shares: &Option<VesselInfoSnapshot>,
+    new_lockup_shares: &LockupsSharesInfo,
     tranche_ids: &[TrancheId],
     current_round_id: RoundId,
 ) -> Result<(), ContractError> {
@@ -150,6 +154,7 @@ pub fn apply_hydromancer_tws_changes(
 /// Apply batched proposal TWS changes in single write operations
 pub fn apply_proposal_tws_changes(
     storage: &mut dyn Storage,
+    round_id: RoundId,
     proposal_tws_changes: HashMap<(HydroProposalId, String), i128>,
 ) -> Result<(), ContractError> {
     for ((proposal_id, token_group_id), tws_delta) in proposal_tws_changes {
@@ -157,6 +162,7 @@ pub fn apply_proposal_tws_changes(
             Ordering::Greater => {
                 state::add_time_weighted_shares_to_proposal(
                     storage,
+                    round_id,
                     proposal_id,
                     &token_group_id,
                     tws_delta as u128,
@@ -165,6 +171,7 @@ pub fn apply_proposal_tws_changes(
             Ordering::Less => {
                 state::substract_time_weighted_shares_from_proposal(
                     storage,
+                    round_id,
                     proposal_id,
                     &token_group_id,
                     (-tws_delta) as u128,
@@ -240,13 +247,17 @@ pub fn complete_hydromancer_time_weighted_shares(
         if state::has_vessel_shares_info(deps.storage, current_round_id, lockup_info.lock_id) {
             continue;
         }
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.storage,
             lockup_info.lock_id,
             current_round_id,
             lockup_info.time_weighted_shares.u128(),
             lockup_info.token_group_id.clone(),
             lockup_info.locked_rounds,
+            lockup_shares.time_weighted_shares.u128(),
+            lockup_shares.token_group_id.clone(),
+            lockup_shares.locked_rounds,
+            Some(hydromancer_id),
         )?;
 
         // Vessel has voting power
@@ -292,14 +303,17 @@ pub fn initialize_vessel_tws(
 
     // Process each vessel's TWS data
     for lockup_info in &lockups_info_response.lockups_shares_info {
+    for lockup_info in &lockups_shares_response.lockups_shares_info {
+        let vessel = state::get_vessel(deps.storage, lockup_info.lock_id)?;
         // Save vessel TWS info
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.storage,
             lockup_info.lock_id,
             current_round_id,
             lockup_info.time_weighted_shares.u128(),
             lockup_info.token_group_id.clone(),
             lockup_info.locked_rounds,
+            vessel.hydromancer_id,
         )?;
 
         // Update hydromancer TWS if vessel is controlled by one
@@ -330,9 +344,10 @@ pub fn reset_vessel_vote(
 ) -> Result<(), ContractError> {
     let vessel_shares =
         state::get_vessel_shares_info(storage, current_round_id, vessel.hydro_lock_id)
-            .expect("Vessel shares for voted vessels should be initialized ");
+            .map_err(ContractError::Std)?;
     state::substract_time_weighted_shares_from_proposal(
         storage,
+        current_round_id,
         proposal_id,
         &vessel_shares.token_group_id,
         vessel_shares.time_weighted_shares,

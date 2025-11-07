@@ -12,16 +12,15 @@ mod tests {
             get_all_hydromancers, get_constants, get_harbor_of_vessel, get_hydromancer,
             get_hydromancer_id_by_address, get_hydromancer_proposal_time_weighted_shares,
             get_hydromancer_time_weighted_shares_by_round, get_proposal_time_weighted_shares,
-            get_user_id, get_user_id_by_address, get_vessel, get_vessel_harbor,
-            get_vessel_ids_auto_maintained_by_class, get_vessel_shares_info,
-            get_vessel_to_harbor_by_harbor_id, get_vessels_by_hydromancer, get_vessels_by_ids,
-            get_vessels_by_owner, has_vessel_shares_info, hydromancer_exists, initialize_sequences,
-            insert_new_hydromancer, insert_new_user, is_hydromancer_tws_complete,
-            is_tokenized_share_record_used, is_vessel_owned_by, is_vessel_used_under_user_control,
-            is_whitelisted_admin, iterate_vessels_with_predicate, mark_hydromancer_tws_complete,
-            modify_auto_maintenance, remove_vessel, remove_vessel_from_hydromancer,
-            remove_vessel_harbor, save_vessel, save_vessel_shares_info,
-            substract_time_weighted_shares_from_hydromancer,
+            get_user_id, get_vessel, get_vessel_harbor, get_vessel_ids_auto_maintained_by_class,
+            get_vessel_shares_info, get_vessel_to_harbor_by_harbor_id, get_vessels_by_hydromancer,
+            get_vessels_by_ids, get_vessels_by_owner, has_vessel_shares_info, hydromancer_exists,
+            initialize_sequences, insert_new_hydromancer, insert_new_user,
+            is_hydromancer_tws_complete, is_tokenized_share_record_used, is_vessel_owned_by,
+            is_vessel_used_under_user_control, is_whitelisted_admin,
+            iterate_vessels_with_predicate, mark_hydromancer_tws_complete, modify_auto_maintenance,
+            remove_vessel, remove_vessel_from_hydromancer, remove_vessel_harbor, save_vessel,
+            save_vessel_info_snapshot, substract_time_weighted_shares_from_hydromancer,
             substract_time_weighted_shares_from_proposal,
             substract_time_weighted_shares_from_proposal_for_hydromancer, take_control_of_vessels,
             update_constants, update_whitelist_admins, vessel_exists,
@@ -45,6 +44,7 @@ mod tests {
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),
+            min_tokens_per_vessel: 5_000_000,
         };
         update_constants(storage, constants).unwrap();
 
@@ -71,6 +71,7 @@ mod tests {
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),
+            min_tokens_per_vessel: 5_000_000,
         };
 
         let result = update_constants(deps.as_mut().storage, constants.clone());
@@ -116,7 +117,7 @@ mod tests {
         assert_eq!(user_id, 0);
 
         // Test getting user ID by address
-        let retrieved_id = get_user_id_by_address(deps.as_ref().storage, user_address.clone());
+        let retrieved_id = get_user_id(deps.as_ref().storage, &user_address);
         assert!(retrieved_id.is_ok());
         assert_eq!(retrieved_id.unwrap(), user_id);
 
@@ -143,14 +144,8 @@ mod tests {
         assert_eq!(user1_id, 0);
         assert_eq!(user2_id, 1);
 
-        assert_eq!(
-            get_user_id_by_address(deps.as_ref().storage, user1).unwrap(),
-            0
-        );
-        assert_eq!(
-            get_user_id_by_address(deps.as_ref().storage, user2).unwrap(),
-            1
-        );
+        assert_eq!(get_user_id(deps.as_ref().storage, &user1).unwrap(), 0);
+        assert_eq!(get_user_id(deps.as_ref().storage, &user2).unwrap(), 1);
     }
 
     #[test]
@@ -574,13 +569,14 @@ mod tests {
         let locked_rounds = 5u64;
 
         // Test saving vessel shares info
-        let result = save_vessel_shares_info(
+        let result = save_vessel_info_snapshot(
             deps.as_mut().storage,
             vessel_id,
             round_id,
             time_weighted_shares,
             token_group_id.clone(),
             locked_rounds,
+            None,
         );
         assert!(result.is_ok());
 
@@ -984,10 +980,12 @@ mod tests {
         let proposal_id = 1;
         let token_group_id = "test_token";
         let shares = 1000u128;
+        let current_round_id = 1;
 
         // Test adding proposal shares
         let result = add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             token_group_id,
             shares,
@@ -995,7 +993,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Test getting proposal shares
-        let proposal_tws = get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id);
+        let proposal_tws =
+            get_proposal_time_weighted_shares(deps.as_ref().storage, current_round_id, proposal_id);
         assert!(proposal_tws.is_ok());
         let tws = proposal_tws.unwrap();
         assert_eq!(tws.len(), 1);
@@ -1005,6 +1004,7 @@ mod tests {
         // Test subtracting proposal shares
         let result = substract_time_weighted_shares_from_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             token_group_id,
             500u128,
@@ -1012,7 +1012,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify shares are reduced
-        let proposal_tws = get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id);
+        let proposal_tws =
+            get_proposal_time_weighted_shares(deps.as_ref().storage, current_round_id, proposal_id);
         assert!(proposal_tws.is_ok());
         let tws = proposal_tws.unwrap();
         assert_eq!(tws[0].1, 500u128);
@@ -1164,7 +1165,7 @@ mod tests {
 
         // Test getting non-existent user
         let non_existent_user = make_valid_addr("non_existent");
-        let result = get_user_id_by_address(deps.as_ref().storage, non_existent_user);
+        let result = get_user_id(deps.as_ref().storage, &non_existent_user);
         assert!(result.is_err());
 
         // Test getting non-existent hydromancer

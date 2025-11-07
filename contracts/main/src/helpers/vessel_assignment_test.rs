@@ -38,6 +38,7 @@ mod tests {
                 default_hydromancer_address: make_valid_addr("zephyrus").into_string(),
                 commission_rate: "0.1".parse().unwrap(),
                 commission_recipient: make_valid_addr("commission_recipient").into_string(),
+                min_tokens_per_vessel: 5_000_000,
             },
         );
     }
@@ -153,19 +154,20 @@ mod tests {
         vessel_id: u64,
         current_round_id: u64,
     ) {
+        // Get vessel to check if it has hydromancer
+        let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
+
         // Add vessel shares info to simulate TWS
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             vessel_id,
             current_round_id,
             1000,
             "dAtom".to_string(),
             2,
+            vessel.hydromancer_id,
         )
         .unwrap();
-
-        // Get vessel to check if it has hydromancer
-        let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
 
         // If vessel has hydromancer, add TWS to hydromancer totals
         if let Some(hydromancer_id) = vessel.hydromancer_id {
@@ -214,6 +216,7 @@ mod tests {
         // Add TWS to proposal totals
         state::add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             "dAtom",
             1000,

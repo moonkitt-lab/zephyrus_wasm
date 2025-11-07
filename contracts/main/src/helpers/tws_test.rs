@@ -3,7 +3,7 @@ mod tests {
     use cosmwasm_std::{testing::mock_env, MessageInfo, Uint128};
     use hydro_interface::msgs::LockupsInfo;
     use std::collections::HashMap;
-    use zephyrus_core::state::{Constants, HydroConfig, Vessel, VesselSharesInfo};
+    use zephyrus_core::state::{Constants, HydroConfig, Vessel, VesselInfoSnapshot};
 
     use crate::{
         helpers::tws::{
@@ -27,6 +27,7 @@ mod tests {
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),
+            min_tokens_per_vessel: 5_000_000,
         }
     }
 
@@ -54,6 +55,7 @@ mod tests {
                 default_hydromancer_address: make_valid_addr("zephyrus").into_string(),
                 commission_rate: "0.1".parse().unwrap(),
                 commission_recipient: make_valid_addr("commission_recipient").into_string(),
+                min_tokens_per_vessel: 5_000_000,
             },
         );
     }
@@ -159,10 +161,11 @@ mod tests {
         let mut hydromancer_tws_changes = HashMap::new();
         let hydromancer_id = 1;
         let current_round_id = 1;
-        let old_vessel_shares = Some(VesselSharesInfo {
+        let old_vessel_shares = Some(VesselInfoSnapshot {
             time_weighted_shares: 800,
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
+            hydromancer_id: Some(hydromancer_id),
         });
         let new_lockup_shares = LockupsInfo {
             lock_id: 1,
@@ -189,10 +192,11 @@ mod tests {
         let mut hydromancer_tws_changes = HashMap::new();
         let hydromancer_id = 1;
         let current_round_id = 1;
-        let old_vessel_shares = Some(VesselSharesInfo {
+        let old_vessel_shares = Some(VesselInfoSnapshot {
             time_weighted_shares: 800,
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
+            hydromancer_id: Some(hydromancer_id),
         });
         let new_lockup_shares = LockupsInfo {
             lock_id: 1,
@@ -221,10 +225,11 @@ mod tests {
         let mut hydromancer_tws_changes = HashMap::new();
         let hydromancer_id = 1;
         let current_round_id = 1;
-        let old_vessel_shares = Some(VesselSharesInfo {
+        let old_vessel_shares = Some(VesselInfoSnapshot {
             time_weighted_shares: 500,
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
+            hydromancer_id: Some(hydromancer_id),
         });
         let new_lockup_shares = LockupsInfo {
             lock_id: 1,
@@ -251,10 +256,11 @@ mod tests {
         let mut hydromancer_tws_changes = HashMap::new();
         let hydromancer_id = 1;
         let current_round_id = 1;
-        let old_vessel_shares = Some(VesselSharesInfo {
+        let old_vessel_shares = Some(VesselInfoSnapshot {
             time_weighted_shares: 0,
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
+            hydromancer_id: Some(hydromancer_id),
         });
         let new_lockup_shares = LockupsInfo {
             lock_id: 1,
@@ -337,10 +343,11 @@ mod tests {
 
         let mut tws_changes = TwsChanges::new();
         let vessel = state::get_vessel(deps.as_ref().storage, vessel_id).unwrap();
-        let old_vessel_shares = Some(VesselSharesInfo {
+        let old_vessel_shares = Some(VesselInfoSnapshot {
             time_weighted_shares: 500,
             token_group_id: "dAtom".to_string(),
             locked_rounds: 1,
+            hydromancer_id: Some(1),
         });
         let new_lockup_shares = LockupsInfo {
             lock_id: vessel_id,
@@ -470,8 +477,13 @@ mod tests {
         let token_group_id = "dAtom".to_string();
         let key = (proposal_id, token_group_id.clone());
         proposal_tws_changes.insert(key, 1000i128);
+        let current_round_id = 1;
 
-        let result = apply_proposal_tws_changes(deps.as_mut().storage, proposal_tws_changes);
+        let result = apply_proposal_tws_changes(
+            deps.as_mut().storage,
+            current_round_id,
+            proposal_tws_changes,
+        );
 
         assert!(result.is_ok());
         // Function should execute without error - storage verification would require internal access
@@ -484,10 +496,11 @@ mod tests {
 
         let proposal_id = 1;
         let token_group_id = "dAtom".to_string();
-
+        let current_round_id = 1;
         // First add some TWS
         state::add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id, // round_id
             proposal_id,
             &token_group_id,
             1500,
@@ -498,7 +511,11 @@ mod tests {
         let key = (proposal_id, token_group_id.clone());
         proposal_tws_changes.insert(key, -500i128);
 
-        let result = apply_proposal_tws_changes(deps.as_mut().storage, proposal_tws_changes);
+        let result = apply_proposal_tws_changes(
+            deps.as_mut().storage,
+            current_round_id,
+            proposal_tws_changes,
+        );
 
         assert!(result.is_ok());
         // Function should execute without error - storage verification would require internal access
@@ -630,13 +647,14 @@ mod tests {
         let current_round_id = 1;
 
         // First initialize the vessel
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             1,
             current_round_id,
             1000,
             "dAtom".to_string(),
             2,
+            Some(constants.default_hydromancer_id),
         )
         .unwrap();
 
@@ -682,13 +700,14 @@ mod tests {
         let current_round_id = 1;
 
         // Initialize vessel 1 first
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             1,
             current_round_id,
             1000,
             "dAtom".to_string(),
             2,
+            Some(constants.default_hydromancer_id),
         )
         .unwrap();
 
@@ -822,13 +841,14 @@ mod tests {
         let vessel_id = 1;
 
         // Set up vessel shares info
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             vessel_id,
             current_round_id,
             1000,
             "dAtom".to_string(),
             2,
+            Some(0),
         )
         .unwrap();
 
@@ -851,6 +871,7 @@ mod tests {
         // Add some TWS to proposal and hydromancer proposal
         state::add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             "dAtom",
             1000,
@@ -924,13 +945,14 @@ mod tests {
         let vessel_id = 99;
 
         // Set up vessel shares info
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             vessel_id,
             current_round_id,
             500,
             "stAtom".to_string(),
             1,
+            Some(0),
         )
         .unwrap();
 
@@ -953,6 +975,7 @@ mod tests {
         // Add some TWS to proposal (no hydromancer TWS for user-controlled vessels)
         state::add_time_weighted_shares_to_proposal(
             deps.as_mut().storage,
+            current_round_id,
             proposal_id,
             "stAtom",
             500,

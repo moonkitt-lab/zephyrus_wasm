@@ -12,6 +12,7 @@ export interface InstantiateMsg {
   default_hydromancer_commission_rate: Decimal;
   default_hydromancer_name: string;
   hydro_contract_address: string;
+  min_tokens_per_vessel: number;
   tribute_contract_address: string;
   whitelist_admins: string[];
 }
@@ -31,6 +32,7 @@ export type ExecuteMsg = {
   };
 } | {
   auto_maintain: {
+    class_period: number;
     limit?: number | null;
     start_from_vessel_id?: number | null;
   };
@@ -69,6 +71,7 @@ export type ExecuteMsg = {
   claim: {
     round_id: number;
     tranche_id: number;
+    tribute_ids: number[];
     vessel_ids: number[];
   };
 } | {
@@ -78,6 +81,10 @@ export type ExecuteMsg = {
 } | {
   update_commission_recipient: {
     new_commission_recipient: string;
+  };
+} | {
+  set_admin_addresses: {
+    admins: string[];
   };
 };
 export type Binary = string;
@@ -91,8 +98,6 @@ export interface Cw721ReceiveMsg {
   token_id: string;
 }
 export type QueryMsg = {
-  voting_power: {};
-} | {
   vessels_by_owner: {
     limit?: number | null;
     owner: string;
@@ -119,6 +124,10 @@ export type QueryMsg = {
     user_address: string;
     vessel_ids: number[];
   };
+} | {
+  voted_proposals: {
+    round_id: number;
+  };
 };
 export type Addr = string;
 export interface ConstantsResponse {
@@ -129,6 +138,7 @@ export interface Constants {
   commission_recipient: Addr;
   default_hydromancer_id: number;
   hydro_config: HydroConfig;
+  min_tokens_per_vessel: number;
   paused_contract: boolean;
 }
 export interface HydroConfig {
@@ -177,6 +187,6 @@ export interface Coin {
   amount: Uint128;
   denom: string;
 }
-export interface VotingPowerResponse {
-  voting_power: number;
+export interface VotedProposalsResponse {
+  voted_proposals: number[];
 }

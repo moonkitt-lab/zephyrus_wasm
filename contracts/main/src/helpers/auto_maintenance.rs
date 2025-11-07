@@ -1,5 +1,5 @@
 use cosmwasm_std::{Order, Storage};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use zephyrus_core::msgs::{HydroLockId, RoundId};
 
 use crate::{errors::ContractError, state};
@@ -12,47 +12,40 @@ pub fn collect_vessels_needing_auto_maintenance(
     start_from_vessel_id: Option<HydroLockId>,
     limit: usize,
     lock_epoch_length: u64,
+    class_period: u64,
 ) -> Result<Vec<(HydroLockId, u64)>, ContractError> {
     let auto_maintained_vessels_by_class = state::get_vessel_ids_auto_maintained_by_class()?;
 
     // Collect all auto-maintained vessels with their target class periods
-    let mut all_auto_maintained_vessels: Vec<(HydroLockId, u64)> = Vec::new();
-
-    for class_result in
-        auto_maintained_vessels_by_class.range(storage, None, None, Order::Ascending)
-    {
-        let (target_class_period, vessel_ids_set) = class_result?;
-        for vessel_id in vessel_ids_set {
-            all_auto_maintained_vessels.push((vessel_id, target_class_period));
-        }
-    }
-
-    // Sort by vessel ID for consistent pagination
-    all_auto_maintained_vessels.sort_by_key(|(vessel_id, _)| *vessel_id);
+    let all_auto_maintained_vessels_by_class: BTreeSet<HydroLockId> =
+        auto_maintained_vessels_by_class
+            .load(storage, class_period)
+            .unwrap_or_default();
 
     // Apply pagination
     let start_index = if let Some(start_vessel_id) = start_from_vessel_id {
-        all_auto_maintained_vessels
-            .binary_search_by_key(&start_vessel_id, |(vessel_id, _)| *vessel_id)
-            .map(|i| i + 1) // Start from next vessel
-            .unwrap_or_else(|i| i) // Or insertion point
+        all_auto_maintained_vessels_by_class
+            .iter()
+            .position(|&vessel_id| vessel_id > start_vessel_id)
+            .unwrap_or(all_auto_maintained_vessels_by_class.len())
     } else {
         0
     };
 
-    let paginated_vessels_requiring_maintenance = all_auto_maintained_vessels
+    let paginated_vessels_requiring_maintenance = all_auto_maintained_vessels_by_class
         .into_iter()
         .skip(start_index)
         .take(limit)
-        .filter(|&(vessel_id, target_class_period)| {
+        .filter(|&vessel_id| {
             vessel_needs_auto_maintenance(
                 storage,
                 vessel_id,
-                target_class_period,
+                class_period,
                 current_round_id,
                 lock_epoch_length,
             )
         })
+        .map(|vessel_id| (vessel_id, class_period))
         .collect();
 
     Ok(paginated_vessels_requiring_maintenance)

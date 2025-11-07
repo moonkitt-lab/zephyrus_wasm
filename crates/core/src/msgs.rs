@@ -21,6 +21,7 @@ pub struct InstantiateMsg {
     pub default_hydromancer_commission_rate: Decimal,
     pub default_hydromancer_address: String,
     pub commission_recipient: String,
+    pub min_tokens_per_vessel: u128,
 }
 
 #[cw_serde]
@@ -82,6 +83,7 @@ pub enum ExecuteMsg {
     AutoMaintain {
         start_from_vessel_id: Option<u64>,
         limit: Option<usize>,
+        class_period: u64,
     },
     /// Executable message for Zephyrus users that allows the caller
     /// to modify the auto_maintenance of the specified vessels (provided as parameters).
@@ -160,6 +162,7 @@ pub enum ExecuteMsg {
         round_id: u64,
         tranche_id: u64,
         vessel_ids: Vec<u64>,
+        tribute_ids: Vec<u64>,
     },
     /// Executable message for admins
     /// to update the commission rate
@@ -173,11 +176,14 @@ pub enum ExecuteMsg {
     /// - The caller must be an admin.
     /// - The new commission recipient must be a valid address.
     UpdateCommissionRecipient { new_commission_recipient: String },
-}
 
-#[cw_serde]
-pub struct VotingPowerResponse {
-    pub voting_power: u64,
+    /// Executable message for admins
+    /// to set the admin addresses
+    /// Preconditions:
+    /// - The caller must be an admin.
+    /// - The admin addresses must be valid addresses.
+    /// - intersection of new admin addresses and existing admin addresses must not be empty.
+    SetAdminAddresses { admins: Vec<String> },
 }
 
 #[cw_serde]
@@ -208,8 +214,6 @@ pub struct ConstantsResponse {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    #[returns(VotingPowerResponse)]
-    VotingPower {},
     #[returns(VesselsResponse)]
     VesselsByOwner {
         owner: String,
@@ -237,6 +241,8 @@ pub enum QueryMsg {
         tranche_id: u64,
         vessel_ids: Vec<u64>,
     },
+    #[returns(VotedProposalsResponse)]
+    VotedProposals { round_id: u64 },
 }
 
 #[cw_serde]
@@ -294,4 +300,9 @@ pub struct VesselsRewardsResponse {
     pub round_id: u64,
     pub tranche_id: u64,
     pub rewards: Vec<RewardInfo>,
+}
+
+#[cw_serde]
+pub struct VotedProposalsResponse {
+    pub voted_proposals: Vec<u64>,
 }

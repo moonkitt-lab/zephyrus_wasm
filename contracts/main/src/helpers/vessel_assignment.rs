@@ -34,6 +34,16 @@ pub fn assign_vessel_to_hydromancer(
     else {
         return Ok(());
     };
+    // modify vessel snapshot with new hydromancer_id
+    state::save_vessel_info_snapshot(
+        storage,
+        vessel_id,
+        current_round_id,
+        vessel_shares.time_weighted_shares,
+        vessel_shares.token_group_id.clone(),
+        vessel_shares.locked_rounds,
+        Some(new_hydromancer_id),
+    )?;
 
     // Remove from all proposals across all tranches
     for &tranche_id in tranche_ids {
@@ -43,6 +53,7 @@ pub fn assign_vessel_to_hydromancer(
             // Remove vessel TWS from proposal totals
             state::substract_time_weighted_shares_from_proposal(
                 storage,
+                current_round_id,
                 proposal_id,
                 &vessel_shares.token_group_id,
                 vessel_shares.time_weighted_shares,
@@ -123,6 +134,16 @@ pub fn assign_vessel_to_user_control(
     else {
         return Ok(());
     };
+    // Save vessel snapshot with hydromancer_id set to None
+    state::save_vessel_info_snapshot(
+        storage,
+        vessel_id,
+        current_round_id,
+        vessel_shares.time_weighted_shares,
+        vessel_shares.token_group_id.clone(),
+        vessel_shares.locked_rounds,
+        None,
+    )?;
 
     // Remove from all proposals across all tranches
     for &tranche_id in tranche_ids {
@@ -132,6 +153,7 @@ pub fn assign_vessel_to_user_control(
             // Remove vessel TWS from proposal totals
             state::substract_time_weighted_shares_from_proposal(
                 storage,
+                current_round_id,
                 proposal_id,
                 &vessel_shares.token_group_id,
                 vessel_shares.time_weighted_shares,

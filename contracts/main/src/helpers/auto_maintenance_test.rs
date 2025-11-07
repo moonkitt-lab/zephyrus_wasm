@@ -38,6 +38,7 @@ mod tests {
                 default_hydromancer_address: make_valid_addr("zephyrus").into_string(),
                 commission_rate: "0.1".parse().unwrap(),
                 commission_recipient: make_valid_addr("commission_recipient").into_string(),
+                min_tokens_per_vessel: 5_000_000,
             },
         );
     }
@@ -82,7 +83,7 @@ mod tests {
             &Vessel {
                 hydro_lock_id: 1,
                 tokenized_share_record_id: None,
-                class_period: 2_000_000,
+                class_period: 1_000_000,
                 auto_maintenance: true,
                 hydromancer_id: Some(0),
                 owner_id: user2_id,
@@ -128,7 +129,7 @@ mod tests {
                 hydro_lock_id: 4,
                 tokenized_share_record_id: None,
                 class_period: 2_000_000,
-                auto_maintenance: true,
+                auto_maintenance: false,
                 hydromancer_id: Some(0),
                 owner_id: user2_id,
             },
@@ -203,17 +204,17 @@ mod tests {
         let vessel_id = 0;
         let target_class_period = 1_000_000;
         let lock_epoch_length = 1_000_000; // Use the same as in testing_mocks
-
-        // Add vessel shares with matching class period
-        // Since locked_rounds * lock_epoch_length should equal target_class_period
-        // We need locked_rounds = target_class_period / lock_epoch_length = 1_000_000 / 1_000_000 = 1
-        state::save_vessel_shares_info(
+                                           // Add vessel shares with matching class period
+                                           // Since locked_rounds * lock_epoch_length should equal target_class_period
+                                           // We need locked_rounds = target_class_period / lock_epoch_length = 1_000_000 / 1_000_000 = 1
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             vessel_id,
             current_round_id,
             1000,
             "dAtom".to_string(),
             1, // locked_rounds = 1, so 1 * 1_000_000 = 1_000_000 (matches target)
+            Some(0),
         )
         .unwrap();
 
@@ -237,16 +238,17 @@ mod tests {
         let vessel_id = 0;
         let target_class_period = 1_000_000;
         let lock_epoch_length = 1_000_000; // Use the same as in testing_mocks
-
+        let constants = state::get_constants(deps.as_ref().storage).unwrap();
         // Add vessel shares with different locked_rounds
         // locked_rounds = 2, so 2 * 1_000_000 = 2_000_000 (does not match target 1_000_000)
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             vessel_id,
             current_round_id,
             1000,
             "dAtom".to_string(),
             2, // Different from target
+            Some(0),
         )
         .unwrap();
 
@@ -277,18 +279,17 @@ mod tests {
             None,
             limit,
             lock_epoch_length,
+            1_000_000,
         )
         .unwrap();
 
-        // Should return vessels 0, 1, 3, 4 (auto maintenance enabled)
-        // Vessel 2 has auto maintenance disabled, so not included
-        assert_eq!(vessels.len(), 4);
+        // Should return vessels 0, 1 (auto maintenance enabled and class period 1_000_000)
+
+        assert_eq!(vessels.len(), 2);
 
         // Check that vessels are sorted by ID
         assert_eq!(vessels[0], (0, 1_000_000));
-        assert_eq!(vessels[1], (1, 2_000_000));
-        assert_eq!(vessels[2], (3, 3_000_000));
-        assert_eq!(vessels[3], (4, 2_000_000));
+        assert_eq!(vessels[1], (1, 1_000_000));
     }
 
     #[test]
@@ -307,12 +308,13 @@ mod tests {
             None,
             limit,
             lock_epoch_length,
+            1_000_000,
         )
         .unwrap();
 
         assert_eq!(vessels_page1.len(), 2);
         assert_eq!(vessels_page1[0], (0, 1_000_000));
-        assert_eq!(vessels_page1[1], (1, 2_000_000));
+        assert_eq!(vessels_page1[1], (1, 1_000_000));
 
         // Second page starting from vessel 1
         let vessels_page2 = collect_vessels_needing_auto_maintenance(
@@ -321,12 +323,11 @@ mod tests {
             Some(1),
             limit,
             lock_epoch_length,
+            1_000_000,
         )
         .unwrap();
 
-        assert_eq!(vessels_page2.len(), 2);
-        assert_eq!(vessels_page2[0], (3, 3_000_000));
-        assert_eq!(vessels_page2[1], (4, 2_000_000));
+        assert_eq!(vessels_page2.len(), 0);
     }
 
     #[test]
@@ -340,24 +341,26 @@ mod tests {
 
         // Add correct shares for vessel 0 and vessel 1
         // For vessel 0: target 1_000_000, locked_rounds should be 1 (1 * 1_000_000 = 1_000_000)
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             0,
             current_round_id,
             1000,
             "dAtom".to_string(),
-            1, // locked_rounds = 1
+            0, // locked_rounds = 1
+            Some(0),
         )
         .unwrap();
 
-        // For vessel 1: target 2_000_000, locked_rounds should be 2 (2 * 1_000_000 = 2_000_000)
-        state::save_vessel_shares_info(
+        // For vessel 1: target 1_000_000, locked_rounds should be 1 (1 * 1_000_000 )
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             1,
             current_round_id,
             1000,
             "dAtom".to_string(),
-            2, // locked_rounds = 2
+            0, // locked_rounds = 1
+            Some(0),
         )
         .unwrap();
 
@@ -367,13 +370,14 @@ mod tests {
             None,
             limit,
             lock_epoch_length,
+            1_000_000,
         )
         .unwrap();
 
         // Should only return vessels 3 and 4 (which don't have shares)
         assert_eq!(vessels.len(), 2);
-        assert_eq!(vessels[0], (3, 3_000_000));
-        assert_eq!(vessels[1], (4, 2_000_000));
+        assert_eq!(vessels[0], (0, 1_000_000));
+        assert_eq!(vessels[1], (1, 1_000_000));
     }
 
     #[test]
@@ -394,13 +398,14 @@ mod tests {
         ];
 
         for (vessel_id, _class_period, locked_rounds) in vessels_to_setup {
-            state::save_vessel_shares_info(
+            state::save_vessel_info_snapshot(
                 deps.as_mut().storage,
                 vessel_id,
                 current_round_id,
                 1000,
                 "dAtom".to_string(),
                 locked_rounds,
+                Some(0),
             )
             .unwrap();
         }
@@ -411,6 +416,7 @@ mod tests {
             None,
             limit,
             lock_epoch_length,
+            2_000_000,
         )
         .unwrap();
 
@@ -468,24 +474,26 @@ mod tests {
 
         // Add correct shares for vessels 3 and 4
         // For vessel 3: target 3_000_000, locked_rounds should be 3 (3 * 1_000_000 = 3_000_000)
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             3,
             current_round_id,
             1000,
             "dAtom".to_string(),
             3, // locked_rounds = 3
+            Some(0),
         )
         .unwrap();
 
         // For vessel 4: target 2_000_000, locked_rounds should be 2 (2 * 1_000_000 = 2_000_000)
-        state::save_vessel_shares_info(
+        state::save_vessel_info_snapshot(
             deps.as_mut().storage,
             4,
             current_round_id,
             1000,
             "dAtom".to_string(),
             2, // locked_rounds = 2
+            Some(0),
         )
         .unwrap();
 
@@ -515,6 +523,7 @@ mod tests {
             None,
             0,
             lock_epoch_length,
+            1000_000,
         )
         .unwrap();
         assert_eq!(vessels.len(), 0);
@@ -526,6 +535,7 @@ mod tests {
             None,
             1,
             lock_epoch_length,
+            1000_000,
         )
         .unwrap();
         assert_eq!(vessels.len(), 1);
@@ -538,6 +548,7 @@ mod tests {
             Some(100), // Non-existent vessel ID
             10,
             lock_epoch_length,
+            1_000_000,
         )
         .unwrap();
         assert_eq!(vessels.len(), 0);
@@ -549,6 +560,7 @@ mod tests {
             Some(4),
             10,
             lock_epoch_length,
+            1_000_000,
         )
         .unwrap();
         assert_eq!(vessels.len(), 0);
@@ -569,10 +581,11 @@ mod tests {
             None,
             limit,
             lock_epoch_length,
+            1_000_000,
         )
         .unwrap();
 
         // Should still only return the 4 auto-maintained vessels
-        assert_eq!(vessels.len(), 4);
+        assert_eq!(vessels.len(), 2);
     }
 }

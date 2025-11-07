@@ -6,7 +6,7 @@ use zephyrus_core::{
     msgs::{
         ConstantsResponse, HydromancerId, QueryMsg, RewardInfo, RoundId, TributeId,
         VesselHarborInfo, VesselHarborResponse, VesselsResponse, VesselsRewardsResponse,
-        VotingPowerResponse,
+        VotedProposalsResponse,
     },
     state::HydromancerTribute,
 };
@@ -35,7 +35,6 @@ const DEFAULT_PAGINATION_LIMIT: usize = 100;
 #[entry_point]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
     match msg {
-        QueryMsg::VotingPower {} => to_json_binary(&query_voting_power(deps, env)?),
         QueryMsg::VesselsByOwner {
             owner,
             start_index,
@@ -70,11 +69,15 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, StdError> {
             tranche_id,
             vessel_ids,
         )?),
+        QueryMsg::VotedProposals { round_id } => {
+            to_json_binary(&query_voted_proposals(deps, round_id)?)
+        }
     }
 }
 
-fn query_voting_power(_deps: Deps, _env: Env) -> Result<VotingPowerResponse, StdError> {
-    todo!()
+fn query_voted_proposals(deps: Deps, round_id: u64) -> StdResult<VotedProposalsResponse> {
+    let voted_proposals = state::get_voted_proposals(deps.storage, round_id)?;
+    Ok(VotedProposalsResponse { voted_proposals })
 }
 
 fn query_vessels_by_owner(
@@ -212,7 +215,7 @@ pub fn query_vessels_rewards(
         for tribute in proposal_tributes {
             let tribute_processed = state::is_tribute_processed(deps.storage, tribute.tribute_id);
             let mut data_loader: Box<dyn DataLoader> = Box::new(StateDataLoader {});
-            let zephyrus_rewards;
+            let users_funds;
             if !tribute_processed {
                 // Tribute has not been processed yet, we will search in outstanding tributes if it exists
                 if let Ok(outstanding_tributes) = &outstanding_tributes {
@@ -221,7 +224,9 @@ pub fn query_vessels_rewards(
                         .iter()
                         .find(|t| t.tribute_id == tribute.tribute_id);
                     if let Some(outstanding_tribute) = outstanding_tribute {
-                        zephyrus_rewards = outstanding_tribute.amount.clone();
+                        let zephyrus_rewards = outstanding_tribute.amount.clone();
+                        (_, users_funds) =
+                            calculate_protocol_comm_and_rest(zephyrus_rewards.clone(), &constants);
                     } else {
                         // there is no outstanding tribute for this tribute, so there not yet rewards to distribute we can skip
                         continue;
@@ -233,12 +238,11 @@ pub fn query_vessels_rewards(
                 }
             } else {
                 // Tribute has been already claimed by zephyrus on hydro, we will get the rewards from the state
-                zephyrus_rewards = state::get_tribute_processed(deps.storage, tribute.tribute_id)?
-                    .expect("Tribute has been processed, Rewards should exist here");
+                users_funds = state::get_tribute_processed(deps.storage, tribute.tribute_id)?
+                    .ok_or(StdError::generic_err(
+                        "Tribute has been processed, Rewards should exist here",
+                    ))?;
             }
-
-            let (_, users_funds) =
-                calculate_protocol_comm_and_rest(zephyrus_rewards.clone(), &constants);
 
             if !tribute_processed {
                 // as tribute has not been processed yet, we will need to calculate rewards for hydromancers

@@ -7,7 +7,7 @@
 import { MsgExecuteContractEncodeObject } from "@cosmjs/cosmwasm-stargate";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, Uint128, VesselsRewardsResponse, RewardInfo, Coin, VotingPowerResponse } from "./ZephyrusMain.types";
+import { Decimal, InstantiateMsg, ExecuteMsg, Binary, VesselsToHarbor, Cw721ReceiveMsg, QueryMsg, Addr, ConstantsResponse, Constants, HydroConfig, VesselsResponse, Vessel, VesselHarborResponse, VesselHarborInfo, VesselHarbor, Uint128, VesselsRewardsResponse, RewardInfo, Coin, VotedProposalsResponse } from "./ZephyrusMain.types";
 export interface ZephyrusMainMsg {
   contractAddress: string;
   sender: string;
@@ -31,9 +31,11 @@ export interface ZephyrusMainMsg {
     hydroLockIds: number[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   autoMaintain: ({
+    classPeriod,
     limit,
     startFromVesselId
   }: {
+    classPeriod: number;
     limit?: number;
     startFromVesselId?: number;
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
@@ -86,10 +88,12 @@ export interface ZephyrusMainMsg {
   claim: ({
     roundId,
     trancheId,
+    tributeIds,
     vesselIds
   }: {
     roundId: number;
     trancheId: number;
+    tributeIds: number[];
     vesselIds: number[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   updateCommissionRate: ({
@@ -101,6 +105,11 @@ export interface ZephyrusMainMsg {
     newCommissionRecipient
   }: {
     newCommissionRecipient: string;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  setAdminAddresses: ({
+    admins
+  }: {
+    admins: string[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
@@ -124,6 +133,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.claim = this.claim.bind(this);
     this.updateCommissionRate = this.updateCommissionRate.bind(this);
     this.updateCommissionRecipient = this.updateCommissionRecipient.bind(this);
+    this.setAdminAddresses = this.setAdminAddresses.bind(this);
   }
   takeControl = ({
     vesselIds
@@ -189,9 +199,11 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     };
   };
   autoMaintain = ({
+    classPeriod,
     limit,
     startFromVesselId
   }: {
+    classPeriod: number;
     limit?: number;
     startFromVesselId?: number;
   }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
@@ -202,6 +214,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
         contract: this.contractAddress,
         msg: toUtf8(JSON.stringify({
           auto_maintain: {
+            class_period: classPeriod,
             limit,
             start_from_vessel_id: startFromVesselId
           }
@@ -374,10 +387,12 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   claim = ({
     roundId,
     trancheId,
+    tributeIds,
     vesselIds
   }: {
     roundId: number;
     trancheId: number;
+    tributeIds: number[];
     vesselIds: number[];
   }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
     return {
@@ -389,6 +404,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
           claim: {
             round_id: roundId,
             tranche_id: trancheId,
+            tribute_ids: tributeIds,
             vessel_ids: vesselIds
           }
         })),
@@ -428,6 +444,25 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
         msg: toUtf8(JSON.stringify({
           update_commission_recipient: {
             new_commission_recipient: newCommissionRecipient
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  setAdminAddresses = ({
+    admins
+  }: {
+    admins: string[];
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          set_admin_addresses: {
+            admins
           }
         })),
         funds: _funds

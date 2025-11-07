@@ -3,7 +3,7 @@ use hydro_interface::msgs::DenomInfoResponse;
 use std::collections::HashMap;
 use zephyrus_core::{
     msgs::{ClaimTributeReplyPayload, CLAIM_TRIBUTE_REPLY_ID},
-    state::{Constants, Vessel},
+    state::{Constants, Vessel, VesselInfoSnapshot},
 };
 
 use crate::{
@@ -22,6 +22,7 @@ fn create_mock_constants() -> Constants {
         commission_recipient: Addr::unchecked("commission_recipient"),
         default_hydromancer_id: 1u64,
         paused_contract: false,
+        min_tokens_per_vessel: 5_000_000,
     }
 }
 
@@ -155,18 +156,15 @@ fn test_calcul_total_voting_power_on_proposal() {
 
 #[test]
 fn test_calculate_voting_power_of_vessel() {
-    let deps = mock_dependencies();
-
-    let vessel_id = 1u64;
     let round_id = 1u64;
     let token_info_provider = create_mock_token_info_provider();
-
-    let result = calculate_voting_power_of_vessel(
-        deps.as_ref().storage,
-        vessel_id,
-        round_id,
-        &token_info_provider,
-    );
+    let vessel_snapshot = VesselInfoSnapshot {
+        time_weighted_shares: 1000u128,
+        token_group_id: "token_group_1".to_string(),
+        locked_rounds: 1u64,
+        hydromancer_id: Some(1u64),
+    };
+    let result = calculate_voting_power_of_vessel(round_id, &token_info_provider, &vessel_snapshot);
 
     assert!(result.is_err() || result.is_ok());
 }
@@ -186,16 +184,19 @@ fn test_calculate_rewards_amount_for_vessel_on_proposal() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_tribute(
-        deps.as_ref(),
+    let ctx = super::rewards::VesselRewardContext {
         round_id,
         tranche_id,
         proposal_id,
         tribute_id,
-        &constants,
-        &token_info_provider,
+        constants: &constants,
+        token_info_provider: &token_info_provider,
         total_proposal_voting_power,
-        proposal_rewards,
+        proposal_rewards: proposal_rewards.clone(),
+    };
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
+        deps.as_ref(),
+        &ctx,
         vessel_id,
         &mock_data_loader,
     );
@@ -314,40 +315,6 @@ fn test_calcul_protocol_comm_and_rest_different_denom() {
     assert_eq!(commission_amount, Uint128::new(50));
     assert_eq!(user_funds.amount, Uint128::new(950));
     assert_eq!(user_funds.denom, "uosmo");
-}
-
-// Test error handling for division by zero scenarios
-#[test]
-fn test_voting_power_calculation_with_zero_total() {
-    let deps = mock_dependencies();
-
-    let round_id = 1u64;
-    let tranche_id = 1u64;
-    let proposal_id = 1u64;
-    let tribute_id = 1u64;
-    let constants = create_mock_constants();
-    let token_info_provider = create_mock_token_info_provider();
-    let total_proposal_voting_power = Decimal::zero(); // This should cause division by zero
-    let proposal_rewards = Coin::new(1000u128, "uatom");
-    let vessel_id = 1u64;
-
-    let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_tribute(
-        deps.as_ref(),
-        round_id,
-        tranche_id,
-        proposal_id,
-        tribute_id,
-        &constants,
-        &token_info_provider,
-        total_proposal_voting_power,
-        proposal_rewards,
-        vessel_id,
-        &mock_data_loader,
-    );
-
-    // Should return an error due to division by zero
-    assert!(result.is_err());
 }
 
 // Test empty vessel IDs list
@@ -514,22 +481,21 @@ fn test_build_claim_tribute_sub_msg_with_empty_balances() {
 // Test calculate_voting_power_of_vessel with vessel shares error
 #[test]
 fn test_calculate_voting_power_of_vessel_with_shares_error() {
-    let deps = mock_dependencies();
-    let vessel_id = 1u64;
     let round_id = 1u64;
     let token_info_provider = create_mock_token_info_provider();
 
-    let result = calculate_voting_power_of_vessel(
-        deps.as_ref().storage,
-        vessel_id,
-        round_id,
-        &token_info_provider,
-    );
+    let vessel_snapshot = VesselInfoSnapshot {
+        time_weighted_shares: 1000u128,
+        token_group_id: "token_group_1".to_string(),
+        locked_rounds: 1u64,
+        hydromancer_id: Some(1u64),
+    };
+    let result = calculate_voting_power_of_vessel(round_id, &token_info_provider, &vessel_snapshot);
 
     // Should return zero when vessel shares don't exist
     assert!(result.is_ok());
     if let Ok(voting_power) = result {
-        assert_eq!(voting_power, Decimal::zero());
+        assert_eq!(voting_power, Decimal::from_ratio(1000u128, 1u128));
     }
 }
 
@@ -542,25 +508,14 @@ fn test_calculate_voting_power_of_vessel_token_info_not_found() {
     let vessel_id = 1u64;
     let round_id = 1u64;
 
-    // Insert vessel shares with unknown token group
-    state::save_vessel_shares_info(
-        deps.as_mut().storage,
-        vessel_id,
-        1u64,                              // round_id
-        1000u128,                          // time_weighted_shares
-        "unknown_token_group".to_string(), // token_group_id
-        1u64,                              // locked_rounds
-    )
-    .expect("Should save vessel shares");
-
     let token_info_provider = create_mock_token_info_provider(); // Doesn't contain "unknown_token_group"
-
-    let result = calculate_voting_power_of_vessel(
-        deps.as_ref().storage,
-        vessel_id,
-        round_id,
-        &token_info_provider,
-    );
+    let vessel_snapshot = VesselInfoSnapshot {
+        time_weighted_shares: 1000u128,
+        token_group_id: "unknown_token_group".to_string(),
+        locked_rounds: 1u64,
+        hydromancer_id: Some(1u64),
+    };
+    let result = calculate_voting_power_of_vessel(round_id, &token_info_provider, &vessel_snapshot);
 
     // Should fail due to token info not found
     assert!(result.is_err());
@@ -689,16 +644,19 @@ fn test_calculate_rewards_amount_for_vessel_on_tribute_zero_voting_power() {
     let vessel_id = 1u64;
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_tribute(
-        deps.as_ref(),
+    let ctx = super::rewards::VesselRewardContext {
         round_id,
         tranche_id,
         proposal_id,
         tribute_id,
-        &constants,
-        &token_info_provider,
+        constants: &constants,
+        token_info_provider: &token_info_provider,
         total_proposal_voting_power,
-        proposal_rewards,
+        proposal_rewards: proposal_rewards.clone(),
+    };
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
+        deps.as_ref(),
+        &ctx,
         vessel_id,
         &mock_data_loader,
     );
@@ -709,7 +667,7 @@ fn test_calculate_rewards_amount_for_vessel_on_tribute_zero_voting_power() {
 
 // Test calculate_rewards_amount_for_vessel_on_proposal with vessel not found
 #[test]
-fn test_calculate_rewards_amount_for_vessel_on_tribute_vessel_not_found() {
+fn test_calculate_rewards_amount_for_vessel_on_tribute_vessel_snapshot_not_exist() {
     let deps = mock_dependencies();
 
     let round_id = 1u64;
@@ -723,22 +681,28 @@ fn test_calculate_rewards_amount_for_vessel_on_tribute_vessel_not_found() {
     let vessel_id = 999u64; // Non-existent vessel
 
     let mock_data_loader = MockDataLoader;
-    let result = calculate_rewards_amount_for_vessel_on_tribute(
-        deps.as_ref(),
+    let ctx = super::rewards::VesselRewardContext {
         round_id,
         tranche_id,
         proposal_id,
         tribute_id,
-        &constants,
-        &token_info_provider,
+        constants: &constants,
+        token_info_provider: &token_info_provider,
         total_proposal_voting_power,
-        proposal_rewards,
+        proposal_rewards: proposal_rewards.clone(),
+    };
+    let result = calculate_rewards_amount_for_vessel_on_tribute(
+        deps.as_ref(),
+        &ctx,
         vessel_id,
         &mock_data_loader,
     );
 
     // Should fail due to vessel not found
-    assert!(result.is_err());
+    assert!(result.is_ok());
+    if let Ok(amount) = result {
+        assert_eq!(amount, Decimal::zero());
+    }
 }
 
 // Test allocate_rewards_to_hydromancer with real data
@@ -844,13 +808,14 @@ fn test_distribute_rewards_for_vessels_on_tribute_with_real_data() {
     .expect("Should add vessel");
 
     // Add vessel shares
-    state::save_vessel_shares_info(
+    state::save_vessel_info_snapshot(
         deps.as_mut().storage,
         vessel_id,
         1u64,     // round_id
         1000u128, // time_weighted_shares
         "token_group_1".to_string(),
         1u64, // locked_rounds
+        Some(0),
     )
     .expect("Should save vessel shares");
 

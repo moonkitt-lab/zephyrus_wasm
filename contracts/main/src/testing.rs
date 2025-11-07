@@ -1,3 +1,5 @@
+use std::thread::current;
+
 use crate::helpers::hydro_queries::query_hydro_lockups_shares;
 use crate::reply::handle_refresh_time_weighted_shares_reply;
 use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};
@@ -38,6 +40,27 @@ fn instantiate_test() {
     assert!(res.is_ok(), "error: {:?}", res);
 }
 
+#[test]
+fn instantiate_test_empty_whitelist_admins() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+    let info = message_info(&Addr::unchecked("sender"), &[]);
+    let user_address = get_address_as_str(&deps.api, "addr0000");
+    let mut msg = get_default_instantiate_msg(&deps, user_address);
+    msg.whitelist_admins = vec![]; // Empty whitelist admins
+    let res = instantiate(deps.as_mut(), env, info, msg);
+    assert!(
+        res.is_err(),
+        "Should return error for empty whitelist admins"
+    );
+    match res.unwrap_err() {
+        ContractError::WhitelistAdminsMustBeProvided => {
+            // Expected error
+        }
+        _ => panic!("Expected WhitelistAdminsMustBeProvided error"),
+    }
+}
+
 fn get_default_instantiate_msg(
     deps: &cosmwasm_std::OwnedDeps<
         cosmwasm_std::MemoryStorage,
@@ -56,6 +79,7 @@ fn get_default_instantiate_msg(
         default_hydromancer_commission_rate: Decimal::from_ratio(1u128, 100u128),
         commission_rate: "0.1".parse().unwrap(),
         commission_recipient: get_address_as_str(&deps.api, "commission_recipient"),
+        min_tokens_per_vessel: 5_000_000,
     };
     msg
 }
@@ -135,6 +159,7 @@ fn pause_basic_test() {
     let msg_auto_maintain = ExecuteMsg::AutoMaintain {
         start_from_vessel_id: None,
         limit: None,
+        class_period: 3_000_000, // 3 lock_epoch_length
     };
     let res = execute(deps.as_mut(), env.clone(), info3.clone(), msg_auto_maintain);
     assert!(res.is_err());
@@ -349,6 +374,7 @@ fn init_contract(deps: DepsMut) {
             default_hydromancer_address: make_valid_addr("zephyrus").into_string(),
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient").into_string(),
+            min_tokens_per_vessel: 5_000_000,
         },
     )
     .unwrap();
@@ -1913,10 +1939,11 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     } else {
         panic!("Message is not message that it should be !");
     }
+    let current_round_id = deps.querier.get_current_round();
     // Step 6: Check that the proposal time weighted shares, vessel tws and hydromancer tws are correct
     let hydromancer_tws = state::get_hydromancer_time_weighted_shares_by_round(
         deps.as_ref().storage,
-        deps.querier.get_current_round(),
+        current_round_id,
         default_hydromancer_id,
     )
     .expect("Should get hydromancer tws even if there's no tws an empty list should be returned");
@@ -1941,12 +1968,11 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
         0
     ));
 
-    let vessel_shares =
-        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
+    let vessel_shares = state::get_vessel_shares_info(deps.as_ref().storage, current_round_id, 0);
     assert!(vessel_shares.is_ok());
 
     let vessel_shares_info =
-        state::get_vessel_shares_info(deps.as_ref().storage, deps.querier.get_current_round(), 0);
+        state::get_vessel_shares_info(deps.as_ref().storage, current_round_id, 0);
     assert!(vessel_shares_info.is_ok());
     assert_eq!(
         vessel_shares_info.unwrap().time_weighted_shares,
@@ -1968,8 +1994,12 @@ fn change_hydromancer_vessel_already_vote_under_user_control_success() {
     assert_eq!(hydromancer_tws[0].0 .0, lockup_shares.locked_rounds);
     assert_eq!(hydromancer_tws[0].0 .1, lockup_shares.token_group_id);
 
-    let proposal_tws = state::get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id)
-        .expect("Should get proposal tws");
+    let proposal_tws = state::get_proposal_time_weighted_shares(
+        deps.as_ref().storage,
+        current_round_id,
+        proposal_id,
+    )
+    .expect("Should get proposal tws");
     assert_eq!(proposal_tws.len(), 1);
     assert_eq!(proposal_tws[0].1, 0); // user vote should have been removed so tws should be 0
     assert_eq!(proposal_tws[0].0, lockup_shares.token_group_id);
@@ -2098,8 +2128,12 @@ fn user_take_control_after_new_round_succeed() {
     .expect("Should get hydromancer proposal tws even if there's no tws an empty list should be returned");
     assert!(hydromancer_proposal_tws.is_empty());
 
-    let proposal_tws = state::get_proposal_time_weighted_shares(deps.as_ref().storage, proposal_id)
-        .expect("Should get proposal tws");
+    let proposal_tws = state::get_proposal_time_weighted_shares(
+        deps.as_ref().storage,
+        deps.querier.get_current_round(),
+        proposal_id,
+    )
+    .expect("Should get proposal tws");
     assert_eq!(proposal_tws.len(), 1);
     assert_eq!(proposal_tws[0].1, lockup_shares.time_weighted_shares.u128());
     assert_eq!(proposal_tws[0].0, lockup_shares.token_group_id);
@@ -2176,6 +2210,7 @@ fn auto_maintain_after_new_round_succeed() {
     let auto_maintain_msg = ExecuteMsg::AutoMaintain {
         start_from_vessel_id: Some(0),
         limit: None,
+        class_period: 1_000_000, // 3 lock_epoch_length
     };
     let result = execute(
         deps.as_mut(),
@@ -2307,6 +2342,7 @@ fn claim_rewards_fail_unauthorized_vessel() {
         round_id: deps.querier.get_current_round(),
         tranche_id: 1,
         vessel_ids: vec![999], // Non-existent vessel
+        tribute_ids: vec![1, 2],
     };
 
     let res = execute(
@@ -2372,6 +2408,7 @@ fn claim_rewards_fail_wrong_owner() {
         round_id: deps.querier.get_current_round(),
         tranche_id: 1,
         vessel_ids: vec![0],
+        tribute_ids: vec![1, 2],
     };
 
     let res = execute(
@@ -2387,6 +2424,63 @@ fn claim_rewards_fail_wrong_owner() {
     // Should fail because Bob doesn't own the vessel
     assert!(res.is_err());
     assert_eq!(res.unwrap_err(), ContractError::Unauthorized);
+}
+
+#[test]
+fn claim_rewards_inconsistent_tribute_ids() {
+    let mut deps = mock_dependencies();
+    init_contract(deps.as_mut());
+
+    let alice_address = make_valid_addr("alice");
+    let _user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("Should create user id");
+    let constants = state::get_constants(deps.as_mut().storage).unwrap();
+    // Create vessel owned by Alice
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "0".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: constants.default_hydromancer_id,
+            class_period: 3_000_000,
+        })
+        .unwrap(),
+    });
+
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: constants.hydro_config.hydro_contract_address.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok());
+    let claim_msg = ExecuteMsg::Claim {
+        round_id: 2,
+        tranche_id: 1,
+        vessel_ids: vec![0],
+        tribute_ids: vec![1, 2],
+    };
+
+    let res = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        claim_msg,
+    );
+    assert!(res.is_err());
+    assert_eq!(
+        res.unwrap_err(),
+        ContractError::CustomError {
+            msg: "Round and tranche ID mismatch in tributes".to_string()
+        }
+    );
 }
 
 #[test]
@@ -2419,4 +2513,127 @@ fn handle_claim_tribute_reply_insufficient_balance() {
         res.unwrap_err(),
         ContractError::InsufficientTributeReceived { tribute_id: 1 }
     );
+}
+
+#[test]
+fn test_set_admin_addresses_success() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let user_address = get_address_as_str(&deps.api, "admin1");
+    let msg = get_default_instantiate_msg(&deps, user_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test setting new admin addresses (keeping one existing admin)
+    let admin1_addr = get_address_as_str(&deps.api, "admin1");
+    let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
+    let admin2_addr = get_address_as_str(&deps.api, "admin2");
+    let admin3_addr = get_address_as_str(&deps.api, "admin3");
+
+    let msg = ExecuteMsg::SetAdminAddresses {
+        admins: vec![admin1_addr, admin2_addr, admin3_addr],
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    println!("res: {:?}", res);
+    assert!(
+        res.is_ok(),
+        "Should succeed when keeping at least one existing admin"
+    );
+
+    // Verify the new admins are set
+    let admins = state::get_whitelist_admins(deps.as_ref().storage).unwrap();
+    assert_eq!(admins.len(), 3);
+}
+
+#[test]
+fn test_set_admin_addresses_cannot_replace_all() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let user_address = get_address_as_str(&deps.api, "admin1");
+    let msg = get_default_instantiate_msg(&deps, user_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test trying to replace all admins (should fail)
+    let admin1_addr = get_address_as_str(&deps.api, "admin1");
+    let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
+    let new_admin1 = get_address_as_str(&deps.api, "newadmin1");
+    let new_admin2 = get_address_as_str(&deps.api, "newadmin2");
+
+    let msg = ExecuteMsg::SetAdminAddresses {
+        admins: vec![new_admin1, new_admin2],
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    assert!(
+        res.is_err(),
+        "Should fail when trying to replace all admins"
+    );
+
+    match res.unwrap_err() {
+        ContractError::CannotReplaceAllAdmins {} => {
+            // Expected error
+        }
+        _ => panic!("Expected CannotReplaceAllAdmins error"),
+    }
+}
+
+#[test]
+fn test_set_admin_addresses_unauthorized() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let user_address = get_address_as_str(&deps.api, "admin1");
+    let msg = get_default_instantiate_msg(&deps, user_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test with non-admin user (should fail)
+    let info = message_info(&Addr::unchecked("nonadmin"), &[]);
+    let new_admin1 = get_address_as_str(&deps.api, "newadmin1");
+
+    let msg = ExecuteMsg::SetAdminAddresses {
+        admins: vec![new_admin1],
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    assert!(res.is_err(), "Should fail when called by non-admin");
+
+    match res.unwrap_err() {
+        ContractError::Unauthorized => {
+            // Expected error
+        }
+        _ => panic!("Expected Unauthorized error"),
+    }
+}
+
+#[test]
+fn test_set_admin_addresses_invalid_address() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let user_address = get_address_as_str(&deps.api, "admin1");
+    let msg = get_default_instantiate_msg(&deps, user_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test with invalid address (should fail)
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let msg = ExecuteMsg::SetAdminAddresses {
+        admins: vec!["invalid_address".to_string()],
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    assert!(res.is_err(), "Should fail with invalid address");
 }

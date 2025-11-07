@@ -71,6 +71,8 @@ pub enum HydroQueryMsg {
         start_from: u32,
         limit: u32,
     },
+    /// Query the specific tributes return SpecificTributesResponse
+    SpecificTributes { tribute_ids: Vec<u64> },
 }
 
 #[cw_serde]
@@ -307,4 +309,9 @@ pub struct Tribute {
 #[cw_serde]
 pub struct ProposalTributesResponse {
     pub tributes: Vec<Tribute>,
+}
+
+#[cw_serde]
+pub struct SpecificTributesResponse {
+    pub tributes: Vec<TributeClaim>,
 }

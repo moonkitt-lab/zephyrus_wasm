@@ -1,9 +1,8 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cosmwasm_std::{
-    entry_point, from_json, to_json_binary, Addr, AllBalanceResponse, BankQuery, Binary, Decimal,
-    DepsMut, Env, MessageInfo, QueryRequest, Response as CwResponse, StdError, StdResult, SubMsg,
-    WasmMsg,
+    entry_point, from_json, to_json_binary, Addr, Binary, Coin, Decimal, DepsMut, Env, MessageInfo,
+    Response as CwResponse, StdError, StdResult, SubMsg, WasmMsg,
 };
 use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups, TributeClaim};
 use neutron_sdk::bindings::msg::NeutronMsg;
@@ -25,17 +24,22 @@ use crate::{
         },
         hydro_queries::{
             query_hydro_constants, query_hydro_current_round, query_hydro_lockups_shares,
-            query_hydro_lockups_with_tranche_infos, query_hydro_outstanding_tribute_claims,
+            query_hydro_lockups_with_tranche_infos, query_hydro_specific_tributes,
             query_hydro_specific_user_lockups, query_hydro_tranches,
         },
-        rewards::{build_claim_tribute_sub_msg, distribute_rewards_for_all_round_proposals},
+        rewards::{
+            build_claim_tribute_sub_msg,
+            distribute_rewards_for_all_tributes_already_claimed_on_hydro,
+            get_current_balances_for_outstanding_tributes_denoms,
+        },
         tws::{
             complete_hydromancer_time_weighted_shares, initialize_vessel_tws, reset_vessel_vote,
         },
         validation::{
             validate_admin_address, validate_contract_is_not_paused, validate_contract_is_paused,
             validate_hydromancer_controls_vessels, validate_hydromancer_exists,
-            validate_lock_duration, validate_user_controls_vessel, validate_user_owns_vessels,
+            validate_lock_duration, validate_round_tranche_consistency,
+            validate_user_controls_vessel, validate_user_owns_vessels,
             validate_vessels_not_tied_to_proposal, validate_vote_duplicates,
         },
         vectors::join_u64_ids,
@@ -49,13 +53,18 @@ use crate::{
 
 type Response = CwResponse<NeutronMsg>;
 
+const WHITELIST_ADMINS_MAX_COUNT: usize = 50;
+
 #[entry_point]
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
     _info: MessageInfo,
     msg: InstantiateMsg,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
+    if msg.whitelist_admins.is_empty() {
+        return Err(ContractError::WhitelistAdminsMustBeProvided);
+    }
     state::initialize_sequences(deps.storage)?;
 
     let mut whitelist_admins: Vec<Addr> = vec![];
@@ -65,6 +74,9 @@ pub fn instantiate(
             whitelist_admins.push(admin_addr.clone());
         }
     }
+    if whitelist_admins.len() > WHITELIST_ADMINS_MAX_COUNT {
+        return Err(ContractError::WhitelistAdminsMaxCountExceeded {});
+    }
     state::update_whitelist_admins(deps.storage, whitelist_admins)?;
     let hydro_config = HydroConfig {
         hydro_contract_address: deps.api.addr_validate(&msg.hydro_contract_address)?,
@@ -73,13 +85,12 @@ pub fn instantiate(
 
     let hydromancer_address = deps.api.addr_validate(&msg.default_hydromancer_address)?;
     let commission_recipient = deps.api.addr_validate(&msg.commission_recipient)?;
-    // Validate commission rate is less than 1 (100%)
-    if msg.commission_rate >= Decimal::one()
-        || msg.default_hydromancer_commission_rate >= Decimal::one()
+    // Validate commission rate is less than 0.5 (50%)
+    let max_commission_rate: Decimal = Decimal::from_ratio(50_u128, 100_u128);
+    if msg.commission_rate >= max_commission_rate
+        || msg.default_hydromancer_commission_rate >= max_commission_rate
     {
-        return Err(StdError::generic_err(
-            "Commission rate must be less than 1 (100%)",
-        ));
+        return Err(ContractError::CommissionRateMustBeLessThan100 {});
     }
     let default_hydromancer_id = state::insert_new_hydromancer(
         deps.storage,
@@ -94,6 +105,7 @@ pub fn instantiate(
         hydro_config,
         commission_rate: msg.commission_rate,
         commission_recipient,
+        min_tokens_per_vessel: msg.min_tokens_per_vessel,
     };
 
     state::update_constants(deps.storage, constant)?;
@@ -112,7 +124,8 @@ pub fn execute(
         ExecuteMsg::AutoMaintain {
             start_from_vessel_id,
             limit,
-        } => execute_auto_maintain(deps, info, start_from_vessel_id, limit),
+            class_period,
+        } => execute_auto_maintain(deps, info, start_from_vessel_id, limit, class_period),
         ExecuteMsg::UpdateVesselsClass {
             hydro_lock_ids,
             hydro_lock_duration,
@@ -159,14 +172,51 @@ pub fn execute(
             round_id,
             tranche_id,
             vessel_ids,
-        } => execute_claim(deps, env, info, round_id, tranche_id, vessel_ids),
+            tribute_ids,
+        } => execute_claim(
+            deps,
+            env,
+            info,
+            round_id,
+            tranche_id,
+            vessel_ids,
+            tribute_ids,
+        ),
         ExecuteMsg::UpdateCommissionRate {
             new_commission_rate,
         } => execute_update_commission_rate(deps, info, new_commission_rate),
         ExecuteMsg::UpdateCommissionRecipient {
             new_commission_recipient,
         } => execute_update_commission_recipient(deps, info, new_commission_recipient),
+        ExecuteMsg::SetAdminAddresses { admins } => execute_set_admin_addresses(deps, info, admins),
     }
+}
+
+fn execute_set_admin_addresses(
+    deps: DepsMut,
+    info: MessageInfo,
+    admins: Vec<String>,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    validate_admin_address(deps.storage, &info.sender)?;
+    let new_whitelist_admins: HashSet<Addr> = admins
+        .into_iter()
+        .map(|admin| deps.api.addr_validate(&admin))
+        .collect::<Result<HashSet<Addr>, StdError>>()?;
+
+    if new_whitelist_admins.len() > WHITELIST_ADMINS_MAX_COUNT {
+        return Err(ContractError::WhitelistAdminsMaxCountExceeded {});
+    }
+
+    let old_whitelist_admins = state::get_whitelist_admins(deps.storage)?;
+    let old_whitelist_admins_set: HashSet<Addr> = old_whitelist_admins.into_iter().collect();
+    if new_whitelist_admins.is_disjoint(&old_whitelist_admins_set) {
+        return Err(ContractError::CannotReplaceAllAdmins {});
+    }
+
+    state::update_whitelist_admins(deps.storage, new_whitelist_admins.into_iter().collect())?;
+    Ok(Response::default().add_attribute("action", "set_admin_addresses"))
 }
 
 fn execute_update_commission_rate(
@@ -215,44 +265,64 @@ fn execute_claim(
     round_id: u64,
     tranche_id: u64,
     vessel_ids: Vec<u64>,
+    tribute_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
     validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
 
     let contract_address = env.contract.address.clone();
+    // remove duplicates ids
+    let tribute_ids: HashSet<u64> = tribute_ids.into_iter().collect();
 
-    // Check if zephyrus has outstanding tributes to claim
-    let outstanding_tributes_result = query_hydro_outstanding_tribute_claims(
+    let tributes = query_hydro_specific_tributes(
         &deps.as_ref(),
-        env,
         &constants,
-        round_id,
-        tranche_id,
-    );
+        tribute_ids.clone().into_iter().collect(),
+    )?;
+    // Validate round and tranche consistency, if round_id is not the same as the round_id in the tributes, return an error
+    validate_round_tranche_consistency(&tributes.tributes, round_id, tranche_id)?;
+    let mut outstanding_tributes = Vec::new();
+    let mut tributes_processed = Vec::new();
+    for tribute in tributes.tributes {
+        if state::is_tribute_processed(deps.storage, tribute.tribute_id) {
+            tributes_processed.push(tribute);
+        } else {
+            outstanding_tributes.push(tribute);
+        }
+    }
 
     let mut response = Response::new().add_attribute("action", "claim");
 
-    if let Ok(outstanding_tributes) = outstanding_tributes_result {
-        // Note: We still need to process, even if we found 0 outstanding tributes to claim,
-        // because they may have already been claimed previously
-        response = process_outstanding_tribute_claims(
-            deps.branch(),
-            info,
-            round_id,
-            tranche_id,
-            vessel_ids,
-            &constants,
-            &contract_address,
-            outstanding_tributes.claims,
-            response,
-        )?;
-    }
+    // Note: We still need to process, even if we found 0 outstanding tributes to claim,
+    // because they may have already been claimed previously
+    response = process_outstanding_tribute_claims(
+        deps.branch(),
+        info,
+        round_id,
+        tranche_id,
+        vessel_ids.clone(),
+        &constants,
+        &contract_address,
+        tributes_processed.clone(),
+        outstanding_tributes.clone(),
+        response,
+    )?;
 
     // Clear temporary distribution tracking data after successful batch completion
     state::clear_distribution_tracking(deps.storage)?;
 
-    Ok(response)
+    Ok(response
+        .add_attribute("action", "claim")
+        .add_attribute("round_id", round_id.to_string())
+        .add_attribute("tranche_id", tranche_id.to_string())
+        .add_attribute("vessel_ids", join_u64_ids(&vessel_ids))
+        .add_attribute("tribute_ids", join_u64_ids(&tribute_ids))
+        .add_attribute("tributes_processed", tributes_processed.len().to_string())
+        .add_attribute(
+            "hydro_outstanding_tributes",
+            outstanding_tributes.len().to_string(),
+        ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -264,13 +334,19 @@ fn process_outstanding_tribute_claims(
     vessel_ids: Vec<u64>,
     constants: &Constants,
     contract_address: &Addr,
-    claims: Vec<TributeClaim>,
+    tributes_already_claimed_on_hydro: Vec<TributeClaim>,
+    outstanding_tributes: Vec<TributeClaim>,
     mut response: Response,
 ) -> Result<Response, ContractError> {
     let mut tributes_process_in_reply = BTreeSet::new();
-    let mut balances = deps.querier.query_all_balances(contract_address.clone())?;
+    // To prevent denial of service on balance queries, we get only the current balances for the denoms of the outstanding tributes
+    let mut balances = get_current_balances_for_outstanding_tributes_denoms(
+        &deps,
+        contract_address,
+        &outstanding_tributes,
+    )?;
 
-    for outstanding_tribute in claims {
+    for outstanding_tribute in outstanding_tributes {
         let sub_msg = build_claim_tribute_sub_msg(
             round_id,
             tranche_id,
@@ -300,14 +376,13 @@ fn process_outstanding_tribute_claims(
             balances.push(outstanding_tribute.amount.clone());
         }
     }
-    let messages = distribute_rewards_for_all_round_proposals(
+    let messages = distribute_rewards_for_all_tributes_already_claimed_on_hydro(
         deps.branch(),
         info.sender.clone(),
         round_id,
-        tranche_id,
         vessel_ids,
         constants.clone(),
-        tributes_process_in_reply,
+        tributes_already_claimed_on_hydro,
     )?;
 
     Ok(response.add_messages(messages))
@@ -380,6 +455,7 @@ fn execute_receive_nft(
     let current_round = query_hydro_current_round(&deps.as_ref(), &constants)?;
 
     let vessel_info: VesselInfo = from_json(&msg)?;
+
     let hydro_lock_id: u64 = token_id.parse().unwrap();
 
     // 2. Check that owner is a valid address
@@ -409,8 +485,23 @@ fn execute_receive_nft(
         });
     }
 
+    if user_specific_lockups.lockups[0]
+        .lock_entry
+        .funds
+        .amount
+        .u128()
+        < constants.min_tokens_per_vessel
+    {
+        return Err(ContractError::CustomError {
+            msg: format!(
+                "Insufficient deposit. Minimum required: {}",
+                constants.min_tokens_per_vessel
+            ),
+        });
+    }
+
     // 6. Owner could be a new user, so we need to insert it in state
-    let owner_id = state::get_user_id_by_address(deps.storage, owner_addr.clone())
+    let owner_id = state::get_user_id(deps.storage, &owner_addr)
         .or_else(|_| state::insert_new_user(deps.storage, owner_addr.clone()))?;
 
     // 7. Store the vessel in state
@@ -433,13 +524,14 @@ fn execute_receive_nft(
     let locked_rounds = lockup_info.locked_rounds;
 
     // Always save vessel shares info
-    state::save_vessel_shares_info(
+    state::save_vessel_info_snapshot(
         deps.storage,
         vessel.hydro_lock_id,
         current_round,
         current_time_weighted_shares,
         token_group_id.clone(),
         locked_rounds,
+        Some(vessel_info.hydromancer_id),
     )?;
 
     if current_time_weighted_shares > 0 {
@@ -464,6 +556,7 @@ fn execute_auto_maintain(
     _info: MessageInfo,
     start_from_vessel_id: Option<u64>,
     limit: Option<usize>,
+    class_period: u64,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
     validate_contract_is_not_paused(&constants)?;
@@ -480,6 +573,7 @@ fn execute_auto_maintain(
         start_from_vessel_id,
         max_vessels,
         lock_epoch_length,
+        class_period,
     )?;
 
     if vessels_needing_maintenance.is_empty() {
@@ -500,7 +594,7 @@ fn execute_auto_maintain(
     let last_processed_vessel_id = vessels_needing_maintenance
         .last()
         .map(|(id, _)| *id)
-        .expect("non empty vessels_needing_maintenance");
+        .ok_or(ContractError::NoVesselsToAutoMaintain {})?;
 
     // Process each class period batch
     for (target_class_period, vessel_ids) in &vessels_by_class {
@@ -580,6 +674,14 @@ fn execute_update_vessels_class(
     validate_contract_is_not_paused(&constants)?;
 
     validate_user_owns_vessels(deps.storage, &info.sender, &hydro_lock_ids)?;
+
+    // Check that class_period represents a valid lock duration
+    let constant_response = query_hydro_constants(&deps.as_ref(), &constants)?;
+    validate_lock_duration(
+        &constant_response.constants.round_lock_power_schedule,
+        constant_response.constants.lock_epoch_length,
+        hydro_lock_duration,
+    )?;
 
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
 
@@ -678,11 +780,6 @@ fn execute_decommission_vessels(
     validate_user_owns_vessels(deps.storage, &info.sender, &hydro_lock_ids)?;
 
     // Check the current balance before unlocking tokens
-    let balance_query = BankQuery::AllBalances {
-        address: env.contract.address.to_string(),
-    };
-    let previous_balances: AllBalanceResponse =
-        deps.querier.query(&QueryRequest::Bank(balance_query))?;
 
     // Retrieve the lock_entries from Hydro, and check which ones are expired
     let user_specific_lockups = query_hydro_specific_user_lockups(
@@ -695,10 +792,20 @@ fn execute_decommission_vessels(
     let lock_entries = user_specific_lockups.lockups;
 
     let mut expected_unlocked_ids = vec![];
+    let mut lockup_denoms = HashSet::new();
     for lock_entry in lock_entries {
         if lock_entry.lock_entry.lock_end < env.block.time {
             expected_unlocked_ids.push(lock_entry.lock_entry.lock_id);
         }
+        lockup_denoms.insert(lock_entry.lock_entry.funds.denom.clone());
+    }
+    let mut previous_balances: Vec<Coin> = Vec::new();
+    // to prevent denial of service on balance queries, we get only the current balances for the denoms of the lockups
+    for lockup_denom in lockup_denoms {
+        let balance = deps
+            .querier
+            .query_balance(env.contract.address.clone(), lockup_denom.clone())?;
+        previous_balances.push(balance);
     }
 
     // Create the execute message for unlocking
@@ -713,7 +820,7 @@ fn execute_decommission_vessels(
     };
 
     let decommission_vessels_params = DecommissionVesselsReplyPayload {
-        previous_balances: previous_balances.amount,
+        previous_balances,
         expected_unlocked_ids,
         vessel_owner: info.sender.clone(),
     };
@@ -794,7 +901,9 @@ fn execute_change_hydromancer(
     vessel_ids: Vec<u64>,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
-
+    // Convert to HashSet to avoid duplicates
+    let vessel_ids: HashSet<u64> = vessel_ids.into_iter().collect();
+    let vessel_ids: Vec<u64> = vessel_ids.into_iter().collect();
     validate_contract_is_not_paused(&constants)?;
     validate_user_owns_vessels(deps.storage, &info.sender, &vessel_ids)?;
     validate_hydromancer_exists(deps.storage, new_hydromancer_id)?;
@@ -931,12 +1040,11 @@ fn execute_user_vote(
 
     validate_vote_duplicates(&vessels_harbors)?;
 
-    let user_id =
-        state::get_user_id_by_address(deps.storage, info.sender.clone()).map_err(|_| {
-            ContractError::UserNotFound {
-                identifier: info.sender.to_string(),
-            }
-        })?;
+    let user_id = state::get_user_id(deps.storage, &info.sender).map_err(|_| {
+        ContractError::UserNotFound {
+            identifier: info.sender.to_string(),
+        }
+    })?;
 
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
     let mut proposal_votes = vec![];
@@ -969,13 +1077,14 @@ fn execute_user_vote(
                 lockup_shares_info.lock_id,
             );
             if vessel_shares_info.is_err() {
-                state::save_vessel_shares_info(
+                state::save_vessel_info_snapshot(
                     deps.storage,
                     lockup_shares_info.lock_id,
                     current_round_id,
                     lockup_shares_info.time_weighted_shares.u128(),
                     lockup_shares_info.token_group_id,
                     lockup_shares_info.locked_rounds,
+                    None,
                 )?;
             }
         }

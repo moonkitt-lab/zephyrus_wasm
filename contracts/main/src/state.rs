@@ -6,7 +6,7 @@ use zephyrus_core::{
     msgs::{HydroProposalId, RoundId, TrancheId, TributeId, UserId},
     state::{
         Constants, HydroLockId, HydromancerId, HydromancerTribute, Vessel, VesselHarbor,
-        VesselSharesInfo,
+        VesselInfoSnapshot,
     },
 };
 
@@ -71,11 +71,11 @@ const PROPOSAL_HYDROMANCER_TW_SHARES_BY_TOKEN_GROUP_ID: Map<
     u128,
 > = Map::new("proposal_hydromancer_tw_shares_by_token_group_id");
 
-const PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID: Map<(HydroProposalId, &str), u128> =
+const PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID: Map<(RoundId, HydroProposalId, &str), u128> =
     Map::new("proposal_total_tw_shares_by_token_group_id");
 
-const VESSEL_SHARES_INFO: Map<(RoundId, HydroLockId), VesselSharesInfo> =
-    Map::new("vessel_shares_info");
+const VESSEL_INFO_SNAPSHOTS: Map<(RoundId, HydroLockId), VesselInfoSnapshot> =
+    Map::new("vessel_info_snapshots");
 
 // Track hydromancers with completed TWS per round for efficient checking
 const HYDROMANCER_TWS_COMPLETED_PER_ROUND: Map<(RoundId, HydromancerId), bool> =
@@ -220,7 +220,7 @@ pub fn get_vessel_harbor(
 
 pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> StdResult<UserId> {
     // Check if user already exists
-    if let Ok(user_id) = get_user_id_by_address(storage, user_address.clone()) {
+    if let Ok(user_id) = get_user_id(storage, &user_address) {
         return Err(StdError::generic_err(format!(
             "User {} already exists with id {}",
             user_address, user_id
@@ -241,10 +241,6 @@ pub fn insert_new_user(storage: &mut dyn Storage, user_address: Addr) -> StdResu
     USER_NEXT_ID.save(storage, &(user_id + 1))?;
 
     Ok(user_id)
-}
-
-pub fn get_user_id_by_address(storage: &dyn Storage, user_addr: Addr) -> StdResult<UserId> {
-    USERID_BY_ADDR.load(storage, user_addr.as_str())
 }
 
 pub fn insert_new_hydromancer(
@@ -330,28 +326,30 @@ pub fn add_vessel(storage: &mut dyn Storage, vessel: &Vessel, owner: &Addr) -> S
     Ok(())
 }
 
-pub fn save_vessel_shares_info(
+pub fn save_vessel_info_snapshot(
     storage: &mut dyn Storage,
     vessel_id: HydroLockId,
     round_id: RoundId,
     time_weighted_shares: u128,
     token_group_id: String,
     locked_rounds: u64,
+    hydromancer_id: Option<HydromancerId>,
 ) -> StdResult<()> {
-    let vessel_shares_info = VesselSharesInfo {
+    let vessel_shares_info = VesselInfoSnapshot {
         time_weighted_shares,
         token_group_id,
         locked_rounds,
+        hydromancer_id,
     };
-    VESSEL_SHARES_INFO.save(storage, (round_id, vessel_id), &vessel_shares_info)
+    VESSEL_INFO_SNAPSHOTS.save(storage, (round_id, vessel_id), &vessel_shares_info)
 }
 
 pub fn get_vessel_shares_info(
     storage: &dyn Storage,
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
-) -> StdResult<VesselSharesInfo> {
-    VESSEL_SHARES_INFO.load(storage, (round_id, hydro_lock_id))
+) -> StdResult<VesselInfoSnapshot> {
+    VESSEL_INFO_SNAPSHOTS.load(storage, (round_id, hydro_lock_id))
 }
 
 pub fn is_tokenized_share_record_used(
@@ -673,6 +671,10 @@ pub fn is_whitelisted_admin(storage: &dyn Storage, sender: &Addr) -> StdResult<b
     Ok(whitelist_admins.contains(sender))
 }
 
+pub fn get_whitelist_admins(storage: &dyn Storage) -> StdResult<Vec<Addr>> {
+    WHITELIST_ADMINS.load(storage)
+}
+
 pub fn change_vessel_hydromancer(
     storage: &mut dyn Storage,
     tranche_id: TrancheId,
@@ -855,10 +857,10 @@ pub fn add_time_weighted_shares_to_hydromancer(
         storage,
         ((hydromancer_id, round_id), locked_rounds, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_add(shares)
-                .expect("operation cannot overflow"))
+                .ok_or(StdError::generic_err("operation should not overflow"))
         },
     )
 }
@@ -875,57 +877,84 @@ pub fn substract_time_weighted_shares_from_hydromancer(
         storage,
         ((hydromancer_id, round_id), locked_rounds, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_sub(shares)
-                .expect("current shares >= shares to subtract"))
+                .ok_or(StdError::generic_err(
+                    "current shares >= shares to subtract",
+                ))
         },
     )
 }
 
 pub fn get_proposal_time_weighted_shares(
     storage: &dyn Storage,
+    round_id: RoundId,
     proposal_id: HydroProposalId,
 ) -> StdResult<Vec<(String, u128)>> {
-    let prefix = proposal_id;
+    let prefix = (round_id, proposal_id);
     PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID
         .prefix(prefix)
         .range(storage, None, None, Order::Ascending)
         .collect()
 }
 
+pub fn get_voted_proposals(
+    storage: &dyn Storage,
+    round_id: RoundId,
+) -> StdResult<Vec<HydroProposalId>> {
+    let sub_prefix = round_id;
+    let mut proposal_ids = std::collections::HashSet::new();
+
+    for item in PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID
+        .sub_prefix(sub_prefix)
+        .range(storage, None, None, Order::Ascending)
+    {
+        let ((proposal_id, _), tws) = item?;
+        if tws > 0 {
+            proposal_ids.insert(proposal_id);
+        }
+    }
+
+    Ok(proposal_ids.into_iter().collect())
+}
+
 pub fn add_time_weighted_shares_to_proposal(
     storage: &mut dyn Storage,
+    round_id: RoundId,
     proposal_id: HydroProposalId,
     token_group_id: &str,
     time_weighted_shares: u128,
 ) -> StdResult<u128> {
     PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
-        (proposal_id, token_group_id),
+        (round_id, proposal_id, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_add(time_weighted_shares)
-                .expect("operation cannot overflow"))
+                .ok_or(StdError::generic_err("operation overflow"))
         },
     )
 }
 
 pub fn substract_time_weighted_shares_from_proposal(
     storage: &mut dyn Storage,
+    round_id: RoundId,
     proposal_id: HydroProposalId,
     token_group_id: &str,
     time_weighted_shares: u128,
 ) -> StdResult<u128> {
     PROPOSAL_TOTAL_TW_SHARES_BY_TOKEN_GROUP_ID.update(
         storage,
-        (proposal_id, token_group_id),
+        (round_id, proposal_id, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_sub(time_weighted_shares)
-                .expect("current shares >= shares to subtract"))
+                .ok_or(StdError::generic_err(
+                    "current shares < time_weighted_shares to subtract",
+                ))
         },
     )
 }
@@ -953,10 +982,10 @@ pub fn add_time_weighted_shares_to_proposal_for_hydromancer(
         storage,
         (proposal_id, hydromancer_id, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_add(time_weighted_shares)
-                .expect("operation cannot overflow"))
+                .ok_or(StdError::generic_err("operation overflow"))
         },
     )
 }
@@ -972,10 +1001,12 @@ pub fn substract_time_weighted_shares_from_proposal_for_hydromancer(
         storage,
         (proposal_id, hydromancer_id, token_group_id),
         |current_shares| {
-            Ok(current_shares
+            current_shares
                 .unwrap_or_default()
                 .checked_sub(time_weighted_shares)
-                .expect("current shares >= shares to subtract"))
+                .ok_or(StdError::generic_err(
+                    "current shares < time_weighted_shares to subtract",
+                ))
         },
     )
 }
@@ -1013,7 +1044,7 @@ pub fn has_vessel_shares_info(
     round_id: RoundId,
     hydro_lock_id: HydroLockId,
 ) -> bool {
-    VESSEL_SHARES_INFO.has(storage, (round_id, hydro_lock_id))
+    VESSEL_INFO_SNAPSHOTS.has(storage, (round_id, hydro_lock_id))
 }
 
 // Helper functions for tracking distributed amounts during transaction batch
@@ -1074,13 +1105,7 @@ pub fn get_total_distributed_amount(
 
 pub fn clear_distribution_tracking(storage: &mut dyn Storage) -> Result<(), ContractError> {
     // Clear all temporary distribution tracking data
-    let keys: Vec<TributeId> = TRIBUTE_DISTRIBUTED_AMOUNTS
-        .keys(storage, None, None, cosmwasm_std::Order::Ascending)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    for key in keys {
-        TRIBUTE_DISTRIBUTED_AMOUNTS.remove(storage, key);
-    }
+    TRIBUTE_DISTRIBUTED_AMOUNTS.clear(storage);
 
     Ok(())
 }

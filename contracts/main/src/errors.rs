@@ -100,4 +100,12 @@ pub enum ContractError {
         token_group_id: String,
         round_id: u64,
     },
+    #[error("Whitelist admins must be provided")]
+    WhitelistAdminsMustBeProvided,
+    #[error("Commission rate must be less than 1 (100%)")]
+    CommissionRateMustBeLessThan100 {},
+    #[error("Cannot replace all admins with new admins")]
+    CannotReplaceAllAdmins {},
+    #[error("Whitelist admins max count exceeded")]
+    WhitelistAdminsMaxCountExceeded {},
 }

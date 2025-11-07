@@ -11,9 +11,9 @@ use hydro_interface::msgs::{
     CollectionInfo, CurrentRoundResponse, HydroConstants, HydroConstantsResponse, HydroQueryMsg,
     LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo, LockupsSharesInfo,
     LockupsSharesResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo,
-    RoundLockPowerSchedule, SpecificUserLockupsResponse,
+    RoundLockPowerSchedule, SpecificTributesResponse, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, Tranche,
-    TranchesResponse,
+    TranchesResponse, TributeClaim,
 };
 use neutron_std::types::ibc::applications::transfer::v1::{
     DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
@@ -95,6 +95,9 @@ impl MockWasmQuerier {
                         start_from: _,
                         limit: _,
                     } => Err(StdError::generic_err("unsupported query type")),
+                    HydroQueryMsg::SpecificTributes { tribute_ids } => {
+                        self.handle_specific_tributes(&tribute_ids)
+                    }
                 };
 
                 SystemResult::Ok(ContractResult::Ok(response.unwrap()))
@@ -103,6 +106,20 @@ impl MockWasmQuerier {
                 kind: "unsupported query type".to_string(),
             }),
         }
+    }
+
+    fn handle_specific_tributes(&self, tribute_ids: &[u64]) -> StdResult<Binary> {
+        let mut tributes = Vec::new();
+        for tribute_id in tribute_ids {
+            tributes.push(TributeClaim {
+                round_id: 1,
+                tranche_id: 1,
+                proposal_id: 1,
+                tribute_id: *tribute_id,
+                amount: coin(1000u128, "uatom"),
+            });
+        }
+        to_json_binary(&SpecificTributesResponse { tributes })
     }
 
     fn handle_specific_user_lockups(&self, address: &str, lock_ids: &[u64]) -> StdResult<Binary> {

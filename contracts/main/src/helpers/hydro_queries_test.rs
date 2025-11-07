@@ -23,6 +23,7 @@ mod tests {
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),
+            min_tokens_per_vessel: 5_000_000,
         }
     }
 

@@ -515,10 +515,10 @@ fn execute_receive_nft(
     };
     state::add_vessel(deps.storage, &vessel, &owner_addr)?;
 
-    let lockup_shares_response =
+    let lockup_info_response =
         query_hydro_lockups_shares(&deps.as_ref(), &constants, vec![hydro_lock_id])?;
 
-    let lockup_info = &lockup_shares_response.lockups_shares_info[0];
+    let lockup_info = &lockup_info_response.lockups_shares_info[0];
     let current_time_weighted_shares = lockup_info.time_weighted_shares.u128();
     let token_group_id = &lockup_info.token_group_id;
     let locked_rounds = lockup_info.locked_rounds;
@@ -1050,14 +1050,14 @@ fn execute_user_vote(
     let mut proposal_votes = vec![];
 
     for vessels_to_harbor in vessels_harbors.clone() {
-        let lockups_shares_response = query_hydro_lockups_shares(
+        let lockups_info_response = query_hydro_lockups_shares(
             &deps.as_ref(),
             &constants,
             vessels_to_harbor.vessel_ids.clone(),
         )?;
 
-        for lockup_shares_info in lockups_shares_response.lockups_shares_info {
-            let vessel = state::get_vessel(deps.storage, lockup_shares_info.lock_id)?;
+        for lockup_info in lockups_info_response.lockups_shares_info {
+            let vessel = state::get_vessel(deps.storage, lockup_info.lock_id)?;
 
             // Check that the vessel belongs to the user
             if vessel.owner_id != user_id {
@@ -1067,20 +1067,20 @@ fn execute_user_vote(
             // Even if a vessel is owned by the user, if it's under hydromancer control, user can't vote with it
             if !vessel.is_under_user_control() {
                 return Err(ContractError::VesselUnderHydromancerControl {
-                    vessel_id: lockup_shares_info.lock_id,
+                    vessel_id: lockup_info.lock_id,
                 });
             }
 
-            let vessel_shares_info = state::get_vessel_shares_info(
-                deps.storage,
-                current_round_id,
-                lockup_shares_info.lock_id,
-            );
+            let vessel_shares_info =
+                state::get_vessel_shares_info(deps.storage, current_round_id, lockup_info.lock_id);
             if vessel_shares_info.is_err() {
                 state::save_vessel_info_snapshot(
                     deps.storage,
-                    lockup_shares_info.lock_id,
+                    lockup_info.lock_id,
                     current_round_id,
+                    lockup_info.time_weighted_shares.u128(),
+                    lockup_info.token_group_id,
+                    lockup_info.locked_rounds,
                     lockup_shares_info.time_weighted_shares.u128(),
                     lockup_shares_info.token_group_id,
                     lockup_shares_info.locked_rounds,

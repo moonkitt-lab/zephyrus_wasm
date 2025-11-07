@@ -5,7 +5,7 @@ use crate::helpers::vectors::join_u64_ids;
 use cosmwasm_std::{Deps, Env, StdError, StdResult};
 use hydro_interface::msgs::{
     CurrentRoundResponse, DenomInfoResponse, DerivativeTokenInfoProviderQueryMsg,
-    HydroConstantsResponse, HydroQueryMsg, LockupWithPerTrancheInfo, LockupsSharesResponse,
+    HydroConstantsResponse, HydroQueryMsg, LockupWithPerTrancheInfo, LockupsInfoResponse,
     OutstandingTributeClaimsResponse, Proposal, ProposalResponse, RoundProposalsResponse,
     SpecificTributesResponse, SpecificUserLockupsResponse,
     SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvider, TokenInfoProvidersResponse,
@@ -58,12 +58,12 @@ pub fn query_hydro_lockups_shares(
     deps: &Deps,
     constants: &Constants,
     vessel_ids: Vec<u64>,
-) -> StdResult<LockupsSharesResponse> {
-    let lockups_shares: LockupsSharesResponse = deps
+) -> StdResult<LockupsInfoResponse> {
+    let lockups_info: LockupsInfoResponse = deps
         .querier
         .query_wasm_smart(
             constants.hydro_config.hydro_contract_address.to_string(),
-            &HydroQueryMsg::LockupsShares {
+            &HydroQueryMsg::LockupsInfo {
                 lock_ids: vessel_ids.clone(),
             },
         )
@@ -74,7 +74,7 @@ pub fn query_hydro_lockups_shares(
                 e
             ))
         })?;
-    Ok(lockups_shares)
+    Ok(lockups_info)
 }
 
 /// Query Hydro constants

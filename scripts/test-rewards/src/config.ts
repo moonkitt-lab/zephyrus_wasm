@@ -1,33 +1,33 @@
 export interface TestConfig {
-  deployerMnemonic: string
-  chainId: string
-  rpcEndpoint: string
-  restEndpoint: string
-  gasPrice: string
-  gasAdjustment: number
+  deployerMnemonic: string;
+  chainId: string;
+  rpcEndpoint: string;
+  restEndpoint: string;
+  gasPrice: string;
+  gasAdjustment: number;
   tokenDenoms: {
-    NTRN: string
-    DATOM: string
-    DNTRN: string
-    STATOM: string
-    STOSMO: string
-    USDC: string
-  }
+    NTRN: string;
+    DATOM: string;
+    DNTRN: string;
+    STATOM: string;
+    STOSMO: string;
+    USDC: string;
+  };
   contractAddresses: {
-    hydro: string
-    tribute: string
-    zephyrus: string
-  }
+    hydro: string;
+    tribute: string;
+    zephyrus: string;
+  };
   rewardsConfig: {
-    protocolCommissionBps: number
-    hydromancerCommissionBps: number
+    protocolCommissionBps: number;
+    hydromancerCommissionBps: number;
     tokenMultipliers: {
-      [key: string]: number
-    }
+      [key: string]: number;
+    };
     durationMultipliers: {
-      [key: number]: number
-    }
-  }
+      [key: number]: number;
+    };
+  };
 }
 
 export const CONFIG: TestConfig = {
@@ -72,21 +72,21 @@ export const CONFIG: TestConfig = {
       3: 1.5,
     },
   },
-}
+};
 
 export function getTokenDenom(symbol: string): string {
-  const symbolUpper = symbol.toUpperCase()
-  if (symbolUpper === "DATOM") return CONFIG.tokenDenoms.DATOM
-  if (symbolUpper === "STATOM") return CONFIG.tokenDenoms.STATOM
-  if (symbolUpper === "NTRN") return CONFIG.tokenDenoms.NTRN
-  if (symbolUpper === "USDC") return CONFIG.tokenDenoms.USDC
-  throw new Error(`Unknown token symbol: ${symbol}`)
+  const symbolUpper = symbol.toUpperCase();
+  if (symbolUpper === "DATOM") return CONFIG.tokenDenoms.DATOM;
+  if (symbolUpper === "STATOM") return CONFIG.tokenDenoms.STATOM;
+  if (symbolUpper === "NTRN") return CONFIG.tokenDenoms.NTRN;
+  if (symbolUpper === "USDC") return CONFIG.tokenDenoms.USDC;
+  throw new Error(`Unknown token symbol: ${symbol}`);
 }
 
 export function getTokenSymbol(denom: string): string {
-  if (denom === CONFIG.tokenDenoms.DATOM) return "dATOM"
-  if (denom === CONFIG.tokenDenoms.STATOM) return "stATOM"
-  if (denom === CONFIG.tokenDenoms.NTRN) return "NTRN"
-  if (denom === CONFIG.tokenDenoms.USDC) return "USDC"
-  throw new Error(`Unknown token denom: ${denom}`)
+  if (denom === CONFIG.tokenDenoms.DATOM) return "dATOM";
+  if (denom === CONFIG.tokenDenoms.STATOM) return "stATOM";
+  if (denom === CONFIG.tokenDenoms.NTRN) return "NTRN";
+  if (denom === CONFIG.tokenDenoms.USDC) return "USDC";
+  throw new Error(`Unknown token denom: ${denom}`);
 }

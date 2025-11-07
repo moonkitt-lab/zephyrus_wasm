@@ -47,9 +47,9 @@ pub enum HydroQueryMsg {
     SpecificUserLockupsWithTrancheInfos { address: String, lock_ids: Vec<u64> },
     /// Query hydro constants return HydroConstantsResponse
     Constants {},
-    /// Query the lockups shares return LockupsSharesResponse
+    /// Query the lockups info return LockupsInfoResponse
     /// Used to track time weighted shares of vessels with token group id and locked rounds
-    LockupsShares { lock_ids: Vec<u64> },
+    LockupsInfo { lock_ids: Vec<u64> },
     /// Use to query the outstanding tribute claims by Zephyrusreturn OutstandingTributeClaimsResponse
     OutstandingTributeClaims {
         user_address: String,
@@ -105,7 +105,7 @@ pub struct OutstandingTributeClaimsResponse {
 }
 
 #[cw_serde]
-pub struct LockupsSharesInfo {
+pub struct LockupsInfo {
     pub lock_id: u64,
     pub time_weighted_shares: Uint128,
     pub token_group_id: String,
@@ -113,8 +113,8 @@ pub struct LockupsSharesInfo {
 }
 
 #[cw_serde]
-pub struct LockupsSharesResponse {
-    pub lockups_shares_info: Vec<LockupsSharesInfo>,
+pub struct LockupsInfoResponse {
+    pub lockups_shares_info: Vec<LockupsInfo>,
 }
 
 #[cw_serde]

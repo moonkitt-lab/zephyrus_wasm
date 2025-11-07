@@ -33,7 +33,7 @@ pub struct VesselInfoSnapshot {
 
 impl VesselInfoSnapshot {
     pub fn was_under_user_control(&self) -> bool {
-        self.hydromancer_id.is_some()
+        self.hydromancer_id.is_none()
     }
 }
 

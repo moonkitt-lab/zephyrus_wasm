@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::{Attribute, Coin, Event, Reply, Response, SubMsgResponse, SubMsgResult};
+    use cosmwasm_std::{Attribute, Coin, Event, Reply, SubMsgResponse, SubMsgResult};
 
     // Helper function to create a reply with attributes
     fn create_reply_with_attributes(id: u64, attributes: Vec<(&str, &str)>) -> Reply {
@@ -14,6 +14,8 @@ mod tests {
 
         let event = Event::new("wasm").add_attributes(attrs);
 
+        // data is deprecated in SubMsgResponse
+        #[allow(deprecated)]
         Reply {
             id,
             payload: cosmwasm_std::Binary::default(),

@@ -44,6 +44,7 @@ mod tests {
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),
+            min_tokens_per_vessel: 5_000_000,
         };
         update_constants(storage, constants).unwrap();
 
@@ -70,6 +71,7 @@ mod tests {
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),
+            min_tokens_per_vessel: 5_000_000,
         };
 
         let result = update_constants(deps.as_mut().storage, constants.clone());

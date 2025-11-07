@@ -1,0 +1,38 @@
+{
+  "name": "zephyrus-rewards-testing",
+  "version": "1.0.0",
+  "description": "Comprehensive testing framework for Zephyrus rewards calculations",
+  "main": "dist/test-rewards-integration.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/test-rewards-integration.js",
+    "test:scenario": "node dist/test-rewards-integration.js",
+    "test:batch": "ts-node scripts/run-batch-tests.ts",
+    "dev": "ts-node src/test-rewards-integration.ts",
+    "clean": "rm -rf dist reports",
+    "setup": "mkdir -p reports",
+    "lint": "echo 'Linting not configured yet'",
+    "prepare": "npm run build && npm run setup"
+  },
+  "keywords": [],
+  "author": "Zephyrus Team",
+  "license": "MIT",
+  "dependencies": {
+    "@cosmjs/cosmwasm-stargate": "^0.32.2",
+    "@cosmjs/crypto": "^0.32.2",
+    "@cosmjs/encoding": "^0.32.2",
+    "@cosmjs/proto-signing": "^0.32.2",
+    "@cosmjs/stargate": "^0.32.2",
+    "@cosmjs/tendermint-rpc": "^0.32.2",
+    "axios": "^1.6.0",
+    "bip39": "^3.1.0",
+    "decimal.js": "^10.4.3",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.13",
+    "prettier": "^3.6.2",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  }
+}

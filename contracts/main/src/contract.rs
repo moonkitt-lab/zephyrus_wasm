@@ -105,6 +105,7 @@ pub fn instantiate(
         hydro_config,
         commission_rate: msg.commission_rate,
         commission_recipient,
+        min_tokens_per_vessel: msg.min_tokens_per_vessel,
     };
 
     state::update_constants(deps.storage, constant)?;
@@ -454,6 +455,7 @@ fn execute_receive_nft(
     let current_round = query_hydro_current_round(&deps.as_ref(), &constants)?;
 
     let vessel_info: VesselInfo = from_json(&msg)?;
+
     let hydro_lock_id: u64 = token_id.parse().unwrap();
 
     // 2. Check that owner is a valid address
@@ -480,6 +482,21 @@ fn execute_receive_nft(
     if user_specific_lockups.lockups.is_empty() {
         return Err(ContractError::LockupNotOwned {
             id: token_id.to_string(),
+        });
+    }
+
+    if user_specific_lockups.lockups[0]
+        .lock_entry
+        .funds
+        .amount
+        .u128()
+        < constants.min_tokens_per_vessel
+    {
+        return Err(ContractError::CustomError {
+            msg: format!(
+                "Insufficient deposit. Minimum required: {}",
+                constants.min_tokens_per_vessel
+            ),
         });
     }
 

@@ -79,6 +79,7 @@ fn get_default_instantiate_msg(
         default_hydromancer_commission_rate: Decimal::from_ratio(1u128, 100u128),
         commission_rate: "0.1".parse().unwrap(),
         commission_recipient: get_address_as_str(&deps.api, "commission_recipient"),
+        min_tokens_per_vessel: 5_000_000,
     };
     msg
 }
@@ -373,6 +374,7 @@ fn init_contract(deps: DepsMut) {
             default_hydromancer_address: make_valid_addr("zephyrus").into_string(),
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient").into_string(),
+            min_tokens_per_vessel: 5_000_000,
         },
     )
     .unwrap();

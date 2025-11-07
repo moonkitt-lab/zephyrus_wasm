@@ -1,7 +1,4 @@
-use cosmwasm_std::{
-    testing::{message_info, mock_dependencies, mock_env},
-    Addr, Coin, Decimal, Uint128,
-};
+use cosmwasm_std::{testing::mock_dependencies, Addr, Coin, Decimal, Uint128};
 use hydro_interface::msgs::DenomInfoResponse;
 use std::collections::HashMap;
 use zephyrus_core::{
@@ -68,10 +65,6 @@ fn create_mock_token_info_provider() -> HashMap<String, DenomInfoResponse> {
 
 #[test]
 fn test_build_claim_tribute_sub_msg() {
-    let deps = mock_dependencies();
-    let _env = mock_env();
-    let _info = message_info(&Addr::unchecked("owner"), &[]);
-
     let round_id = 1u64;
     let tranche_id = 1u64;
     let vessel_ids = vec![1u64, 2u64];
@@ -422,7 +415,6 @@ fn test_calcul_protocol_comm_and_rest_large_amount() {
 // Test build_claim_tribute_sub_msg with different scenarios
 #[test]
 fn test_build_claim_tribute_sub_msg_with_balance_found() {
-    let deps = mock_dependencies();
     let round_id = 1u64;
     let tranche_id = 1u64;
     let vessel_ids = vec![1u64, 2u64];
@@ -456,7 +448,6 @@ fn test_build_claim_tribute_sub_msg_with_balance_found() {
 
 #[test]
 fn test_build_claim_tribute_sub_msg_with_balance_not_found() {
-    let deps = mock_dependencies();
     let round_id = 1u64;
     let tranche_id = 1u64;
     let vessel_ids = vec![1u64, 2u64];
@@ -490,7 +481,6 @@ fn test_build_claim_tribute_sub_msg_with_balance_not_found() {
 
 #[test]
 fn test_build_claim_tribute_sub_msg_with_empty_balances() {
-    let deps = mock_dependencies();
     let round_id = 1u64;
     let tranche_id = 1u64;
     let vessel_ids = vec![1u64, 2u64];
@@ -926,7 +916,6 @@ fn test_distribute_rewards_for_vessels_on_tribute_already_claimed() {
     let total_proposal_voting_power = Decimal::from_ratio(2000u128, 1u128);
 
     // Mark vessels as already claimed
-    let api = deps.api.clone();
     state::save_vessel_tribute_claim(
         deps.as_mut().storage,
         1,

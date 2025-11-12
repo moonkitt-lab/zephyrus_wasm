@@ -33,6 +33,7 @@ pub fn generate_deterministic_tws(lock_id: u64) -> (String, u128) {
 
 pub struct MockWasmQuerier {
     hydro_contract: String,
+    hydro_tribute_contract: String,
     current_round: u64,
     hydro_constants: Option<HydroConstants>,
     error_specific_user_lockups: bool,
@@ -41,12 +42,14 @@ pub struct MockWasmQuerier {
 impl MockWasmQuerier {
     pub fn new(
         hydro_contract: String,
+        hydro_tribute_contract: String,
         current_round: u64,
         hydro_constants: Option<HydroConstants>,
         error_specific_user_lockups: bool,
     ) -> Self {
         Self {
             hydro_contract,
+            hydro_tribute_contract,
             current_round,
             hydro_constants,
             error_specific_user_lockups,
@@ -56,7 +59,9 @@ impl MockWasmQuerier {
     pub fn handler(&self, query: &WasmQuery) -> QuerierResult {
         match query {
             WasmQuery::Smart { contract_addr, msg } => {
-                if *contract_addr != self.hydro_contract {
+                if *contract_addr != self.hydro_contract
+                    && *contract_addr != self.hydro_tribute_contract
+                {
                     return SystemResult::Err(SystemError::NoSuchContract {
                         addr: contract_addr.to_string(),
                     });
@@ -370,7 +375,8 @@ impl MockQuerier {
 
 pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
     let hydro_addr = make_valid_addr("hydro").into_string();
-    let wasm_querier = MockWasmQuerier::new(hydro_addr, 1, None, false);
+    let hydro_tribute_addr = make_valid_addr("tribute").into_string();
+    let wasm_querier = MockWasmQuerier::new(hydro_addr, hydro_tribute_addr, 1, None, false);
     let querier = MockQuerier::new(wasm_querier);
 
     OwnedDeps {
@@ -386,7 +392,14 @@ pub fn mock_hydro_contract(
     error_specific_user_lockups: bool,
 ) {
     let hydro_addr = make_valid_addr("hydro_addr").into_string();
-    let wasm_querier = MockWasmQuerier::new(hydro_addr, 1, None, error_specific_user_lockups);
+    let hydro_tribute_addr = make_valid_addr("hydro_tribute").into_string();
+    let wasm_querier = MockWasmQuerier::new(
+        hydro_addr,
+        hydro_tribute_addr,
+        1,
+        None,
+        error_specific_user_lockups,
+    );
     deps.querier = MockQuerier::new(wasm_querier);
 }
 

@@ -18,7 +18,7 @@ fn create_mock_constants() -> Constants {
     Constants {
         commission_rate: Decimal::percent(5), // 5% commission
         hydro_config: zephyrus_core::state::HydroConfig {
-            hydro_tribute_contract_address: Addr::unchecked("hydro_tribute_contract"),
+            hydro_tribute_contract_address: Addr::unchecked("hydro_tribute"),
             hydro_contract_address: make_valid_addr("hydro"),
         },
         commission_recipient: Addr::unchecked("commission_recipient"),

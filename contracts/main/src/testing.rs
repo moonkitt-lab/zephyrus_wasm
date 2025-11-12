@@ -276,6 +276,7 @@ fn test_cw721_receive_nft_fail_bad_period() {
     let msg = ExecuteMsg::ReceiveNft(receive_msg);
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_err());
+    println!("error: {:?}", res);
     assert!(res
         .unwrap_err()
         .to_string()

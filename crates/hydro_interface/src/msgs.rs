@@ -91,13 +91,16 @@ pub enum TributeQueryMsg {
 }
 
 #[cw_serde]
-pub struct TributeClaim {
+pub struct TributeData {
     pub round_id: u64,
     pub tranche_id: u64,
     pub proposal_id: u64,
     pub tribute_id: u64,
     pub amount: Coin,
 }
+
+pub type TributeRecord = TributeData;
+pub type TributeClaim = TributeData;
 
 #[cw_serde]
 pub struct OutstandingTributeClaimsResponse {
@@ -313,5 +316,5 @@ pub struct ProposalTributesResponse {
 
 #[cw_serde]
 pub struct SpecificTributesResponse {
-    pub tributes: Vec<TributeClaim>,
+    pub tributes: Vec<TributeRecord>,
 }

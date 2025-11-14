@@ -1,6 +1,6 @@
 use crate::{errors::ContractError, helpers::hydro_queries::query_hydro_lockups_shares, state};
 use cosmwasm_std::{DepsMut, Storage};
-use hydro_interface::msgs::LockupsInfo;
+use hydro_interface::msgs::LockupVotingMetrics;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use zephyrus_core::msgs::{HydroProposalId, HydromancerId, RoundId, TrancheId};
@@ -12,7 +12,7 @@ pub fn batch_hydromancer_tws_changes(
     hydromancer_id: HydromancerId,
     current_round_id: RoundId,
     old_vessel_shares: &Option<VesselInfoSnapshot>,
-    new_lockup_info: &LockupsInfo,
+    new_lockup_info: &LockupVotingMetrics,
 ) {
     // Subtract old TWS
     if let Some(old_shares) = old_vessel_shares {
@@ -34,7 +34,7 @@ pub fn batch_hydromancer_tws_changes(
             hydromancer_id,
             current_round_id,
             new_lockup_info.token_group_id.clone(),
-            new_lockup_info.locked_rounds,
+            new_lockup_info.locked_rounds_remaining,
         );
         *hydromancer_tws_changes.entry(key).or_insert(0) +=
             new_lockup_info.time_weighted_shares.u128() as i128;
@@ -59,7 +59,7 @@ pub fn batch_proposal_tws_changes(
     tws_changes: &mut TwsChanges,
     vessel: &Vessel,
     old_vessel_shares: &Option<VesselInfoSnapshot>,
-    new_lockup_info: &LockupsInfo,
+    new_lockup_info: &LockupVotingMetrics,
     tranche_ids: &[TrancheId],
     current_round_id: RoundId,
 ) -> Result<(), ContractError> {
@@ -238,7 +238,7 @@ pub fn complete_hydromancer_time_weighted_shares(
         vessels.iter().map(|v| v.hydro_lock_id).collect(),
     )?;
 
-    for lockup_info in lockups_info_response.lockups_shares_info {
+    for lockup_info in lockups_info_response.lockups {
         // if vessel shares info already exists it means that vessel was created and delegated to hydromancer before its vote it's weighted shares are already added, so we skip
         if state::has_vessel_shares_info(deps.storage, current_round_id, lockup_info.lock_id) {
             continue;
@@ -249,7 +249,7 @@ pub fn complete_hydromancer_time_weighted_shares(
             current_round_id,
             lockup_info.time_weighted_shares.u128(),
             lockup_info.token_group_id.clone(),
-            lockup_info.locked_rounds,
+            lockup_info.locked_rounds_remaining,
             Some(hydromancer_id),
         )?;
 
@@ -260,7 +260,7 @@ pub fn complete_hydromancer_time_weighted_shares(
                 hydromancer_id,
                 current_round_id,
                 &lockup_info.token_group_id,
-                lockup_info.locked_rounds,
+                lockup_info.locked_rounds_remaining,
                 lockup_info.time_weighted_shares.u128(),
             )?;
         }
@@ -295,7 +295,7 @@ pub fn initialize_vessel_tws(
         query_hydro_lockups_shares(&deps.as_ref(), constants, missing_lock_ids)?;
 
     // Process each vessel's TWS data
-    for lockup_info in &lockups_info_response.lockups_shares_info {
+    for lockup_info in &lockups_info_response.lockups {
         let vessel = state::get_vessel(deps.storage, lockup_info.lock_id)?;
         // Save vessel TWS info
         state::save_vessel_info_snapshot(
@@ -304,7 +304,7 @@ pub fn initialize_vessel_tws(
             current_round_id,
             lockup_info.time_weighted_shares.u128(),
             lockup_info.token_group_id.clone(),
-            lockup_info.locked_rounds,
+            lockup_info.locked_rounds_remaining,
             vessel.hydromancer_id,
         )?;
 
@@ -316,7 +316,7 @@ pub fn initialize_vessel_tws(
                 hydromancer_id,
                 current_round_id,
                 &lockup_info.token_group_id,
-                lockup_info.locked_rounds,
+                lockup_info.locked_rounds_remaining,
                 lockup_info.time_weighted_shares.u128(),
             )?;
         }

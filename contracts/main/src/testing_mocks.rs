@@ -9,11 +9,12 @@ use cosmwasm_std::{
 };
 use hydro_interface::msgs::{
     CollectionInfo, CurrentRoundResponse, HydroConstants, HydroConstantsResponse, HydroQueryMsg,
-    LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo, LockupsInfo,
-    LockupsInfoResponse, OutstandingTributeClaimsResponse, PerTrancheLockupInfo, Proposal,
-    ProposalResponse, RoundLockPowerSchedule, SpecificTributesResponse,
-    SpecificUserLockupsResponse, SpecificUserLockupsWithTrancheInfosResponse,
-    TokenInfoProvidersResponse, Tranche, TranchesResponse, TributeClaim,
+    LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupVotingMetrics,
+    LockupVotingMetricsResponse, LockupWithPerTrancheInfo, OutstandingTributeClaimsResponse,
+    PerTrancheLockupInfo, Proposal, ProposalResponse, RoundLockPowerSchedule,
+    SpecificTributesResponse, SpecificUserLockupsResponse,
+    SpecificUserLockupsWithTrancheInfosResponse, TokenInfoProvidersResponse, Tranche,
+    TranchesResponse, TributeClaim,
 };
 use neutron_std::types::ibc::applications::transfer::v1::{
     DenomTrace, QueryDenomTraceRequest, QueryDenomTraceResponse,
@@ -73,7 +74,9 @@ impl MockWasmQuerier {
                     HydroQueryMsg::SpecificUserLockups { address, lock_ids } => {
                         self.handle_specific_user_lockups(&address, &lock_ids)
                     }
-                    HydroQueryMsg::LockupsInfo { lock_ids } => self.handle_lockups_info(&lock_ids),
+                    HydroQueryMsg::LockupVotingMetrics { lock_ids } => {
+                        self.handle_lockups_info(&lock_ids)
+                    }
                     HydroQueryMsg::Tranches {} => self.handle_tranches(),
                     HydroQueryMsg::SpecificUserLockupsWithTrancheInfos {
                         address: _,
@@ -170,18 +173,18 @@ impl MockWasmQuerier {
     }
 
     fn handle_lockups_info(&self, lock_ids: &[u64]) -> StdResult<Binary> {
-        let mut info: Vec<LockupsInfo> = vec![];
+        let mut info: Vec<LockupVotingMetrics> = vec![];
         for lock_id in lock_ids {
             let (token_group_id, tws) = generate_deterministic_tws(*lock_id);
-            info.push(LockupsInfo {
+            info.push(LockupVotingMetrics {
                 lock_id: *lock_id,
                 time_weighted_shares: Uint128::from(tws),
                 token_group_id: token_group_id,
-                locked_rounds: 1,
+                locked_rounds_remaining: 1,
             });
         }
-        to_json_binary(&LockupsInfoResponse {
-            lockups_shares_info: info,
+        to_json_binary(&LockupVotingMetricsResponse {
+            lockups: info.clone(),
         })
     }
 

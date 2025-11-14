@@ -518,10 +518,10 @@ fn execute_receive_nft(
     let lockup_info_response =
         query_hydro_lockups_shares(&deps.as_ref(), &constants, vec![hydro_lock_id])?;
 
-    let lockup_info = &lockup_info_response.lockups_shares_info[0];
+    let lockup_info = &lockup_info_response.lockups[0];
     let current_time_weighted_shares = lockup_info.time_weighted_shares.u128();
     let token_group_id = &lockup_info.token_group_id;
-    let locked_rounds = lockup_info.locked_rounds;
+    let locked_rounds = lockup_info.locked_rounds_remaining;
 
     // Always save vessel shares info
     state::save_vessel_info_snapshot(
@@ -1056,7 +1056,7 @@ fn execute_user_vote(
             vessels_to_harbor.vessel_ids.clone(),
         )?;
 
-        for lockup_info in lockups_info_response.lockups_shares_info {
+        for lockup_info in lockups_info_response.lockups {
             let vessel = state::get_vessel(deps.storage, lockup_info.lock_id)?;
 
             // Check that the vessel belongs to the user
@@ -1080,7 +1080,7 @@ fn execute_user_vote(
                     current_round_id,
                     lockup_info.time_weighted_shares.u128(),
                     lockup_info.token_group_id,
-                    lockup_info.locked_rounds,
+                    lockup_info.locked_rounds_remaining,
                     None,
                 )?;
             }

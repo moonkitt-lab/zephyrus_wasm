@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use cosmwasm_std::{testing::mock_env, MessageInfo, Uint128};
-    use hydro_interface::msgs::LockupsInfo;
+    use hydro_interface::msgs::LockupVotingMetrics;
     use std::collections::HashMap;
     use zephyrus_core::state::{Constants, HydroConfig, Vessel, VesselInfoSnapshot};
 
@@ -136,11 +136,11 @@ mod tests {
         let hydromancer_id = 1;
         let current_round_id = 1;
         let old_vessel_shares = None;
-        let new_lockup_shares = LockupsInfo {
+        let new_lockup_shares = LockupVotingMetrics {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 2,
+            locked_rounds_remaining: 2,
         };
 
         batch_hydromancer_tws_changes(
@@ -167,11 +167,11 @@ mod tests {
             locked_rounds: 1,
             hydromancer_id: Some(hydromancer_id),
         });
-        let new_lockup_shares = LockupsInfo {
+        let new_lockup_shares = LockupVotingMetrics {
             lock_id: 1,
             time_weighted_shares: Uint128::zero(),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 2,
+            locked_rounds_remaining: 2,
         };
 
         batch_hydromancer_tws_changes(
@@ -198,11 +198,11 @@ mod tests {
             locked_rounds: 1,
             hydromancer_id: Some(hydromancer_id),
         });
-        let new_lockup_shares = LockupsInfo {
+        let new_lockup_shares = LockupVotingMetrics {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1200u128),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 2,
+            locked_rounds_remaining: 2,
         };
 
         batch_hydromancer_tws_changes(
@@ -231,11 +231,11 @@ mod tests {
             locked_rounds: 1,
             hydromancer_id: Some(hydromancer_id),
         });
-        let new_lockup_shares = LockupsInfo {
+        let new_lockup_shares = LockupVotingMetrics {
             lock_id: 1,
             time_weighted_shares: Uint128::from(800u128),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 1, // Same locked_rounds as old
+            locked_rounds_remaining: 1, // Same locked_rounds as old
         };
 
         batch_hydromancer_tws_changes(
@@ -262,11 +262,11 @@ mod tests {
             locked_rounds: 1,
             hydromancer_id: Some(hydromancer_id),
         });
-        let new_lockup_shares = LockupsInfo {
+        let new_lockup_shares = LockupVotingMetrics {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 2,
+            locked_rounds_remaining: 2,
         };
 
         batch_hydromancer_tws_changes(
@@ -291,11 +291,11 @@ mod tests {
         let mut tws_changes = TwsChanges::new();
         let vessel = state::get_vessel(deps.as_ref().storage, 1).unwrap();
         let old_vessel_shares = None;
-        let new_lockup_shares = LockupsInfo {
+        let new_lockup_shares = LockupVotingMetrics {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 2,
+            locked_rounds_remaining: 2,
         };
         let tranche_ids = vec![1];
         let current_round_id = 1;
@@ -349,11 +349,11 @@ mod tests {
             locked_rounds: 1,
             hydromancer_id: Some(1),
         });
-        let new_lockup_shares = LockupsInfo {
+        let new_lockup_shares = LockupVotingMetrics {
             lock_id: vessel_id,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 2,
+            locked_rounds_remaining: 2,
         };
         let tranche_ids = vec![tranche_id];
 
@@ -767,11 +767,11 @@ mod tests {
 
         // First call
         let old_vessel_shares_1 = None;
-        let new_lockup_shares_1 = LockupsInfo {
+        let new_lockup_shares_1 = LockupVotingMetrics {
             lock_id: 1,
             time_weighted_shares: Uint128::from(1000u128),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 2,
+            locked_rounds_remaining: 2,
         };
 
         batch_hydromancer_tws_changes(
@@ -784,11 +784,11 @@ mod tests {
 
         // Second call with same key
         let old_vessel_shares_2 = None;
-        let new_lockup_shares_2 = LockupsInfo {
+        let new_lockup_shares_2 = LockupVotingMetrics {
             lock_id: 2,
             time_weighted_shares: Uint128::from(500u128),
             token_group_id: "dAtom".to_string(),
-            locked_rounds: 2, // Same as first
+            locked_rounds_remaining: 2, // Same as first
         };
 
         batch_hydromancer_tws_changes(

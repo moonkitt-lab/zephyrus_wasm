@@ -243,20 +243,25 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     tributeIds: number[];
     vesselIds: number[];
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  updateCommissionRate: ({
-    newCommissionRate
-  }: {
-    newCommissionRate: Decimal;
-  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
-  updateCommissionRecipient: ({
-    newCommissionRecipient
-  }: {
-    newCommissionRecipient: string;
-  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   setAdminAddresses: ({
     admins
   }: {
     admins: string[];
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  updateConstants: ({
+    commissionRate,
+    commissionRecipient,
+    defaultHydromancerId,
+    hydroAddr,
+    minTokensPerVessel,
+    tributeAddr
+  }: {
+    commissionRate: Decimal;
+    commissionRecipient: string;
+    defaultHydromancerId: number;
+    hydroAddr: string;
+    minTokensPerVessel: number;
+    tributeAddr: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
@@ -281,9 +286,8 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
     this.claim = this.claim.bind(this);
-    this.updateCommissionRate = this.updateCommissionRate.bind(this);
-    this.updateCommissionRecipient = this.updateCommissionRecipient.bind(this);
     this.setAdminAddresses = this.setAdminAddresses.bind(this);
+    this.updateConstants = this.updateConstants.bind(this);
   }
   takeControl = async ({
     vesselIds
@@ -458,28 +462,6 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
       }
     }, fee, memo, _funds);
   };
-  updateCommissionRate = async ({
-    newCommissionRate
-  }: {
-    newCommissionRate: Decimal;
-  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
-    return await this.client.execute(this.sender, this.contractAddress, {
-      update_commission_rate: {
-        new_commission_rate: newCommissionRate
-      }
-    }, fee, memo, _funds);
-  };
-  updateCommissionRecipient = async ({
-    newCommissionRecipient
-  }: {
-    newCommissionRecipient: string;
-  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
-    return await this.client.execute(this.sender, this.contractAddress, {
-      update_commission_recipient: {
-        new_commission_recipient: newCommissionRecipient
-      }
-    }, fee, memo, _funds);
-  };
   setAdminAddresses = async ({
     admins
   }: {
@@ -488,6 +470,32 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     return await this.client.execute(this.sender, this.contractAddress, {
       set_admin_addresses: {
         admins
+      }
+    }, fee, memo, _funds);
+  };
+  updateConstants = async ({
+    commissionRate,
+    commissionRecipient,
+    defaultHydromancerId,
+    hydroAddr,
+    minTokensPerVessel,
+    tributeAddr
+  }: {
+    commissionRate: Decimal;
+    commissionRecipient: string;
+    defaultHydromancerId: number;
+    hydroAddr: string;
+    minTokensPerVessel: number;
+    tributeAddr: string;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      update_constants: {
+        commission_rate: commissionRate,
+        commission_recipient: commissionRecipient,
+        default_hydromancer_id: defaultHydromancerId,
+        hydro_addr: hydroAddr,
+        min_tokens_per_vessel: minTokensPerVessel,
+        tribute_addr: tributeAddr
       }
     }, fee, memo, _funds);
   };

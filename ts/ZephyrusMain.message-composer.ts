@@ -96,20 +96,25 @@ export interface ZephyrusMainMsg {
     tributeIds: number[];
     vesselIds: number[];
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
-  updateCommissionRate: ({
-    newCommissionRate
-  }: {
-    newCommissionRate: Decimal;
-  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
-  updateCommissionRecipient: ({
-    newCommissionRecipient
-  }: {
-    newCommissionRecipient: string;
-  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   setAdminAddresses: ({
     admins
   }: {
     admins: string[];
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  updateConstants: ({
+    commissionRate,
+    commissionRecipient,
+    defaultHydromancerId,
+    hydroAddr,
+    minTokensPerVessel,
+    tributeAddr
+  }: {
+    commissionRate: Decimal;
+    commissionRecipient: string;
+    defaultHydromancerId: number;
+    hydroAddr: string;
+    minTokensPerVessel: number;
+    tributeAddr: string;
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
@@ -131,9 +136,8 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.receiveNft = this.receiveNft.bind(this);
     this.changeHydromancer = this.changeHydromancer.bind(this);
     this.claim = this.claim.bind(this);
-    this.updateCommissionRate = this.updateCommissionRate.bind(this);
-    this.updateCommissionRecipient = this.updateCommissionRecipient.bind(this);
     this.setAdminAddresses = this.setAdminAddresses.bind(this);
+    this.updateConstants = this.updateConstants.bind(this);
   }
   takeControl = ({
     vesselIds
@@ -412,44 +416,6 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
       })
     };
   };
-  updateCommissionRate = ({
-    newCommissionRate
-  }: {
-    newCommissionRate: Decimal;
-  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
-    return {
-      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
-      value: MsgExecuteContract.fromPartial({
-        sender: this.sender,
-        contract: this.contractAddress,
-        msg: toUtf8(JSON.stringify({
-          update_commission_rate: {
-            new_commission_rate: newCommissionRate
-          }
-        })),
-        funds: _funds
-      })
-    };
-  };
-  updateCommissionRecipient = ({
-    newCommissionRecipient
-  }: {
-    newCommissionRecipient: string;
-  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
-    return {
-      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
-      value: MsgExecuteContract.fromPartial({
-        sender: this.sender,
-        contract: this.contractAddress,
-        msg: toUtf8(JSON.stringify({
-          update_commission_recipient: {
-            new_commission_recipient: newCommissionRecipient
-          }
-        })),
-        funds: _funds
-      })
-    };
-  };
   setAdminAddresses = ({
     admins
   }: {
@@ -463,6 +429,40 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
         msg: toUtf8(JSON.stringify({
           set_admin_addresses: {
             admins
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  updateConstants = ({
+    commissionRate,
+    commissionRecipient,
+    defaultHydromancerId,
+    hydroAddr,
+    minTokensPerVessel,
+    tributeAddr
+  }: {
+    commissionRate: Decimal;
+    commissionRecipient: string;
+    defaultHydromancerId: number;
+    hydroAddr: string;
+    minTokensPerVessel: number;
+    tributeAddr: string;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          update_constants: {
+            commission_rate: commissionRate,
+            commission_recipient: commissionRecipient,
+            default_hydromancer_id: defaultHydromancerId,
+            hydro_addr: hydroAddr,
+            min_tokens_per_vessel: minTokensPerVessel,
+            tribute_addr: tributeAddr
           }
         })),
         funds: _funds

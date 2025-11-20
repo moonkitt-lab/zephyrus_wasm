@@ -75,16 +75,17 @@ export type ExecuteMsg = {
     vessel_ids: number[];
   };
 } | {
-  update_commission_rate: {
-    new_commission_rate: Decimal;
-  };
-} | {
-  update_commission_recipient: {
-    new_commission_recipient: string;
-  };
-} | {
   set_admin_addresses: {
     admins: string[];
+  };
+} | {
+  update_constants: {
+    commission_rate: Decimal;
+    commission_recipient: string;
+    default_hydromancer_id: number;
+    hydro_addr: string;
+    min_tokens_per_vessel: number;
+    tribute_addr: string;
   };
 };
 export type Binary = string;

@@ -164,18 +164,6 @@ pub enum ExecuteMsg {
         vessel_ids: Vec<u64>,
         tribute_ids: Vec<u64>,
     },
-    /// Executable message for admins
-    /// to update the commission rate
-    /// Preconditions:
-    /// - The caller must be an admin.
-    /// - The new commission rate must be less than 1 (100%).
-    UpdateCommissionRate { new_commission_rate: Decimal },
-    /// Executable message for admins
-    /// to update the commission recipient address
-    /// Preconditions:
-    /// - The caller must be an admin.
-    /// - The new commission recipient must be a valid address.
-    UpdateCommissionRecipient { new_commission_recipient: String },
 
     /// Executable message for admins
     /// to set the admin addresses
@@ -184,6 +172,24 @@ pub enum ExecuteMsg {
     /// - The admin addresses must be valid addresses.
     /// - intersection of new admin addresses and existing admin addresses must not be empty.
     SetAdminAddresses { admins: Vec<String> },
+    /// Executable message for admins
+    /// to update the constants
+    /// Preconditions:
+    /// - The caller must be an admin.
+    /// - The minimum tokens per vessel must be greater or equal to 0.
+    /// - The hydro address must be a valid address.
+    /// - The tribute address must be a valid address.
+    /// - The commission rate must be less than 1 (100%).
+    /// - The commission recipient must be a valid address.
+    /// - The default hydromancer id must exist.
+    UpdateConstants {
+        min_tokens_per_vessel: u128,
+        hydro_addr: String,
+        tribute_addr: String,
+        commission_rate: Decimal,
+        commission_recipient: String,
+        default_hydromancer_id: u64,
+    },
 }
 
 #[cw_serde]

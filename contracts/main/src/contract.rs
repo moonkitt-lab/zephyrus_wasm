@@ -182,13 +182,24 @@ pub fn execute(
             vessel_ids,
             tribute_ids,
         ),
-        ExecuteMsg::UpdateCommissionRate {
-            new_commission_rate,
-        } => execute_update_commission_rate(deps, info, new_commission_rate),
-        ExecuteMsg::UpdateCommissionRecipient {
-            new_commission_recipient,
-        } => execute_update_commission_recipient(deps, info, new_commission_recipient),
         ExecuteMsg::SetAdminAddresses { admins } => execute_set_admin_addresses(deps, info, admins),
+        ExecuteMsg::UpdateConstants {
+            min_tokens_per_vessel,
+            hydro_addr,
+            tribute_addr,
+            commission_rate,
+            commission_recipient,
+            default_hydromancer_id,
+        } => execute_update_constants(
+            deps,
+            info,
+            min_tokens_per_vessel,
+            hydro_addr,
+            tribute_addr,
+            commission_rate,
+            commission_recipient,
+            default_hydromancer_id,
+        ),
     }
 }
 
@@ -219,43 +230,50 @@ fn execute_set_admin_addresses(
     Ok(Response::default().add_attribute("action", "set_admin_addresses"))
 }
 
-fn execute_update_commission_rate(
+#[allow(clippy::too_many_arguments)]
+fn execute_update_constants(
     deps: DepsMut,
     info: MessageInfo,
-    new_commission_rate: Decimal,
+    min_tokens_per_vessel: u128,
+    hydro_addr: String,
+    tribute_addr: String,
+    commission_rate: Decimal,
+    commission_recipient: String,
+    default_hydromancer_id: u64,
 ) -> Result<Response, ContractError> {
     validate_admin_address(deps.storage, &info.sender)?;
 
+    let mut constants = state::get_constants(deps.storage)?;
+    let hydro_addr = deps.api.addr_validate(&hydro_addr)?;
+    let tribute_addr = deps.api.addr_validate(&tribute_addr)?;
+    let commission_recipient = deps.api.addr_validate(&commission_recipient)?;
     // Validate new commission rate is less than 1 (100%)
-    if new_commission_rate > Decimal::one() {
+    if commission_rate >= Decimal::one() {
         return Err(ContractError::CustomError {
             msg: "Commission rate must be less than 1 (100%)".to_string(),
         });
     }
-
-    let mut constants = state::get_constants(deps.storage)?;
-    constants.commission_rate = new_commission_rate;
+    let hydromancer = state::get_hydromancer(deps.storage, default_hydromancer_id);
+    if hydromancer.is_err() {
+        return Err(ContractError::HydromancerNotFound {
+            identifier: default_hydromancer_id.to_string(),
+        });
+    }
+    constants.min_tokens_per_vessel = min_tokens_per_vessel;
+    constants.hydro_config.hydro_contract_address = hydro_addr.clone();
+    constants.hydro_config.hydro_tribute_contract_address = tribute_addr.clone();
+    constants.commission_rate = commission_rate;
+    constants.commission_recipient = commission_recipient.clone();
+    constants.default_hydromancer_id = default_hydromancer_id;
     state::update_constants(deps.storage, constants)?;
     Ok(Response::default()
-        .add_attribute("action", "change_commission_rate")
-        .add_attribute("new_commission_rate", new_commission_rate.to_string()))
-}
-
-fn execute_update_commission_recipient(
-    deps: DepsMut,
-    info: MessageInfo,
-    new_commission_recipient: String,
-) -> Result<Response, ContractError> {
-    validate_admin_address(deps.storage, &info.sender)?;
-
-    let commission_recipient = deps.api.addr_validate(&new_commission_recipient)?;
-    let mut constants = state::get_constants(deps.storage)?;
-    constants.commission_recipient = commission_recipient;
-    state::update_constants(deps.storage, constants)?;
-
-    Ok(Response::default()
-        .add_attribute("action", "change_commission_recipient")
-        .add_attribute("new_commission_recipient", new_commission_recipient))
+        .add_attribute("action", "update_constants")
+        .add_attribute("min_tokens_per_vessel", min_tokens_per_vessel.to_string())
+        .add_attribute("hydro_addr", hydro_addr.to_string())
+        .add_attribute("tribute_addr", tribute_addr.to_string())
+        .add_attribute("commission_rate", commission_rate.to_string())
+        .add_attribute("default_hydromancer_id", default_hydromancer_id.to_string())
+        .add_attribute("commission_recipient", commission_recipient.to_string()))
 }
 
 fn execute_claim(

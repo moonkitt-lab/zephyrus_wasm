@@ -160,6 +160,12 @@ pub fn validate_lock_duration(
 }
 
 pub fn validate_commission_rate(commission_rate: Decimal) -> Result<(), ContractError> {
+    // Validate commission rate is not negative
+    if commission_rate < Decimal::zero() {
+        return Err(ContractError::CustomError {
+            msg: "Commission rate cannot be negative".to_string(),
+        });
+    }
     // Validate commission rate is less than 0.5 (50%)
     let max_commission_rate: Decimal = Decimal::from_ratio(50_u128, 100_u128);
     if commission_rate >= max_commission_rate {

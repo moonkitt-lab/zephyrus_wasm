@@ -1,5 +1,5 @@
 use crate::{errors::ContractError, state};
-use cosmwasm_std::{Addr, Storage};
+use cosmwasm_std::{Addr, Decimal, Storage};
 use hydro_interface::msgs::{LockupWithPerTrancheInfo, RoundLockPowerSchedule, TributeClaim};
 use zephyrus_core::msgs::{HydroLockId, HydromancerId, VesselsToHarbor};
 use zephyrus_core::state::{Constants, Vessel};
@@ -156,6 +156,17 @@ pub fn validate_lock_duration(
         });
     }
 
+    Ok(())
+}
+
+pub fn validate_commission_rate(commission_rate: Decimal) -> Result<(), ContractError> {
+    // Validate commission rate is less than 0.5 (50%)
+    let max_commission_rate: Decimal = Decimal::from_ratio(50_u128, 100_u128);
+    if commission_rate >= max_commission_rate {
+        return Err(ContractError::CommissionRateMustBeLessThanMax {
+            max_commission_rate,
+        });
+    }
     Ok(())
 }
 

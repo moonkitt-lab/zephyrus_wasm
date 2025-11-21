@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::{testing::mock_env, Addr, MessageInfo, Timestamp};
+    use cosmwasm_std::{testing::mock_env, Addr, Decimal, MessageInfo, Timestamp};
     use hydro_interface::msgs::{
         LockEntryV2, LockEntryWithPower, LockPowerEntry, LockupWithPerTrancheInfo,
         PerTrancheLockupInfo, RoundLockPowerSchedule,
@@ -12,11 +12,11 @@ mod tests {
     use crate::{
         errors::ContractError,
         helpers::validation::{
-            validate_admin_address, validate_contract_is_not_paused, validate_contract_is_paused,
-            validate_hydromancer_controls_vessels, validate_hydromancer_exists,
-            validate_lock_duration, validate_no_duplicate_ids, validate_user_owns_vessels,
-            validate_vessels_not_tied_to_proposal, validate_vessels_under_user_control,
-            validate_vote_duplicates,
+            validate_admin_address, validate_commission_rate, validate_contract_is_not_paused,
+            validate_contract_is_paused, validate_hydromancer_controls_vessels,
+            validate_hydromancer_exists, validate_lock_duration, validate_no_duplicate_ids,
+            validate_user_owns_vessels, validate_vessels_not_tied_to_proposal,
+            validate_vessels_under_user_control, validate_vote_duplicates,
         },
         state,
         testing::make_valid_addr,
@@ -888,5 +888,89 @@ mod tests {
             vessel,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_commission_rate_success() {
+        // Test with valid commission rates (0 to 0.5)
+        let valid_rates = vec![
+            Decimal::zero(),
+            Decimal::from_ratio(1u128, 100u128),  // 1%
+            Decimal::from_ratio(10u128, 100u128), // 10%
+            Decimal::from_ratio(25u128, 100u128), // 25%
+            Decimal::from_ratio(49u128, 100u128), // 49%
+        ];
+
+        for rate in valid_rates {
+            let result = validate_commission_rate(rate);
+            assert!(result.is_ok(), "Commission rate {:?} should be valid", rate);
+        }
+    }
+
+    #[test]
+    fn test_validate_commission_rate_too_high() {
+        // Test with commission rate >= 0.5 (50%) (should fail)
+        let too_high_rates = vec![
+            Decimal::from_ratio(50u128, 100u128),  // 50% - should fail
+            Decimal::from_ratio(51u128, 100u128),  // 51% - should fail
+            Decimal::from_ratio(75u128, 100u128),  // 75% - should fail
+            Decimal::one(),                        // 100% - should fail
+            Decimal::from_ratio(150u128, 100u128), // 150% - should fail
+        ];
+
+        for rate in too_high_rates {
+            let result = validate_commission_rate(rate);
+            assert!(result.is_err(), "Commission rate {:?} should fail", rate);
+
+            match result.unwrap_err() {
+                ContractError::CommissionRateMustBeLessThanMax {
+                    max_commission_rate,
+                } => {
+                    assert_eq!(max_commission_rate, Decimal::from_ratio(50u128, 100u128));
+                }
+                _ => panic!("Expected CommissionRateMustBeLessThanMax error"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_commission_rate_edge_cases() {
+        // Test with exactly 0.5 (50%) - should fail (>= max)
+        let exactly_max = Decimal::from_ratio(50u128, 100u128);
+        let result = validate_commission_rate(exactly_max);
+        assert!(result.is_err(), "Commission rate exactly 0.5 should fail");
+
+        // Test with value just below 0.5 (should succeed)
+        let just_below_max = Decimal::from_ratio(499999u128, 1000000u128); // 0.499999
+        let result = validate_commission_rate(just_below_max);
+        assert!(
+            result.is_ok(),
+            "Commission rate just below 0.5 should succeed"
+        );
+
+        // Test with zero (should succeed)
+        let zero = Decimal::zero();
+        let result = validate_commission_rate(zero);
+        assert!(result.is_ok(), "Zero commission rate should succeed");
+    }
+
+    #[test]
+    fn test_validate_commission_rate_boundary_values() {
+        // Test boundary values around 0.5
+        let max_rate = Decimal::from_ratio(50u128, 100u128);
+
+        // Just below max (should succeed)
+        let just_below = max_rate - Decimal::from_ratio(1u128, 1000000u128);
+        let result = validate_commission_rate(just_below);
+        assert!(result.is_ok(), "Value just below max should succeed");
+
+        // Exactly at max (should fail)
+        let result = validate_commission_rate(max_rate);
+        assert!(result.is_err(), "Value exactly at max should fail");
+
+        // Just above max (should fail)
+        let just_above = max_rate + Decimal::from_ratio(1u128, 1000000u128);
+        let result = validate_commission_rate(just_above);
+        assert!(result.is_err(), "Value just above max should fail");
     }
 }

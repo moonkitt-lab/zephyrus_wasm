@@ -1,5 +1,3 @@
-use std::thread::current;
-
 use crate::helpers::hydro_queries::query_hydro_lockups_shares;
 use crate::reply::handle_refresh_time_weighted_shares_reply;
 use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};

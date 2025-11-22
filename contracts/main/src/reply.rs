@@ -1,6 +1,5 @@
 use cosmwasm_std::{
-    entry_point, from_json, AllBalanceResponse, BankMsg, BankQuery, Coin, DepsMut, Env,
-    QueryRequest, Reply, Response as CwResponse, StdError,
+    entry_point, from_json, BankMsg, Coin, DepsMut, Env, Reply, Response as CwResponse, StdError,
 };
 use std::collections::HashMap;
 
@@ -538,26 +537,18 @@ pub fn handle_unlock_tokens_reply(
     let previous_balances = decommission_vessels_params.previous_balances;
 
     // Check the new balance and compare with the previous one
-    // Query current balance after unlocking
-    let balance_query = BankQuery::AllBalances {
-        address: env.contract.address.to_string(),
-    };
-    let current_balances: AllBalanceResponse =
-        deps.querier.query(&QueryRequest::Bank(balance_query))?;
-
-    // Calculate difference in balances
+    // To prevent DoS on balance queries, we get only the current balances for the denoms that are already in previous_balances
+    // (the denoms of the lockups funds)
     let mut received_coins: Vec<Coin> = vec![];
-    for current_coin in current_balances.amount {
-        let previous_amount = previous_balances
-            .iter()
-            .find(|c| c.denom == current_coin.denom)
-            .map(|c| c.amount)
-            .unwrap_or_default();
+    for previous_balance in previous_balances {
+        let current_balance = deps
+            .querier
+            .query_balance(env.contract.address.clone(), previous_balance.denom)?;
 
-        if current_coin.amount > previous_amount {
+        if current_balance.amount > previous_balance.amount {
             received_coins.push(Coin {
-                denom: current_coin.denom,
-                amount: current_coin.amount - previous_amount,
+                denom: current_balance.denom,
+                amount: current_balance.amount - previous_balance.amount,
             });
         }
     }

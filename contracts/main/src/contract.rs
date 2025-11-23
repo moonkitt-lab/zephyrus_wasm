@@ -1129,5 +1129,13 @@ fn execute_user_vote(
 
 #[entry_point]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    Ok(Response::new().add_attribute("action", "migrate"))
+    let version = ContractVersion {
+        contract: CONTRACT_NAME.to_string(),
+        version: CONTRACT_VERSION.to_string(),
+    };
+    CONTRACT_VERSION_INFO.save(deps.storage, &version)?;
+
+    Ok(Response::new()
+        .add_attribute("action", "migrate")
+        .add_attribute("contract_version", CONTRACT_VERSION))
 }

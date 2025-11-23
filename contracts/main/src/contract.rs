@@ -1129,5 +1129,5 @@ fn execute_user_vote(
 
 #[entry_point]
 pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    Ok(Response::default())
+    Ok(Response::new().add_attribute("action", "migrate"))
 }

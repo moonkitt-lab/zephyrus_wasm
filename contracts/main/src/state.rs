@@ -10,6 +10,18 @@ use zephyrus_core::{
     },
 };
 
+#[cw_serde]
+pub struct ContractVersion {
+    pub contract: String,
+    pub version: String,
+}
+
+// On reprend la même clé que cw2 utilise habituellement : "contract_info"
+pub const CONTRACT_VERSION_INFO: Item<ContractVersion> = Item::new("contract_info");
+
+pub const CONTRACT_NAME: &str = "crates.io:zephyrus-main";
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use crate::errors::ContractError;
 
 #[cw_serde]

@@ -3,7 +3,7 @@ use hydro_interface::msgs::DenomInfoResponse;
 use std::collections::HashMap;
 use zephyrus_core::{
     msgs::{ClaimTributeReplyPayload, CLAIM_TRIBUTE_REPLY_ID},
-    state::{Constants, Vessel, VesselInfoSnapshot},
+    state::{Constants, VesselInfoSnapshot},
 };
 
 use crate::{
@@ -504,10 +504,6 @@ fn test_calculate_voting_power_of_vessel_with_shares_error() {
 // Test calculate_voting_power_of_vessel with token info not found
 #[test]
 fn test_calculate_voting_power_of_vessel_token_info_not_found() {
-    let mut deps = mock_dependencies();
-
-    // Create vessel with unknown token group
-    let vessel_id = 1u64;
     let round_id = 1u64;
 
     let token_info_provider = create_mock_token_info_provider(); // Doesn't contain "unknown_token_group"

@@ -238,7 +238,7 @@ mod tests {
         let vessel_id = 0;
         let target_class_period = 1_000_000;
         let lock_epoch_length = 1_000_000; // Use the same as in testing_mocks
-        let constants = state::get_constants(deps.as_ref().storage).unwrap();
+
         // Add vessel shares with different locked_rounds
         // locked_rounds = 2, so 2 * 1_000_000 = 2_000_000 (does not match target 1_000_000)
         state::save_vessel_info_snapshot(

@@ -1,5 +1,3 @@
-use std::thread::current;
-
 use crate::helpers::hydro_queries::query_hydro_lockups_shares;
 use crate::reply::handle_refresh_time_weighted_shares_reply;
 use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};
@@ -2667,19 +2665,16 @@ fn test_update_constants_success() {
     // Test updating constants with valid values
     let admin1_addr = get_address_as_str(&deps.api, "admin1");
     let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
-    let new_hydro_addr = get_address_as_str(&deps.api, "new_hydro");
-    let new_tribute_addr = get_address_as_str(&deps.api, "new_tribute");
+
     let new_commission_recipient = get_address_as_str(&deps.api, "new_commission_recipient");
     let new_min_tokens = 10_000_000u128;
     let new_commission_rate = Decimal::from_ratio(5u128, 100u128); // 5%
 
     let msg = ExecuteMsg::UpdateConstants {
-        min_tokens_per_vessel: new_min_tokens,
-        hydro_addr: new_hydro_addr.clone(),
-        tribute_addr: new_tribute_addr.clone(),
-        commission_rate: new_commission_rate,
-        commission_recipient: new_commission_recipient.clone(),
-        default_hydromancer_id: initial_hydromancer_id,
+        min_tokens_per_vessel: Some(new_min_tokens),
+        commission_rate: Some(new_commission_rate),
+        commission_recipient: Some(new_commission_recipient.clone()),
+        default_hydromancer_id: Some(initial_hydromancer_id),
     };
 
     let res = execute(deps.as_mut(), env, info, msg);
@@ -2688,20 +2683,7 @@ fn test_update_constants_success() {
     // Verify the constants were updated
     let updated_constants = state::get_constants(deps.as_ref().storage).unwrap();
     assert_eq!(updated_constants.min_tokens_per_vessel, new_min_tokens);
-    assert_eq!(
-        updated_constants
-            .hydro_config
-            .hydro_contract_address
-            .to_string(),
-        new_hydro_addr
-    );
-    assert_eq!(
-        updated_constants
-            .hydro_config
-            .hydro_tribute_contract_address
-            .to_string(),
-        new_tribute_addr
-    );
+
     assert_eq!(updated_constants.commission_rate, new_commission_rate);
     assert_eq!(
         updated_constants.commission_recipient.to_string(),
@@ -2731,17 +2713,14 @@ fn test_update_constants_unauthorized() {
 
     // Test with non-admin user (should fail)
     let info = message_info(&Addr::unchecked("nonadmin"), &[]);
-    let new_hydro_addr = get_address_as_str(&deps.api, "new_hydro");
-    let new_tribute_addr = get_address_as_str(&deps.api, "new_tribute");
+
     let new_commission_recipient = get_address_as_str(&deps.api, "new_commission_recipient");
 
     let msg = ExecuteMsg::UpdateConstants {
-        min_tokens_per_vessel: 10_000_000,
-        hydro_addr: new_hydro_addr,
-        tribute_addr: new_tribute_addr,
-        commission_rate: Decimal::from_ratio(5u128, 100u128),
-        commission_recipient: new_commission_recipient,
-        default_hydromancer_id: initial_hydromancer_id,
+        min_tokens_per_vessel: Some(10_000_000),
+        commission_rate: Some(Decimal::from_ratio(5u128, 100u128)),
+        commission_recipient: Some(new_commission_recipient),
+        default_hydromancer_id: Some(initial_hydromancer_id),
     };
 
     let res = execute(deps.as_mut(), env, info, msg);
@@ -2774,25 +2753,23 @@ fn test_update_constants_invalid_commission_rate() {
     // Test with commission_rate >= 1 (should fail)
     let admin1_addr = get_address_as_str(&deps.api, "admin1");
     let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
-    let new_hydro_addr = get_address_as_str(&deps.api, "new_hydro");
-    let new_tribute_addr = get_address_as_str(&deps.api, "new_tribute");
     let new_commission_recipient = get_address_as_str(&deps.api, "new_commission_recipient");
 
     let msg = ExecuteMsg::UpdateConstants {
-        min_tokens_per_vessel: 10_000_000,
-        hydro_addr: new_hydro_addr,
-        tribute_addr: new_tribute_addr,
-        commission_rate: Decimal::one(), // 100% - should fail
-        commission_recipient: new_commission_recipient,
-        default_hydromancer_id: initial_hydromancer_id,
+        min_tokens_per_vessel: Some(10_000_000),
+        commission_rate: Some(Decimal::one()), // 100% - should fail
+        commission_recipient: Some(new_commission_recipient),
+        default_hydromancer_id: Some(initial_hydromancer_id),
     };
 
     let res = execute(deps.as_mut(), env, info, msg);
-    assert!(res.is_err(), "Should fail when commission_rate >= 1");
-
-    match res.unwrap_err() {
-        ContractError::CustomError { msg } => {
-            assert!(msg.contains("Commission rate must be less than 1"));
+    assert!(res.is_err(), "Should fail when commission_rate >= 0.5");
+    let err = res.unwrap_err();
+    match err {
+        ContractError::CommissionRateMustBeLessThanMax {
+            max_commission_rate,
+        } => {
+            assert!(max_commission_rate == Decimal::from_ratio(50u128, 100u128));
         }
         _ => panic!("Expected CustomError with commission rate message"),
     }
@@ -2813,18 +2790,14 @@ fn test_update_constants_hydromancer_not_found() {
     // Test with non-existent hydromancer_id (should fail)
     let admin1_addr = get_address_as_str(&deps.api, "admin1");
     let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
-    let new_hydro_addr = get_address_as_str(&deps.api, "new_hydro");
-    let new_tribute_addr = get_address_as_str(&deps.api, "new_tribute");
     let new_commission_recipient = get_address_as_str(&deps.api, "new_commission_recipient");
     let non_existent_hydromancer_id = 999u64;
 
     let msg = ExecuteMsg::UpdateConstants {
-        min_tokens_per_vessel: 10_000_000,
-        hydro_addr: new_hydro_addr,
-        tribute_addr: new_tribute_addr,
-        commission_rate: Decimal::from_ratio(5u128, 100u128),
-        commission_recipient: new_commission_recipient,
-        default_hydromancer_id: non_existent_hydromancer_id,
+        min_tokens_per_vessel: Some(10_000_000),
+        commission_rate: Some(Decimal::from_ratio(5u128, 100u128)),
+        commission_recipient: Some(new_commission_recipient),
+        default_hydromancer_id: Some(non_existent_hydromancer_id),
     };
 
     let res = execute(deps.as_mut(), env, info, msg);
@@ -2839,41 +2812,6 @@ fn test_update_constants_hydromancer_not_found() {
         }
         _ => panic!("Expected HydromancerNotFound error"),
     }
-}
-
-#[test]
-fn test_update_constants_invalid_addresses() {
-    let mut deps = mock_dependencies();
-    let env = mock_env();
-
-    // First instantiate the contract
-    let info = message_info(&Addr::unchecked("admin1"), &[]);
-    let user_address = get_address_as_str(&deps.api, "admin1");
-    let msg = get_default_instantiate_msg(&deps, user_address);
-    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
-    assert!(res.is_ok());
-
-    // Get initial constants
-    let initial_constants = state::get_constants(deps.as_ref().storage).unwrap();
-    let initial_hydromancer_id = initial_constants.default_hydromancer_id;
-
-    // Test with invalid hydro address (should fail)
-    let admin1_addr = get_address_as_str(&deps.api, "admin1");
-    let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
-    let new_tribute_addr = get_address_as_str(&deps.api, "new_tribute");
-    let new_commission_recipient = get_address_as_str(&deps.api, "new_commission_recipient");
-
-    let msg = ExecuteMsg::UpdateConstants {
-        min_tokens_per_vessel: 10_000_000,
-        hydro_addr: "invalid_address".to_string(),
-        tribute_addr: new_tribute_addr,
-        commission_rate: Decimal::from_ratio(5u128, 100u128),
-        commission_recipient: new_commission_recipient,
-        default_hydromancer_id: initial_hydromancer_id,
-    };
-
-    let res = execute(deps.as_mut(), env, info, msg);
-    assert!(res.is_err(), "Should fail with invalid hydro address");
 }
 
 #[test]
@@ -2895,19 +2833,15 @@ fn test_update_constants_verify_attributes() {
     // Test updating constants and verify response attributes
     let admin1_addr = get_address_as_str(&deps.api, "admin1");
     let info = message_info(&Addr::unchecked(admin1_addr.as_str()), &[]);
-    let new_hydro_addr = get_address_as_str(&deps.api, "new_hydro");
-    let new_tribute_addr = get_address_as_str(&deps.api, "new_tribute");
     let new_commission_recipient = get_address_as_str(&deps.api, "new_commission_recipient");
     let new_min_tokens = 10_000_000u128;
     let new_commission_rate = Decimal::from_ratio(5u128, 100u128);
 
     let msg = ExecuteMsg::UpdateConstants {
-        min_tokens_per_vessel: new_min_tokens,
-        hydro_addr: new_hydro_addr.clone(),
-        tribute_addr: new_tribute_addr.clone(),
-        commission_rate: new_commission_rate,
-        commission_recipient: new_commission_recipient.clone(),
-        default_hydromancer_id: initial_hydromancer_id,
+        min_tokens_per_vessel: Some(new_min_tokens),
+        commission_rate: Some(new_commission_rate),
+        commission_recipient: Some(new_commission_recipient.clone()),
+        default_hydromancer_id: Some(initial_hydromancer_id),
     };
 
     let res = execute(deps.as_mut(), env, info, msg);
@@ -2923,12 +2857,6 @@ fn test_update_constants_verify_attributes() {
     assert!(attributes
         .iter()
         .any(|a| a.key == "min_tokens_per_vessel" && a.value == new_min_tokens.to_string()));
-    assert!(attributes
-        .iter()
-        .any(|a| a.key == "hydro_addr" && a.value == new_hydro_addr));
-    assert!(attributes
-        .iter()
-        .any(|a| a.key == "tribute_addr" && a.value == new_tribute_addr));
     assert!(attributes
         .iter()
         .any(|a| a.key == "commission_rate" && a.value == new_commission_rate.to_string()));

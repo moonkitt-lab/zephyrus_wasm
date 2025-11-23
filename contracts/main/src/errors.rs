@@ -1,4 +1,4 @@
-use cosmwasm_std::StdError;
+use cosmwasm_std::{Decimal, StdError};
 use thiserror::Error;
 use zephyrus_core::{
     msgs::{HydroLockId, HydromancerId},
@@ -102,8 +102,8 @@ pub enum ContractError {
     },
     #[error("Whitelist admins must be provided")]
     WhitelistAdminsMustBeProvided,
-    #[error("Commission rate must be less than 1 (100%)")]
-    CommissionRateMustBeLessThan100 {},
+    #[error("Commission rate must be less than {max_commission_rate}")]
+    CommissionRateMustBeLessThanMax { max_commission_rate: Decimal },
     #[error("Cannot replace all admins with new admins")]
     CannotReplaceAllAdmins {},
     #[error("Whitelist admins max count exceeded")]

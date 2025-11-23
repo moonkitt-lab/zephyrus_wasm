@@ -183,12 +183,10 @@ pub enum ExecuteMsg {
     /// - The commission recipient must be a valid address.
     /// - The default hydromancer id must exist.
     UpdateConstants {
-        min_tokens_per_vessel: u128,
-        hydro_addr: String,
-        tribute_addr: String,
-        commission_rate: Decimal,
-        commission_recipient: String,
-        default_hydromancer_id: u64,
+        min_tokens_per_vessel: Option<u128>,
+        commission_rate: Option<Decimal>,
+        commission_recipient: Option<String>,
+        default_hydromancer_id: Option<u64>,
     },
 }
 

@@ -1,9 +1,10 @@
 use crate::{errors::ContractError, state};
-use cosmwasm_std::{Addr, Storage};
+use cosmwasm_std::{Addr, Decimal, Storage};
 use hydro_interface::msgs::{LockupWithPerTrancheInfo, RoundLockPowerSchedule, TributeClaim};
 use zephyrus_core::msgs::{HydroLockId, HydromancerId, VesselsToHarbor};
 use zephyrus_core::state::{Constants, Vessel};
 
+const MAX_COMMISSION_RATE: u128 = 50_u128;
 /// Validate that the contract is not paused
 pub fn validate_contract_is_not_paused(constants: &Constants) -> Result<(), ContractError> {
     if constants.paused_contract {
@@ -156,6 +157,19 @@ pub fn validate_lock_duration(
         });
     }
 
+    Ok(())
+}
+
+pub fn validate_commission_rate(commission_rate: Decimal) -> Result<(), ContractError> {
+    // Validate commission rate is less than 0.5 (50%)
+    // Note: Decimal cannot be negative as it's based on Uint128
+
+    let max_commission_rate: Decimal = Decimal::from_ratio(MAX_COMMISSION_RATE, 100_u128);
+    if commission_rate >= max_commission_rate {
+        return Err(ContractError::CommissionRateMustBeLessThanMax {
+            max_commission_rate,
+        });
+    }
     Ok(())
 }
 

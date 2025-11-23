@@ -252,16 +252,12 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     commissionRate,
     commissionRecipient,
     defaultHydromancerId,
-    hydroAddr,
-    minTokensPerVessel,
-    tributeAddr
+    minTokensPerVessel
   }: {
-    commissionRate: Decimal;
-    commissionRecipient: string;
-    defaultHydromancerId: number;
-    hydroAddr: string;
-    minTokensPerVessel: number;
-    tributeAddr: string;
+    commissionRate?: Decimal;
+    commissionRecipient?: string;
+    defaultHydromancerId?: number;
+    minTokensPerVessel?: number;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
@@ -477,25 +473,19 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     commissionRate,
     commissionRecipient,
     defaultHydromancerId,
-    hydroAddr,
-    minTokensPerVessel,
-    tributeAddr
+    minTokensPerVessel
   }: {
-    commissionRate: Decimal;
-    commissionRecipient: string;
-    defaultHydromancerId: number;
-    hydroAddr: string;
-    minTokensPerVessel: number;
-    tributeAddr: string;
+    commissionRate?: Decimal;
+    commissionRecipient?: string;
+    defaultHydromancerId?: number;
+    minTokensPerVessel?: number;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       update_constants: {
         commission_rate: commissionRate,
         commission_recipient: commissionRecipient,
         default_hydromancer_id: defaultHydromancerId,
-        hydro_addr: hydroAddr,
-        min_tokens_per_vessel: minTokensPerVessel,
-        tribute_addr: tributeAddr
+        min_tokens_per_vessel: minTokensPerVessel
       }
     }, fee, memo, _funds);
   };

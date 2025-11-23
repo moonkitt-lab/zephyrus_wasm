@@ -105,16 +105,12 @@ export interface ZephyrusMainMsg {
     commissionRate,
     commissionRecipient,
     defaultHydromancerId,
-    hydroAddr,
-    minTokensPerVessel,
-    tributeAddr
+    minTokensPerVessel
   }: {
-    commissionRate: Decimal;
-    commissionRecipient: string;
-    defaultHydromancerId: number;
-    hydroAddr: string;
-    minTokensPerVessel: number;
-    tributeAddr: string;
+    commissionRate?: Decimal;
+    commissionRecipient?: string;
+    defaultHydromancerId?: number;
+    minTokensPerVessel?: number;
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
@@ -439,16 +435,12 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     commissionRate,
     commissionRecipient,
     defaultHydromancerId,
-    hydroAddr,
-    minTokensPerVessel,
-    tributeAddr
+    minTokensPerVessel
   }: {
-    commissionRate: Decimal;
-    commissionRecipient: string;
-    defaultHydromancerId: number;
-    hydroAddr: string;
-    minTokensPerVessel: number;
-    tributeAddr: string;
+    commissionRate?: Decimal;
+    commissionRecipient?: string;
+    defaultHydromancerId?: number;
+    minTokensPerVessel?: number;
   }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
     return {
       typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
@@ -460,9 +452,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
             commission_rate: commissionRate,
             commission_recipient: commissionRecipient,
             default_hydromancer_id: defaultHydromancerId,
-            hydro_addr: hydroAddr,
-            min_tokens_per_vessel: minTokensPerVessel,
-            tribute_addr: tributeAddr
+            min_tokens_per_vessel: minTokensPerVessel
           }
         })),
         funds: _funds

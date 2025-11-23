@@ -36,11 +36,12 @@ use crate::{
             complete_hydromancer_time_weighted_shares, initialize_vessel_tws, reset_vessel_vote,
         },
         validation::{
-            validate_admin_address, validate_contract_is_not_paused, validate_contract_is_paused,
-            validate_hydromancer_controls_vessels, validate_hydromancer_exists,
-            validate_lock_duration, validate_round_tranche_consistency,
-            validate_user_controls_vessel, validate_user_owns_vessels,
-            validate_vessels_not_tied_to_proposal, validate_vote_duplicates,
+            validate_admin_address, validate_commission_rate, validate_contract_is_not_paused,
+            validate_contract_is_paused, validate_hydromancer_controls_vessels,
+            validate_hydromancer_exists, validate_lock_duration,
+            validate_round_tranche_consistency, validate_user_controls_vessel,
+            validate_user_owns_vessels, validate_vessels_not_tied_to_proposal,
+            validate_vote_duplicates,
         },
         vectors::join_u64_ids,
         vessel_assignment::{
@@ -86,12 +87,9 @@ pub fn instantiate(
     let hydromancer_address = deps.api.addr_validate(&msg.default_hydromancer_address)?;
     let commission_recipient = deps.api.addr_validate(&msg.commission_recipient)?;
     // Validate commission rate is less than 0.5 (50%)
-    let max_commission_rate: Decimal = Decimal::from_ratio(50_u128, 100_u128);
-    if msg.commission_rate >= max_commission_rate
-        || msg.default_hydromancer_commission_rate >= max_commission_rate
-    {
-        return Err(ContractError::CommissionRateMustBeLessThan100 {});
-    }
+    validate_commission_rate(msg.commission_rate)?;
+    validate_commission_rate(msg.default_hydromancer_commission_rate)?;
+
     let default_hydromancer_id = state::insert_new_hydromancer(
         deps.storage,
         hydromancer_address,
@@ -185,8 +183,6 @@ pub fn execute(
         ExecuteMsg::SetAdminAddresses { admins } => execute_set_admin_addresses(deps, info, admins),
         ExecuteMsg::UpdateConstants {
             min_tokens_per_vessel,
-            hydro_addr,
-            tribute_addr,
             commission_rate,
             commission_recipient,
             default_hydromancer_id,
@@ -194,8 +190,6 @@ pub fn execute(
             deps,
             info,
             min_tokens_per_vessel,
-            hydro_addr,
-            tribute_addr,
             commission_rate,
             commission_recipient,
             default_hydromancer_id,
@@ -230,50 +224,46 @@ fn execute_set_admin_addresses(
     Ok(Response::default().add_attribute("action", "set_admin_addresses"))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn execute_update_constants(
     deps: DepsMut,
     info: MessageInfo,
-    min_tokens_per_vessel: u128,
-    hydro_addr: String,
-    tribute_addr: String,
-    commission_rate: Decimal,
-    commission_recipient: String,
-    default_hydromancer_id: u64,
+    min_tokens_per_vessel: Option<u128>,
+    commission_rate: Option<Decimal>,
+    commission_recipient: Option<String>,
+    default_hydromancer_id: Option<u64>,
 ) -> Result<Response, ContractError> {
     validate_admin_address(deps.storage, &info.sender)?;
 
     let mut constants = state::get_constants(deps.storage)?;
-    let hydro_addr = deps.api.addr_validate(&hydro_addr)?;
-    let tribute_addr = deps.api.addr_validate(&tribute_addr)?;
-    let commission_recipient = deps.api.addr_validate(&commission_recipient)?;
-    // Validate new commission rate is less than 1 (100%)
-    if commission_rate >= Decimal::one() {
-        return Err(ContractError::CustomError {
-            msg: "Commission rate must be less than 1 (100%)".to_string(),
-        });
+
+    let mut response = Response::default().add_attribute("action", "update_constants");
+    if let Some(commission_recipient) = commission_recipient {
+        let commission_recipient = deps.api.addr_validate(&commission_recipient)?;
+        constants.commission_recipient = commission_recipient.clone();
+        response = response.add_attribute("commission_recipient", commission_recipient.to_string());
     }
-    let hydromancer = state::get_hydromancer(deps.storage, default_hydromancer_id);
-    if hydromancer.is_err() {
-        return Err(ContractError::HydromancerNotFound {
-            identifier: default_hydromancer_id.to_string(),
-        });
+
+    // Validate new commission rate is less than  50%
+    if let Some(commission_rate) = commission_rate {
+        validate_commission_rate(commission_rate)?;
+        constants.commission_rate = commission_rate;
+        response = response.add_attribute("commission_rate", commission_rate.to_string());
     }
-    constants.min_tokens_per_vessel = min_tokens_per_vessel;
-    constants.hydro_config.hydro_contract_address = hydro_addr.clone();
-    constants.hydro_config.hydro_tribute_contract_address = tribute_addr.clone();
-    constants.commission_rate = commission_rate;
-    constants.commission_recipient = commission_recipient.clone();
-    constants.default_hydromancer_id = default_hydromancer_id;
+
+    if let Some(default_hydromancer_id) = default_hydromancer_id {
+        validate_hydromancer_exists(deps.storage, default_hydromancer_id)?;
+        constants.default_hydromancer_id = default_hydromancer_id;
+        response =
+            response.add_attribute("default_hydromancer_id", default_hydromancer_id.to_string());
+    }
+    if let Some(min_tokens_per_vessel) = min_tokens_per_vessel {
+        constants.min_tokens_per_vessel = min_tokens_per_vessel;
+        response =
+            response.add_attribute("min_tokens_per_vessel", min_tokens_per_vessel.to_string());
+    }
+
     state::update_constants(deps.storage, constants)?;
-    Ok(Response::default()
-        .add_attribute("action", "update_constants")
-        .add_attribute("min_tokens_per_vessel", min_tokens_per_vessel.to_string())
-        .add_attribute("hydro_addr", hydro_addr.to_string())
-        .add_attribute("tribute_addr", tribute_addr.to_string())
-        .add_attribute("commission_rate", commission_rate.to_string())
-        .add_attribute("default_hydromancer_id", default_hydromancer_id.to_string())
-        .add_attribute("commission_recipient", commission_recipient.to_string()))
+    Ok(response)
 }
 
 fn execute_claim(

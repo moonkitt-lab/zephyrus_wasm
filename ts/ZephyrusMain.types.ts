@@ -80,12 +80,10 @@ export type ExecuteMsg = {
   };
 } | {
   update_constants: {
-    commission_rate: Decimal;
-    commission_recipient: string;
-    default_hydromancer_id: number;
-    hydro_addr: string;
-    min_tokens_per_vessel: number;
-    tribute_addr: string;
+    commission_rate?: Decimal | null;
+    commission_recipient?: string | null;
+    default_hydromancer_id?: number | null;
+    min_tokens_per_vessel?: number | null;
   };
 };
 export type Binary = string;

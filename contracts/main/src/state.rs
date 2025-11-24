@@ -1,3 +1,4 @@
+use crate::errors::ContractError;
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage};
 use cw_storage_plus::{Bound, Item, Map};
@@ -10,19 +11,10 @@ use zephyrus_core::{
     },
 };
 
-#[cw_serde]
-pub struct ContractVersion {
-    pub contract: String,
-    pub version: String,
-}
-
-// On reprend la même clé que cw2 utilise habituellement : "contract_info"
-pub const CONTRACT_VERSION_INFO: Item<ContractVersion> = Item::new("contract_info");
-
-pub const CONTRACT_NAME: &str = "crates.io:zephyrus-main";
+/// Contract name that is used for migration.
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+/// Contract version that is used for migration.
 pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-use crate::errors::ContractError;
 
 #[cw_serde]
 pub struct Hydromancer {

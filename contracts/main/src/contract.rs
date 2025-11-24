@@ -2,13 +2,15 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cosmwasm_std::{
     entry_point, from_json, to_json_binary, Addr, Binary, Coin, Decimal, DepsMut, Env, MessageInfo,
-    Response as CwResponse, StdError, StdResult, SubMsg, WasmMsg,
+    Response as CwResponse, StdError, SubMsg, WasmMsg,
 };
+use cw2::set_contract_version;
+
 use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups, TributeClaim};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::{
     msgs::{
-        DecommissionVesselsReplyPayload, ExecuteMsg, InstantiateMsg, MigrateMsg,
+        DecommissionVesselsReplyPayload, ExecuteMsg, InstantiateMsg,
         RefreshTimeWeightedSharesReplyPayload, TrancheId, VesselInfo, VesselsToHarbor,
         VoteReplyPayload, DECOMMISSION_REPLY_ID, REFRESH_TIME_WEIGHTED_SHARES_REPLY_ID,
         VOTE_REPLY_ID,
@@ -63,6 +65,8 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
+    set_contract_version(deps.storage, state::CONTRACT_NAME, state::CONTRACT_VERSION)?;
+
     if msg.whitelist_admins.is_empty() {
         return Err(ContractError::WhitelistAdminsMustBeProvided);
     }
@@ -1125,17 +1129,4 @@ fn execute_user_vote(
         SubMsg::reply_on_success(execute_hydro_vote_msg, VOTE_REPLY_ID).with_payload(payload);
 
     Ok(response.add_submessage(execute_hydro_vote_msg))
-}
-
-#[entry_point]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    let version = ContractVersion {
-        contract: CONTRACT_NAME.to_string(),
-        version: CONTRACT_VERSION.to_string(),
-    };
-    CONTRACT_VERSION_INFO.save(deps.storage, &version)?;
-
-    Ok(Response::new()
-        .add_attribute("action", "migrate")
-        .add_attribute("contract_version", CONTRACT_VERSION))
 }

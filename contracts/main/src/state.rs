@@ -1,3 +1,4 @@
+use crate::errors::ContractError;
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Decimal, Order, StdError, StdResult, Storage};
 use cw_storage_plus::{Bound, Item, Map};
@@ -10,7 +11,10 @@ use zephyrus_core::{
     },
 };
 
-use crate::errors::ContractError;
+/// Contract name that is used for migration.
+pub const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
+/// Contract version that is used for migration.
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cw_serde]
 pub struct Hydromancer {

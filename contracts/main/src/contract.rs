@@ -6,7 +6,9 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 
-use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, ProposalToLockups, TributeClaim};
+use hydro_interface::msgs::{
+    ExecuteMsg as HydroExecuteMsg, HydroGovExecuteMsg, ProposalToLockups, TributeClaim,
+};
 use neutron_sdk::bindings::msg::NeutronMsg;
 use zephyrus_core::{
     msgs::{
@@ -86,6 +88,9 @@ pub fn instantiate(
     let hydro_config = HydroConfig {
         hydro_contract_address: deps.api.addr_validate(&msg.hydro_contract_address)?,
         hydro_tribute_contract_address: deps.api.addr_validate(&msg.tribute_contract_address)?,
+        hydro_governance_proposal_address: deps
+            .api
+            .addr_validate(&msg.hydro_governance_proposal_address)?,
     };
 
     let hydromancer_address = deps.api.addr_validate(&msg.default_hydromancer_address)?;
@@ -198,7 +203,40 @@ pub fn execute(
             commission_recipient,
             default_hydromancer_id,
         ),
+        ExecuteMsg::HydroGovVoteSingle { proposal_id, vote } => {
+            execute_hydro_gov_vote_single(deps, info, proposal_id, vote)
+        }
     }
+}
+
+fn execute_hydro_gov_vote_single(
+    deps: DepsMut,
+    info: MessageInfo,
+    proposal_id: u64,
+    vote: String,
+) -> Result<Response, ContractError> {
+    let constants = state::get_constants(deps.storage)?;
+    validate_contract_is_not_paused(&constants)?;
+    validate_admin_address(deps.storage, &info.sender)?;
+
+    let hydro_gov_vote_single_msg = HydroGovExecuteMsg::Vote {
+        proposal_id,
+        vote: vote.clone(),
+    };
+    let execute_hydro_gov_vote_single_msg = WasmMsg::Execute {
+        contract_addr: constants
+            .hydro_config
+            .hydro_governance_proposal_address
+            .to_string(),
+        msg: to_json_binary(&hydro_gov_vote_single_msg)?,
+        funds: vec![],
+    };
+    Ok(Response::new()
+        .add_message(execute_hydro_gov_vote_single_msg)
+        .add_attribute("action", "hydro_gov_vote_single")
+        .add_attribute("proposal_id", proposal_id.to_string())
+        .add_attribute("vote", vote)
+        .add_attribute("sender", info.sender.to_string()))
 }
 
 fn execute_set_admin_addresses(

@@ -32,6 +32,7 @@ mod tests {
             InstantiateMsg {
                 hydro_contract_address: make_valid_addr("hydro").into_string(),
                 tribute_contract_address: make_valid_addr("tribute").into_string(),
+                hydro_governance_proposal_address: make_valid_addr("hydro_gov").into_string(),
                 whitelist_admins: vec![make_valid_addr("admin").into_string()],
                 default_hydromancer_name: make_valid_addr("zephyrus").into_string(),
                 default_hydromancer_commission_rate: "0.1".parse().unwrap(),

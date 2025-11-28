@@ -72,6 +72,7 @@ fn get_default_instantiate_msg(
 
         hydro_contract_address: get_address_as_str(&deps.api, "hydro_addr"),
         tribute_contract_address: get_address_as_str(&deps.api, "tribute_addr"),
+        hydro_governance_proposal_address: get_address_as_str(&deps.api, "hydro_gov_addr"),
         default_hydromancer_address: get_address_as_str(&deps.api, "hydromancer_addr"),
         default_hydromancer_name: get_address_as_str(&deps.api, "default_hydromancer_name"),
         default_hydromancer_commission_rate: Decimal::from_ratio(1u128, 100u128),
@@ -367,6 +368,7 @@ fn init_contract(deps: DepsMut) {
         InstantiateMsg {
             hydro_contract_address: make_valid_addr("hydro").into_string(),
             tribute_contract_address: make_valid_addr("tribute").into_string(),
+            hydro_governance_proposal_address: make_valid_addr("hydro_gov").into_string(),
             whitelist_admins: vec![make_valid_addr("admin").into_string()],
             default_hydromancer_name: make_valid_addr("zephyrus").into_string(),
             default_hydromancer_commission_rate: "0.1".parse().unwrap(),
@@ -2866,4 +2868,70 @@ fn test_update_constants_verify_attributes() {
     assert!(attributes.iter().any(
         |a| a.key == "default_hydromancer_id" && a.value == initial_hydromancer_id.to_string()
     ));
+}
+
+#[test]
+fn test_hydro_gov_vote_single_paused() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let admin_address = get_address_as_str(&deps.api, "admin1");
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let msg = get_default_instantiate_msg(&deps, admin_address.clone());
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Pause the contract
+    let info = message_info(&Addr::unchecked(admin_address.clone()), &[]);
+    let msg = ExecuteMsg::PauseContract {};
+    let res = execute(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Try to call hydro_gov_vote_single when contract is paused (should fail)
+    let info = message_info(&Addr::unchecked(admin_address), &[]);
+    let msg = ExecuteMsg::HydroGovVoteSingle {
+        proposal_id: 1,
+        vote: "yes".to_string(),
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    assert!(res.is_err(), "Should fail when contract is paused");
+
+    match res.unwrap_err() {
+        ContractError::Paused => {
+            // Expected error
+        }
+        _ => panic!("Expected Paused error"),
+    }
+}
+
+#[test]
+fn test_hydro_gov_vote_single_unauthorized() {
+    let mut deps = mock_dependencies();
+    let env = mock_env();
+
+    // First instantiate the contract
+    let admin_address = get_address_as_str(&deps.api, "admin1");
+    let info = message_info(&Addr::unchecked("admin1"), &[]);
+    let msg = get_default_instantiate_msg(&deps, admin_address);
+    let res = instantiate(deps.as_mut(), env.clone(), info, msg);
+    assert!(res.is_ok());
+
+    // Test with non-admin user (should fail)
+    let info = message_info(&Addr::unchecked("nonadmin"), &[]);
+    let msg = ExecuteMsg::HydroGovVoteSingle {
+        proposal_id: 1,
+        vote: "yes".to_string(),
+    };
+
+    let res = execute(deps.as_mut(), env, info, msg);
+    assert!(res.is_err(), "Should fail when called by non-admin");
+
+    match res.unwrap_err() {
+        ContractError::Unauthorized => {
+            // Expected error
+        }
+        _ => panic!("Expected Unauthorized error"),
+    }
 }

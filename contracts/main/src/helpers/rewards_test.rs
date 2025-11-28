@@ -20,6 +20,7 @@ fn create_mock_constants() -> Constants {
         hydro_config: zephyrus_core::state::HydroConfig {
             hydro_tribute_contract_address: Addr::unchecked("hydro_tribute"),
             hydro_contract_address: make_valid_addr("hydro"),
+            hydro_governance_proposal_address: make_valid_addr("hydro_gov"),
         },
         commission_recipient: Addr::unchecked("commission_recipient"),
         default_hydromancer_id: 1u64,

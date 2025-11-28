@@ -58,6 +58,7 @@ pub struct VesselHarbor {
 pub struct HydroConfig {
     pub hydro_contract_address: Addr,
     pub hydro_tribute_contract_address: Addr,
+    pub hydro_governance_proposal_address: Addr,
 }
 
 #[cw_serde]

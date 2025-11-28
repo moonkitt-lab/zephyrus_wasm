@@ -33,6 +33,11 @@ pub enum ExecuteMsg {
         voter_address: String,
     },
 }
+#[cw_serde]
+pub enum HydroGovExecuteMsg {
+    /// Vote on hydro governance proposal
+    Vote { proposal_id: u64, vote: String },
+}
 
 /// Hydro contract query messages.
 #[cw_serde]

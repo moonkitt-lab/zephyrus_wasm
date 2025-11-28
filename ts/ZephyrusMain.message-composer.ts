@@ -112,6 +112,13 @@ export interface ZephyrusMainMsg {
     defaultHydromancerId?: number;
     minTokensPerVessel?: number;
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  hydroGovVoteSingle: ({
+    proposalId,
+    vote
+  }: {
+    proposalId: number;
+    vote: string;
+  }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
   sender: string;
@@ -134,6 +141,7 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
     this.claim = this.claim.bind(this);
     this.setAdminAddresses = this.setAdminAddresses.bind(this);
     this.updateConstants = this.updateConstants.bind(this);
+    this.hydroGovVoteSingle = this.hydroGovVoteSingle.bind(this);
   }
   takeControl = ({
     vesselIds
@@ -453,6 +461,28 @@ export class ZephyrusMainMsgComposer implements ZephyrusMainMsg {
             commission_recipient: commissionRecipient,
             default_hydromancer_id: defaultHydromancerId,
             min_tokens_per_vessel: minTokensPerVessel
+          }
+        })),
+        funds: _funds
+      })
+    };
+  };
+  hydroGovVoteSingle = ({
+    proposalId,
+    vote
+  }: {
+    proposalId: number;
+    vote: string;
+  }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
+    return {
+      typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: toUtf8(JSON.stringify({
+          hydro_gov_vote_single: {
+            proposal_id: proposalId,
+            vote
           }
         })),
         funds: _funds

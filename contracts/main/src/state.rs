@@ -356,6 +356,15 @@ pub fn get_vessel_shares_info(
     VESSEL_INFO_SNAPSHOTS.load(storage, (round_id, hydro_lock_id))
 }
 
+pub fn remove_vessel_shares_info(
+    storage: &mut dyn Storage,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> StdResult<()> {
+    VESSEL_INFO_SNAPSHOTS.remove(storage, (round_id, hydro_lock_id));
+    Ok(())
+}
+
 pub fn is_tokenized_share_record_used(
     storage: &dyn Storage,
     tokenized_share_record_id: TokenizedShareRecordId,

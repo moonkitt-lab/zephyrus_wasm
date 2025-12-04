@@ -216,7 +216,6 @@ fn execute_hydro_gov_vote_single(
     vote: String,
 ) -> Result<Response, ContractError> {
     let constants = state::get_constants(deps.storage)?;
-    validate_contract_is_not_paused(&constants)?;
     validate_admin_address(deps.storage, &info.sender)?;
 
     let hydro_gov_vote_single_msg = HydroGovExecuteMsg::Vote {

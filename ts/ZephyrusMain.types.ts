@@ -91,6 +91,10 @@ export type ExecuteMsg = {
     proposal_id: number;
     vote: string;
   };
+} | {
+  return_to_hydro: {
+    vessel_id: number;
+  };
 };
 export type Binary = string;
 export interface VesselsToHarbor {

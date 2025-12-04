@@ -5,7 +5,7 @@ use zephyrus_core::msgs::MigrateMsg;
 
 use crate::{
     errors::ContractError,
-    state::{CONTRACT_NAME, CONTRACT_VERSION},
+    state::{self, CONTRACT_NAME, CONTRACT_VERSION},
 };
 
 type Response = CwResponse<NeutronMsg>;
@@ -14,7 +14,12 @@ type Response = CwResponse<NeutronMsg>;
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     check_contract_version(deps.storage)?;
 
-    // No state migrations needed for this version
+    // Initialize the new hydro governance proposal address
+    let mut constants = state::get_constants(deps.storage)?;
+    constants.hydro_config.hydro_governance_proposal_address = deps
+        .api
+        .addr_validate("neutron1lefyfl55ntp7j58k8wy7x3yq9dngsj73s5syrreq55hu4xst660s5p2jtj")?;
+    state::update_constants(deps.storage, constants)?;
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 

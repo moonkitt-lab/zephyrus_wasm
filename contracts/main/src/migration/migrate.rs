@@ -12,23 +12,27 @@ type Response = CwResponse<NeutronMsg>;
 
 #[entry_point]
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
-    check_contract_version(deps.storage)?;
+    let old_contract_version = check_contract_version(deps.storage)?;
 
-    // Initialize the new hydro governance proposal address
-    let mut constants = state::get_constants(deps.storage)?;
-    constants.hydro_config.hydro_governance_proposal_address = deps
-        .api
-        .addr_validate("neutron1lefyfl55ntp7j58k8wy7x3yq9dngsj73s5syrreq55hu4xst660s5p2jtj")?;
-    state::update_constants(deps.storage, constants)?;
+    if old_contract_version == "0.2.0" {
+        // Initialize the new hydro governance proposal address
+        let mut constants = state::get_constants(deps.storage)?;
+        // DaoDao hydro governance address on mainnet (not available on devnet/testnet)
+        constants.hydro_config.hydro_governance_proposal_address = deps
+            .api
+            .addr_validate("neutron1lefyfl55ntp7j58k8wy7x3yq9dngsj73s5syrreq55hu4xst660s5p2jtj")?;
+        state::update_constants(deps.storage, constants)?;
+    }
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     Ok(Response::new()
         .add_attribute("action", "migrate")
-        .add_attribute("contract_version", CONTRACT_VERSION))
+        .add_attribute("from_version", &old_contract_version)
+        .add_attribute("to_version", CONTRACT_VERSION))
 }
 
-fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), ContractError> {
+fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<String, ContractError> {
     let contract_version = get_contract_version(storage)?;
 
     if contract_version.version == CONTRACT_VERSION {
@@ -37,5 +41,5 @@ fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), Con
         )));
     }
 
-    Ok(())
+    Ok(contract_version.version)
 }

@@ -1,14 +1,14 @@
+use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Decimal};
-use serde::{Deserialize, Serialize};
 use zephyrus_core::state::HydromancerId;
 
-#[derive(Serialize, Deserialize)]
+#[cw_serde]
 pub struct HydroConfigV0_2_0 {
     pub hydro_contract_address: Addr,
     pub hydro_tribute_contract_address: Addr,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cw_serde]
 pub struct ConstantsV0_2_0 {
     pub default_hydromancer_id: HydromancerId,
     pub paused_contract: bool,

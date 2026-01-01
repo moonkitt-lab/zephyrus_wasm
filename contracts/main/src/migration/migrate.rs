@@ -5,23 +5,18 @@ use zephyrus_core::msgs::MigrateMsg;
 
 use crate::{
     errors::ContractError,
-    state::{self, CONTRACT_NAME, CONTRACT_VERSION},
+    migration::unreleased,
+    state::{CONTRACT_NAME, CONTRACT_VERSION},
 };
 
 type Response = CwResponse<NeutronMsg>;
 
 #[entry_point]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(mut deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     let old_contract_version = check_contract_version(deps.storage)?;
 
     if old_contract_version == "0.2.0" {
-        // Initialize the new hydro governance proposal address
-        let mut constants = state::get_constants(deps.storage)?;
-        // DaoDao hydro governance address on mainnet (not available on devnet/testnet)
-        constants.hydro_config.hydro_governance_proposal_address = deps
-            .api
-            .addr_validate("neutron1lefyfl55ntp7j58k8wy7x3yq9dngsj73s5syrreq55hu4xst660s5p2jtj")?;
-        state::update_constants(deps.storage, constants)?;
+        unreleased::migrate_constants(&mut deps)?;
     }
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;

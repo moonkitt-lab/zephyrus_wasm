@@ -2935,16 +2935,12 @@ fn test_hydro_gov_vote_single_success() {
 
     // Verify the message content
     let decoded_msg: HydroGovExecuteMsg = from_json(msg_binary.clone()).unwrap();
-    match decoded_msg {
-        HydroGovExecuteMsg::Vote {
-            proposal_id: decoded_proposal_id,
-            vote: decoded_vote,
-        } => {
-            assert_eq!(decoded_proposal_id, proposal_id);
-            assert_eq!(decoded_vote, vote);
-        }
-        _ => panic!("Expected HydroGovExecuteMsg::Vote"),
-    }
+    let HydroGovExecuteMsg::Vote {
+        proposal_id: decoded_proposal_id,
+        vote: decoded_vote,
+    } = decoded_msg;
+    assert_eq!(decoded_proposal_id, proposal_id);
+    assert_eq!(decoded_vote, vote);
 }
 
 #[test]

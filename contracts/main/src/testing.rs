@@ -12,7 +12,7 @@ use cosmwasm_std::{
     testing::{message_info, mock_env, MockApi},
     to_json_binary, Addr, Binary, Coin, Decimal, MessageInfo,
 };
-use hydro_interface::msgs::ExecuteMsg as HydroExecuteMsg;
+use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, HydroGovExecuteMsg};
 use zephyrus_core::msgs::{
     ClaimTributeReplyPayload, Cw721ReceiveMsg, ExecuteMsg, InstantiateMsg,
     RefreshTimeWeightedSharesReplyPayload, VesselInfo, VesselsToHarbor, VoteReplyPayload,
@@ -2871,7 +2871,7 @@ fn test_update_constants_verify_attributes() {
 }
 
 #[test]
-fn test_hydro_gov_vote_single_paused() {
+fn test_hydro_gov_vote_single_success() {
     let mut deps = mock_dependencies();
     let env = mock_env();
 
@@ -2882,28 +2882,65 @@ fn test_hydro_gov_vote_single_paused() {
     let res = instantiate(deps.as_mut(), env.clone(), info, msg);
     assert!(res.is_ok());
 
-    // Pause the contract
-    let info = message_info(&Addr::unchecked(admin_address.clone()), &[]);
-    let msg = ExecuteMsg::PauseContract {};
-    let res = execute(deps.as_mut(), env.clone(), info, msg);
-    assert!(res.is_ok());
+    // Get constants to verify the hydro_governance_proposal_address
+    let constants = state::get_constants(deps.as_ref().storage).unwrap();
+    let expected_contract_addr = constants
+        .hydro_config
+        .hydro_governance_proposal_address
+        .to_string();
 
-    // Try to call hydro_gov_vote_single when contract is paused (should fail)
-    let info = message_info(&Addr::unchecked(admin_address), &[]);
+    // Test with admin user (should succeed)
+    let info = message_info(&Addr::unchecked(admin_address.as_str()), &[]);
+    let proposal_id = 42u64;
+    let vote = "yes".to_string();
     let msg = ExecuteMsg::HydroGovVoteSingle {
-        proposal_id: 1,
-        vote: "yes".to_string(),
+        proposal_id,
+        vote: vote.clone(),
     };
 
     let res = execute(deps.as_mut(), env, info, msg);
-    assert!(res.is_err(), "Should fail when contract is paused");
+    assert!(res.is_ok(), "Should succeed when called by admin");
 
-    match res.unwrap_err() {
-        ContractError::Paused => {
-            // Expected error
-        }
-        _ => panic!("Expected Paused error"),
-    }
+    let response = res.unwrap();
+
+    // Verify response attributes
+    let attributes: Vec<_> = response.attributes.iter().collect();
+    assert!(attributes
+        .iter()
+        .any(|a| a.key == "action" && a.value == "hydro_gov_vote_single"));
+    assert!(attributes
+        .iter()
+        .any(|a| a.key == "proposal_id" && a.value == proposal_id.to_string()));
+    assert!(attributes
+        .iter()
+        .any(|a| a.key == "vote" && a.value == vote));
+    assert!(attributes
+        .iter()
+        .any(|a| a.key == "sender" && a.value == admin_address));
+
+    // Verify the WasmMsg is correctly created
+    assert_eq!(response.messages.len(), 1, "Should have one message");
+    let submsg = &response.messages[0];
+    let CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr,
+        msg: msg_binary,
+        funds,
+    }) = &submsg.msg
+    else {
+        panic!("Expected WasmMsg::Execute, got: {:?}", submsg.msg);
+    };
+
+    assert_eq!(contract_addr, &expected_contract_addr);
+    assert_eq!(funds.len(), 0, "Should not send funds");
+
+    // Verify the message content
+    let decoded_msg: HydroGovExecuteMsg = from_json(msg_binary.clone()).unwrap();
+    let HydroGovExecuteMsg::Vote {
+        proposal_id: decoded_proposal_id,
+        vote: decoded_vote,
+    } = decoded_msg;
+    assert_eq!(decoded_proposal_id, proposal_id);
+    assert_eq!(decoded_vote, vote);
 }
 
 #[test]

@@ -5,25 +5,29 @@ use zephyrus_core::msgs::MigrateMsg;
 
 use crate::{
     errors::ContractError,
+    migration::unreleased,
     state::{CONTRACT_NAME, CONTRACT_VERSION},
 };
 
 type Response = CwResponse<NeutronMsg>;
 
 #[entry_point]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
-    check_contract_version(deps.storage)?;
+pub fn migrate(mut deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    let old_contract_version = check_contract_version(deps.storage)?;
 
-    // No state migrations needed for this version
+    if old_contract_version == "0.2.0" {
+        unreleased::migrate_constants(&mut deps)?;
+    }
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     Ok(Response::new()
         .add_attribute("action", "migrate")
-        .add_attribute("contract_version", CONTRACT_VERSION))
+        .add_attribute("from_version", &old_contract_version)
+        .add_attribute("to_version", CONTRACT_VERSION))
 }
 
-fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), ContractError> {
+fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<String, ContractError> {
     let contract_version = get_contract_version(storage)?;
 
     if contract_version.version == CONTRACT_VERSION {
@@ -32,5 +36,5 @@ fn check_contract_version(storage: &dyn cosmwasm_std::Storage) -> Result<(), Con
         )));
     }
 
-    Ok(())
+    Ok(contract_version.version)
 }

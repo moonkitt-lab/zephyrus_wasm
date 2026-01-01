@@ -271,9 +271,9 @@ fn execute_hydro_gov_vote_single(
     proposal_id: u64,
     vote: String,
 ) -> Result<Response, ContractError> {
-    let constants = state::get_constants(deps.storage)?;
-    validate_contract_is_not_paused(&constants)?;
     validate_admin_address(deps.storage, &info.sender)?;
+
+    let constants = state::get_constants(deps.storage)?;
 
     let hydro_gov_vote_single_msg = HydroGovExecuteMsg::Vote {
         proposal_id,
@@ -287,6 +287,7 @@ fn execute_hydro_gov_vote_single(
         msg: to_json_binary(&hydro_gov_vote_single_msg)?,
         funds: vec![],
     };
+
     Ok(Response::new()
         .add_message(execute_hydro_gov_vote_single_msg)
         .add_attribute("action", "hydro_gov_vote_single")

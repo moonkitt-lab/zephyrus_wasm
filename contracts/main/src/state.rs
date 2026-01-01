@@ -37,7 +37,7 @@ pub type TokenizedShareRecordId = u64;
 const USER_NEXT_ID: Item<UserId> = Item::new("user_next_id");
 const HYDROMANCER_NEXT_ID: Item<HydromancerId> = Item::new("hydromancer_next_id");
 
-const CONSTANTS: Item<Constants> = Item::new("constants");
+pub const CONSTANTS: Item<Constants> = Item::new("constants");
 
 // Every address in this list is an admin
 const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");

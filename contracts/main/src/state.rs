@@ -37,7 +37,7 @@ pub type TokenizedShareRecordId = u64;
 const USER_NEXT_ID: Item<UserId> = Item::new("user_next_id");
 const HYDROMANCER_NEXT_ID: Item<HydromancerId> = Item::new("hydromancer_next_id");
 
-const CONSTANTS: Item<Constants> = Item::new("constants");
+pub const CONSTANTS: Item<Constants> = Item::new("constants");
 
 // Every address in this list is an admin
 const WHITELIST_ADMINS: Item<Vec<Addr>> = Item::new("whitelist_admins");
@@ -354,6 +354,15 @@ pub fn get_vessel_shares_info(
     hydro_lock_id: HydroLockId,
 ) -> StdResult<VesselInfoSnapshot> {
     VESSEL_INFO_SNAPSHOTS.load(storage, (round_id, hydro_lock_id))
+}
+
+pub fn remove_vessel_shares_info(
+    storage: &mut dyn Storage,
+    round_id: RoundId,
+    hydro_lock_id: HydroLockId,
+) -> StdResult<()> {
+    VESSEL_INFO_SNAPSHOTS.remove(storage, (round_id, hydro_lock_id));
+    Ok(())
 }
 
 pub fn is_tokenized_share_record_used(

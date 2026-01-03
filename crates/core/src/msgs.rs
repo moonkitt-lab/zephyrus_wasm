@@ -15,6 +15,7 @@ pub type TributeId = u64;
 pub struct InstantiateMsg {
     pub hydro_contract_address: String,
     pub tribute_contract_address: String,
+    pub hydro_governance_proposal_address: String,
     pub whitelist_admins: Vec<String>,
     pub commission_rate: Decimal,
     pub default_hydromancer_name: String,
@@ -188,6 +189,12 @@ pub enum ExecuteMsg {
         commission_recipient: Option<String>,
         default_hydromancer_id: Option<u64>,
     },
+    /// Executable message for admins
+    /// Allows Zephyrus to vote on behalf of all users
+    HydroGovVoteSingle { proposal_id: u64, vote: String },
+    /// Executable message for Zephyrus users
+    /// To return a lockup to the user on hydro
+    ReturnToHydro { vessel_id: u64 },
 }
 
 #[cw_serde]

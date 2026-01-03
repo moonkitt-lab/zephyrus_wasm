@@ -20,6 +20,7 @@ mod tests {
             hydro_config: HydroConfig {
                 hydro_contract_address: make_valid_addr("hydro"),
                 hydro_tribute_contract_address: make_valid_addr("tribute"),
+                hydro_governance_proposal_address: make_valid_addr("hydro_gov"),
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),

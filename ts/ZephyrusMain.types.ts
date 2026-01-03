@@ -12,6 +12,7 @@ export interface InstantiateMsg {
   default_hydromancer_commission_rate: Decimal;
   default_hydromancer_name: string;
   hydro_contract_address: string;
+  hydro_governance_proposal_address: string;
   min_tokens_per_vessel: number;
   tribute_contract_address: string;
   whitelist_admins: string[];
@@ -85,6 +86,15 @@ export type ExecuteMsg = {
     default_hydromancer_id?: number | null;
     min_tokens_per_vessel?: number | null;
   };
+} | {
+  hydro_gov_vote_single: {
+    proposal_id: number;
+    vote: string;
+  };
+} | {
+  return_to_hydro: {
+    vessel_id: number;
+  };
 };
 export type Binary = string;
 export interface VesselsToHarbor {
@@ -142,6 +152,7 @@ export interface Constants {
 }
 export interface HydroConfig {
   hydro_contract_address: Addr;
+  hydro_governance_proposal_address: Addr;
   hydro_tribute_contract_address: Addr;
 }
 export interface VesselsResponse {

@@ -41,6 +41,7 @@ mod tests {
             hydro_config: HydroConfig {
                 hydro_contract_address: make_valid_addr("hydro"),
                 hydro_tribute_contract_address: make_valid_addr("tribute"),
+                hydro_governance_proposal_address: make_valid_addr("governance_proposal"),
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),
@@ -68,6 +69,7 @@ mod tests {
             hydro_config: HydroConfig {
                 hydro_contract_address: make_valid_addr("hydro_test"),
                 hydro_tribute_contract_address: make_valid_addr("tribute_test"),
+                hydro_governance_proposal_address: make_valid_addr("governance_proposal_test"),
             },
             commission_rate: "0.1".parse().unwrap(),
             commission_recipient: make_valid_addr("commission_recipient"),

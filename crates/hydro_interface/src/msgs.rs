@@ -32,6 +32,13 @@ pub enum ExecuteMsg {
         tribute_id: u64,
         voter_address: String,
     },
+    /// Transfer is a base message to move a lockup to another account without triggering actions
+    TransferNft { recipient: String, token_id: String },
+}
+#[cw_serde]
+pub enum HydroGovExecuteMsg {
+    /// Vote on hydro governance proposal
+    Vote { proposal_id: u64, vote: String },
 }
 
 /// Hydro contract query messages.

@@ -192,6 +192,9 @@ pub enum ExecuteMsg {
     /// Executable message for admins
     /// Allows Zephyrus to vote on behalf of all users
     HydroGovVoteSingle { proposal_id: u64, vote: String },
+    /// Executable message for Zephyrus users
+    /// To return a lockup to the user on hydro
+    ReturnToHydro { vessel_id: u64 },
 }
 
 #[cw_serde]

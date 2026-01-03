@@ -266,6 +266,11 @@ export interface ZephyrusMainInterface extends ZephyrusMainReadOnlyInterface {
     proposalId: number;
     vote: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
+  returnToHydro: ({
+    vesselId
+  }: {
+    vesselId: number;
+  }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class ZephyrusMainClient extends ZephyrusMainQueryClient implements ZephyrusMainInterface {
   client: SigningCosmWasmClient;
@@ -292,6 +297,7 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
     this.setAdminAddresses = this.setAdminAddresses.bind(this);
     this.updateConstants = this.updateConstants.bind(this);
     this.hydroGovVoteSingle = this.hydroGovVoteSingle.bind(this);
+    this.returnToHydro = this.returnToHydro.bind(this);
   }
   takeControl = async ({
     vesselIds
@@ -508,6 +514,17 @@ export class ZephyrusMainClient extends ZephyrusMainQueryClient implements Zephy
       hydro_gov_vote_single: {
         proposal_id: proposalId,
         vote
+      }
+    }, fee, memo, _funds);
+  };
+  returnToHydro = async ({
+    vesselId
+  }: {
+    vesselId: number;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
+    return await this.client.execute(this.sender, this.contractAddress, {
+      return_to_hydro: {
+        vessel_id: vesselId
       }
     }, fee, memo, _funds);
   };

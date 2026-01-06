@@ -77,6 +77,6 @@ fn migrate_constants_test() {
             .hydro_config
             .hydro_governance_proposal_address
             .to_string(),
-        "neutron1lefyfl55ntp7j58k8wy7x3yq9dngsj73s5syrreq55hu4xst660s5p2jtj"
+        "neutron1ruwj6v94rasjkrv4h3xzrx9xnhq20md5azr537v38wms6mtj34rq23c0hq"
     );
 }

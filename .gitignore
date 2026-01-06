@@ -1,6 +1,5 @@
 target
 node_modules
-artifacts
 schema
 docker-compose-default.yml
 nix-installer

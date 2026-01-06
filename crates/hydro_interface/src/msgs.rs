@@ -176,6 +176,11 @@ pub struct HydroConstants {
     pub max_deployment_duration: u64,
     pub round_lock_power_schedule: RoundLockPowerSchedule,
     pub cw721_collection_info: CollectionInfo,
+    pub lock_expiry_duration_seconds: u64,
+    pub lock_depth_limit: u64,
+    pub slash_percentage_threshold: Decimal,
+    pub slash_tokens_receiver_addr: String,
+    pub lockup_conversion_fee_percent: Decimal,
 }
 
 #[cw_serde]
@@ -261,17 +266,31 @@ pub struct TokenInfoProviderDerivative {
 }
 
 #[cw_serde]
+pub struct ValidatorInfo {
+    pub address: String,
+    pub delegated_tokens: Uint128,
+    pub power_ratio: Decimal,
+}
+
+#[cw_serde]
 pub struct TokenInfoProviderLSM {
-    pub max_validator_shares_participating: u64,
-    pub hub_connection_id: String,
+    pub contract: String,
+    pub cache: HashMap<u64, HashMap<String, ValidatorInfo>>,
     pub hub_transfer_channel_id: String,
-    pub icq_update_period: u64,
+}
+
+#[cw_serde]
+pub struct TokenInfoProviderBase {
+    pub token_group_id: String,
+    pub denom: String,
+    pub ratio: Decimal,
 }
 
 #[cw_serde]
 pub enum TokenInfoProvider {
     #[serde(rename = "lsm")]
     LSM(TokenInfoProviderLSM),
+    Base(TokenInfoProviderBase),
     Derivative(TokenInfoProviderDerivative),
 }
 

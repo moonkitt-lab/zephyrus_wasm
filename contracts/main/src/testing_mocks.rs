@@ -233,6 +233,13 @@ impl MockWasmQuerier {
                         name: "Hydro Lockups".to_string(),
                         symbol: "hydro-lockups".to_string(),
                     },
+                    lock_expiry_duration_seconds: 15552000,
+                    lock_depth_limit: 50,
+                    slash_percentage_threshold: Decimal::from_ratio(1u128, 2u128),
+                    slash_tokens_receiver_addr:
+                        "neutron1w7f40hgfc505a2wnjsl5pg35yl8qpawv48w5yekax4xj2m43j09s5fa44f"
+                            .to_string(),
+                    lockup_conversion_fee_percent: Decimal::from_ratio(2u128, 100u128),
                 }),
         })
     }

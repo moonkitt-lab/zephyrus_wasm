@@ -5,19 +5,14 @@ use zephyrus_core::msgs::MigrateMsg;
 
 use crate::{
     errors::ContractError,
-    migration::unreleased,
     state::{CONTRACT_NAME, CONTRACT_VERSION},
 };
 
 type Response = CwResponse<NeutronMsg>;
 
 #[entry_point]
-pub fn migrate(mut deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
     let old_contract_version = check_contract_version(deps.storage)?;
-
-    if old_contract_version == "0.2.0" {
-        unreleased::migrate_constants(&mut deps)?;
-    }
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 

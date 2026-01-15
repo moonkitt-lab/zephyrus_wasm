@@ -221,34 +221,39 @@ fn execute_return_to_hydro(
     let vessel = state::get_vessel(deps.storage, vessel_id)?;
     let tranche_ids = query_hydro_tranches(&deps.as_ref(), &constants)?;
     let current_round_id = query_hydro_current_round(&deps.as_ref(), &constants)?;
-    let vessel_shares = state::get_vessel_shares_info(deps.storage, current_round_id, vessel_id)?;
 
-    for tranche_id in tranche_ids {
-        if let Some(proposal_id) =
-            state::get_harbor_of_vessel(deps.storage, tranche_id, current_round_id, vessel_id)?
-        {
-            reset_vessel_vote(
+    // If there's no vessel shares info, it means there's no vote, so no need to reset votes
+    // or subtract TWS from hydromancer - just skip these operations
+    if let Ok(vessel_shares) =
+        state::get_vessel_shares_info(deps.storage, current_round_id, vessel_id)
+    {
+        for tranche_id in &tranche_ids {
+            if let Some(proposal_id) =
+                state::get_harbor_of_vessel(deps.storage, *tranche_id, current_round_id, vessel_id)?
+            {
+                reset_vessel_vote(
+                    deps.storage,
+                    vessel.clone(),
+                    current_round_id,
+                    *tranche_id,
+                    proposal_id,
+                )?;
+            }
+        }
+        if let Some(hydromancer_id) = vessel.hydromancer_id {
+            state::substract_time_weighted_shares_from_hydromancer(
                 deps.storage,
-                vessel.clone(),
+                hydromancer_id,
                 current_round_id,
-                tranche_id,
-                proposal_id,
+                &vessel_shares.token_group_id,
+                vessel_shares.locked_rounds,
+                vessel_shares.time_weighted_shares,
             )?;
         }
-    }
-    if let Some(hydromancer_id) = vessel.hydromancer_id {
-        state::substract_time_weighted_shares_from_hydromancer(
-            deps.storage,
-            hydromancer_id,
-            current_round_id,
-            &vessel_shares.token_group_id,
-            vessel_shares.locked_rounds,
-            vessel_shares.time_weighted_shares,
-        )?;
+        state::remove_vessel_shares_info(deps.storage, current_round_id, vessel_id)?;
     }
 
     state::remove_vessel(deps.storage, &info.sender, vessel_id)?;
-    state::remove_vessel_shares_info(deps.storage, current_round_id, vessel_id)?;
     let transfer_nft_msg = HydroExecuteMsg::TransferNft {
         recipient: info.sender.to_string(),
         token_id: vessel_id.to_string(),
@@ -258,6 +263,7 @@ fn execute_return_to_hydro(
         msg: to_json_binary(&transfer_nft_msg)?,
         funds: vec![],
     };
+
     Ok(Response::new()
         .add_message(execute_transfer_nft_msg)
         .add_attribute("action", "return_to_hydro")

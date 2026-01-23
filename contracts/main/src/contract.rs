@@ -49,7 +49,7 @@ use crate::{
         },
         vectors::join_u64_ids,
         vessel_assignment::{
-            assign_vessel_to_hydromancer, assign_vessel_to_user_control,
+            assign_vessel_to_hydromancer, assign_vessel_to_user_control, build_hydro_unvote_msg,
             categorize_vessels_by_control,
         },
     },
@@ -528,15 +528,7 @@ fn execute_unvote(
             )?;
         }
     }
-    let msg_unvote = HydroExecuteMsg::Unvote {
-        tranche_id,
-        lock_ids: vessel_ids.clone(),
-    };
-    let execute_unvote_msg = WasmMsg::Execute {
-        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
-        msg: to_json_binary(&msg_unvote)?,
-        funds: vec![],
-    };
+    let execute_unvote_msg = build_hydro_unvote_msg(&constants, tranche_id, &vessel_ids)?;
 
     Ok(Response::default()
         .add_message(execute_unvote_msg)
@@ -657,8 +649,29 @@ fn execute_receive_nft(
             current_time_weighted_shares,
         )?;
     }
+    // Unvote for all tranches: votes must go through Zephyrus to be tracked for rewards
+    let tranche_ids = query_hydro_tranches(&deps.as_ref(), &constants)?;
+    let mut unvote_msgs: Vec<WasmMsg> = Vec::new();
+    for tranche_id in tranche_ids.iter() {
+        unvote_msgs.push(build_hydro_unvote_msg(
+            &constants,
+            *tranche_id,
+            &[hydro_lock_id],
+        )?)
+    }
 
-    Ok(Response::default())
+    Ok(Response::default()
+        .add_messages(unvote_msgs)
+        .add_attribute("action", "receive_nft")
+        .add_attribute("hydro_lock_id", hydro_lock_id.to_string())
+        .add_attribute("owner", owner_addr.to_string())
+        .add_attribute("hydromancer_id", vessel_info.hydromancer_id.to_string())
+        .add_attribute("class_period", vessel_info.class_period.to_string())
+        .add_attribute("auto_maintenance", vessel_info.auto_maintenance.to_string())
+        .add_attribute(
+            "time_weighted_shares",
+            current_time_weighted_shares.to_string(),
+        ))
 }
 
 // This function loops through all the vessels, and filters those who have auto_maintenance true
@@ -1066,16 +1079,8 @@ fn execute_change_hydromancer(
     }
 
     // Step 3: Send unvote message for vessels that changed hydromancer (or that were controlled by user)
-    let unvote_msg = HydroExecuteMsg::Unvote {
-        tranche_id,
-        lock_ids: vessels_not_yet_controlled.clone(),
-    };
-
-    let execute_unvote_msg = WasmMsg::Execute {
-        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
-        msg: to_json_binary(&unvote_msg)?,
-        funds: vec![],
-    };
+    let execute_unvote_msg =
+        build_hydro_unvote_msg(&constants, tranche_id, &vessels_not_yet_controlled)?;
 
     Ok(Response::new().add_message(execute_unvote_msg))
 }

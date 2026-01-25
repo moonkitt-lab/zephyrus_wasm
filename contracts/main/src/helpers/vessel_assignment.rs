@@ -1,7 +1,12 @@
-use cosmwasm_std::Storage;
-use zephyrus_core::msgs::{HydroLockId, HydromancerId, RoundId, TrancheId};
+use cosmwasm_std::{to_json_binary, StdResult, Storage, WasmMsg};
+use zephyrus_core::{
+    msgs::{HydroLockId, HydromancerId, RoundId, TrancheId},
+    state::Constants,
+};
 
 use crate::{errors::ContractError, state};
+
+use hydro_interface::msgs::ExecuteMsg as HydroExecuteMsg;
 
 /// Comprehensive vessel assignment function that handles all TWS cleanup and vessel reassignment
 /// it is assumed that the Unvote message is issued for re-assigned vessels, so TWS should be subtracted from previous proposals
@@ -212,4 +217,21 @@ pub fn categorize_vessels_by_control(
     }
 
     Ok((not_controlled, already_controlled))
+}
+
+pub fn build_hydro_unvote_msg(
+    constants: &Constants,
+    tranche_id: TrancheId,
+    lock_ids: &[HydroLockId],
+) -> StdResult<WasmMsg> {
+    let unvote_msg = HydroExecuteMsg::Unvote {
+        tranche_id,
+        lock_ids: lock_ids.to_vec(),
+    };
+
+    Ok(WasmMsg::Execute {
+        contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
+        msg: to_json_binary(&unvote_msg)?,
+        funds: vec![],
+    })
 }

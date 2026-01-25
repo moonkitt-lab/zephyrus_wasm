@@ -6,7 +6,7 @@ use zephyrus_core::{
 
 use crate::{errors::ContractError, state};
 
-use hydro_interface::msgs::{ExecuteMsg as HydroExecuteMsg, Tranche};
+use hydro_interface::msgs::ExecuteMsg as HydroExecuteMsg;
 
 /// Comprehensive vessel assignment function that handles all TWS cleanup and vessel reassignment
 /// it is assumed that the Unvote message is issued for re-assigned vessels, so TWS should be subtracted from previous proposals

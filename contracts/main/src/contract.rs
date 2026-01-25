@@ -1129,14 +1129,7 @@ fn execute_take_control(
 
     let mut response = Response::new();
     for (tranche_id, lock_ids) in unvote_ids_by_tranche.into_iter() {
-        response = response.add_message(WasmMsg::Execute {
-            msg: to_json_binary(&HydroExecuteMsg::Unvote {
-                tranche_id,
-                lock_ids,
-            })?,
-            contract_addr: constants.hydro_config.hydro_contract_address.to_string(),
-            funds: vec![],
-        });
+        response = response.add_message(build_hydro_unvote_msg(&constants, tranche_id, &lock_ids)?);
     }
 
     Ok(response

@@ -1388,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "zephyrus-main"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",

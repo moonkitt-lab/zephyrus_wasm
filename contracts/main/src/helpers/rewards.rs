@@ -44,7 +44,13 @@ pub fn build_claim_tribute_sub_msg(
     contract_address: &Addr,
     balances: &[Coin],
     outstanding_tribute: &hydro_interface::msgs::TributeClaim,
+    claimable_amount: Coin,
 ) -> Result<SubMsg<NeutronMsg>, ContractError> {
+    if outstanding_tribute.amount.denom != claimable_amount.denom {
+        return Err(ContractError::CustomError {
+            msg: format!("Tribute {} denom mismatch", outstanding_tribute.tribute_id),
+        });
+    }
     let claim_msg = HydroExecuteMsg::ClaimTribute {
         round_id,
         tranche_id,
@@ -73,7 +79,7 @@ pub fn build_claim_tribute_sub_msg(
         tribute_id: outstanding_tribute.tribute_id,
         round_id,
         tranche_id,
-        amount: outstanding_tribute.amount.clone(),
+        amount: claimable_amount,
         balance_before_claim: balance_before_claim.clone(),
         vessels_owner: owner.clone(),
         vessel_ids: vessel_ids.to_owned(),

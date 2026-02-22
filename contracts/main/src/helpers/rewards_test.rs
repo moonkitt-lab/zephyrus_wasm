@@ -92,6 +92,7 @@ fn test_build_claim_tribute_sub_msg() {
         &contract_address,
         &balances,
         &outstanding_tribute,
+        Coin::new(100u128, "uatom"),
     );
 
     assert!(result.is_ok());
@@ -408,6 +409,7 @@ fn test_build_claim_tribute_sub_msg_with_balance_found() {
         &contract_address,
         &balances,
         &outstanding_tribute,
+        Coin::new(100u128, "uatom"),
     );
 
     assert!(result.is_ok());
@@ -441,6 +443,7 @@ fn test_build_claim_tribute_sub_msg_with_balance_not_found() {
         &contract_address,
         &balances,
         &outstanding_tribute,
+        Coin::new(100u128, "uatom"),
     );
 
     assert!(result.is_ok());
@@ -474,6 +477,7 @@ fn test_build_claim_tribute_sub_msg_with_empty_balances() {
         &contract_address,
         &balances,
         &outstanding_tribute,
+        Coin::new(100u128, "uatom"),
     );
 
     assert!(result.is_ok());

@@ -1,6 +1,10 @@
+use std::collections::HashMap;
+
 use crate::helpers::hydro_queries::query_hydro_lockups_shares;
 use crate::reply::handle_refresh_time_weighted_shares_reply;
-use crate::testing_mocks::{mock_dependencies, mock_hydro_contract};
+use crate::testing_mocks::{
+    mock_dependencies, mock_dependencies_with_outstanding_tributes, mock_hydro_contract,
+};
 use crate::{
     contract::{execute, instantiate},
     errors::ContractError,
@@ -2971,4 +2975,154 @@ fn test_hydro_gov_vote_single_unauthorized() {
         }
         _ => panic!("Expected Unauthorized error"),
     }
+}
+
+/// A tribute that exists in SpecificTributes but is absent from OutstandingTributeClaims
+/// should be silently skipped (no submessage), and a `skipped_tribute` attribute should appear.
+#[test]
+fn claim_skips_tribute_absent_from_outstanding_claims() {
+    // Default mock has outstanding_tribute_amounts = {} so all tributes will be absent.
+    let mut deps = mock_dependencies();
+    init_contract(deps.as_mut());
+
+    let alice_address = make_valid_addr("alice");
+    let _user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("Should create user id");
+
+    // Create a vessel owned by Alice via the hydro contract (same address as in init_contract)
+    let hydro_contract = make_valid_addr("hydro");
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "0".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: state::get_constants(deps.as_mut().storage)
+                .unwrap()
+                .default_hydromancer_id,
+            class_period: 3_000_000,
+        })
+        .unwrap(),
+    });
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: hydro_contract.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok(), "ReceiveNft failed: {:?}", result);
+
+    // Claim tribute 1 — it exists in SpecificTributes (round 1 / tranche 1) but OutstandingTributeClaims is empty.
+    let claim_msg = ExecuteMsg::Claim {
+        round_id: 1,
+        tranche_id: 1,
+        vessel_ids: vec![0],
+        tribute_ids: vec![1],
+    };
+
+    let res = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        claim_msg,
+    );
+    assert!(res.is_ok(), "Claim failed: {:?}", res);
+
+    let response = res.unwrap();
+    // No submessages — tribute was skipped
+    assert!(
+        response.messages.is_empty(),
+        "Expected no submessages when tribute is absent from OutstandingTributeClaims"
+    );
+    // skipped_tribute attribute must be present with the correct tribute id
+    let skipped_attr = response
+        .attributes
+        .iter()
+        .find(|a| a.key == "skipped_tribute");
+    assert!(
+        skipped_attr.is_some(),
+        "Expected skipped_tribute attribute to be set"
+    );
+    assert_eq!(skipped_attr.unwrap().value, "1");
+}
+
+/// When OutstandingTributeClaims returns a proportional amount (less than the full deposit),
+/// the ClaimTribute submessage payload must use that proportional amount — not the full deposit.
+#[test]
+fn claim_with_proportional_tribute_amount() {
+    // Configure the mock to return 600 uatom for tribute 1 (vs 1000 uatom in SpecificTributes).
+    let mut outstanding = HashMap::new();
+    outstanding.insert(1u64, 600u128);
+    let mut deps = mock_dependencies_with_outstanding_tributes(outstanding);
+    init_contract(deps.as_mut());
+
+    let alice_address = make_valid_addr("alice");
+    let _user_id = state::insert_new_user(deps.as_mut().storage, alice_address.clone())
+        .expect("Should create user id");
+
+    let hydro_contract = make_valid_addr("hydro");
+    let receive_msg = ExecuteMsg::ReceiveNft(zephyrus_core::msgs::Cw721ReceiveMsg {
+        sender: alice_address.to_string(),
+        token_id: "0".to_string(),
+        msg: to_json_binary(&VesselInfo {
+            owner: alice_address.to_string(),
+            auto_maintenance: true,
+            hydromancer_id: state::get_constants(deps.as_mut().storage)
+                .unwrap()
+                .default_hydromancer_id,
+            class_period: 3_000_000,
+        })
+        .unwrap(),
+    });
+    let result = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: hydro_contract.clone(),
+            funds: vec![],
+        },
+        receive_msg,
+    );
+    assert!(result.is_ok(), "ReceiveNft failed: {:?}", result);
+
+    let claim_msg = ExecuteMsg::Claim {
+        round_id: 1,
+        tranche_id: 1,
+        vessel_ids: vec![0],
+        tribute_ids: vec![1],
+    };
+
+    let res = execute(
+        deps.as_mut(),
+        mock_env(),
+        MessageInfo {
+            sender: alice_address.clone(),
+            funds: vec![],
+        },
+        claim_msg,
+    );
+    assert!(res.is_ok(), "Claim failed: {:?}", res);
+
+    let response = res.unwrap();
+    // Exactly one submessage should have been generated for tribute 1
+    assert_eq!(
+        response.messages.len(),
+        1,
+        "Expected exactly one submessage for tribute 1"
+    );
+
+    // Decode the payload and verify the amount is the proportional 600 uatom, not 1000 uatom
+    let sub_msg = &response.messages[0];
+    let payload: ClaimTributeReplyPayload = from_json(&sub_msg.payload).unwrap();
+    assert_eq!(
+        payload.amount,
+        Coin::new(600u128, "uatom"),
+        "Payload amount should be the proportional amount from OutstandingTributeClaims"
+    );
 }

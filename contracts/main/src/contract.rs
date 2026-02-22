@@ -28,8 +28,8 @@ use crate::{
         },
         hydro_queries::{
             query_hydro_constants, query_hydro_current_round, query_hydro_lockups_shares,
-            query_hydro_lockups_with_tranche_infos, query_hydro_specific_tributes,
-            query_hydro_specific_user_lockups, query_hydro_tranches,
+            query_hydro_lockups_with_tranche_infos, query_hydro_outstanding_tribute_claims,
+            query_hydro_specific_tributes, query_hydro_specific_user_lockups, query_hydro_tranches,
         },
         rewards::{
             build_claim_tribute_sub_msg,
@@ -395,6 +395,21 @@ fn execute_claim(
     )?;
     // Validate round and tranche consistency, if round_id is not the same as the round_id in the tributes, return an error
     validate_round_tranche_consistency(&tributes.tributes, round_id, tranche_id)?;
+
+    // Query once per execute_claim call — voter-specific amounts that Hydro will actually send.
+    let outstanding_claims = query_hydro_outstanding_tribute_claims(
+        &deps.as_ref(),
+        env.clone(),
+        &constants,
+        round_id,
+        tranche_id,
+    )?;
+    let claimable_amounts: HashMap<u64, Coin> = outstanding_claims
+        .claims
+        .into_iter()
+        .map(|c| (c.tribute_id, c.amount))
+        .collect();
+
     let mut outstanding_tributes = Vec::new();
     let mut tributes_processed = Vec::new();
     for tribute in tributes.tributes {
@@ -419,6 +434,7 @@ fn execute_claim(
         &contract_address,
         tributes_processed.clone(),
         outstanding_tributes.clone(),
+        &claimable_amounts,
         response,
     )?;
 
@@ -449,6 +465,7 @@ fn process_outstanding_tribute_claims(
     contract_address: &Addr,
     tributes_already_claimed_on_hydro: Vec<TributeClaim>,
     outstanding_tributes: Vec<TributeClaim>,
+    claimable_amounts: &HashMap<u64, Coin>,
     mut response: Response,
 ) -> Result<Response, ContractError> {
     let mut tributes_process_in_reply = BTreeSet::new();
@@ -460,6 +477,19 @@ fn process_outstanding_tribute_claims(
     )?;
 
     for outstanding_tribute in outstanding_tributes {
+        // Use the voter-specific claimable amount from OutstandingTributeClaims.
+        // If the tribute is absent or has a zero amount, Hydro has nothing to send — skip it.
+        let claimable_amount = match claimable_amounts.get(&outstanding_tribute.tribute_id) {
+            Some(amount) if !amount.amount.is_zero() => amount.clone(),
+            _ => {
+                response = response.add_attribute(
+                    "skipped_tribute",
+                    outstanding_tribute.tribute_id.to_string(),
+                );
+                continue;
+            }
+        };
+
         let sub_msg = build_claim_tribute_sub_msg(
             round_id,
             tranche_id,
@@ -469,24 +499,25 @@ fn process_outstanding_tribute_claims(
             contract_address,
             &balances,
             &outstanding_tribute,
+            claimable_amount.clone(),
         )?;
         tributes_process_in_reply.insert(outstanding_tribute.tribute_id);
 
         response = response.add_submessage(sub_msg);
 
-        // Update virtual balances for checking purposes
+        // Update virtual balances using the actual claimable amount Hydro will send
         if let Some(balance) = balances
             .iter_mut()
-            .find(|balance| balance.denom == outstanding_tribute.amount.denom)
+            .find(|balance| balance.denom == claimable_amount.denom)
         {
             // balance found, add to the balance
             balance.amount = balance
                 .amount
-                .checked_add(outstanding_tribute.amount.amount)
+                .checked_add(claimable_amount.amount)
                 .map_err(|e| ContractError::Std(e.into()))?;
         } else {
             // balance not found, add it
-            balances.push(outstanding_tribute.amount.clone());
+            balances.push(claimable_amount.clone());
         }
     }
     let messages = distribute_rewards_for_all_tributes_already_claimed_on_hydro(

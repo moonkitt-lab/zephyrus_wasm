@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::SystemTime;
 
 use cosmwasm_std::{
@@ -38,6 +39,9 @@ pub struct MockWasmQuerier {
     current_round: u64,
     hydro_constants: Option<HydroConstants>,
     error_specific_user_lockups: bool,
+    /// Maps tribute_id → claimable amount (in uatom) returned by OutstandingTributeClaims.
+    /// An empty map means all tributes are absent from outstanding claims.
+    pub outstanding_tribute_amounts: HashMap<u64, u128>,
 }
 
 impl MockWasmQuerier {
@@ -54,7 +58,13 @@ impl MockWasmQuerier {
             current_round,
             hydro_constants,
             error_specific_user_lockups,
+            outstanding_tribute_amounts: HashMap::new(),
         }
+    }
+
+    pub fn with_outstanding_tribute_amounts(mut self, amounts: HashMap<u64, u128>) -> Self {
+        self.outstanding_tribute_amounts = amounts;
+        self
     }
 
     pub fn handler(&self, query: &WasmQuery) -> QuerierResult {
@@ -84,9 +94,9 @@ impl MockWasmQuerier {
                     } => self.handle_specific_user_lockups_with_tranche_infos(&lock_ids),
                     HydroQueryMsg::OutstandingTributeClaims {
                         user_address: _,
-                        round_id: _,
-                        tranche_id: _,
-                    } => to_json_binary(&OutstandingTributeClaimsResponse { claims: vec![] }),
+                        round_id,
+                        tranche_id,
+                    } => self.handle_outstanding_tribute_claims(round_id, tranche_id),
                     HydroQueryMsg::TokenInfoProviders {} => {
                         to_json_binary(&TokenInfoProvidersResponse { providers: vec![] })
                     }
@@ -147,6 +157,25 @@ impl MockWasmQuerier {
             });
         }
         to_json_binary(&SpecificTributesResponse { tributes })
+    }
+
+    fn handle_outstanding_tribute_claims(
+        &self,
+        round_id: u64,
+        tranche_id: u64,
+    ) -> StdResult<Binary> {
+        let claims = self
+            .outstanding_tribute_amounts
+            .iter()
+            .map(|(&tribute_id, &amount)| TributeClaim {
+                round_id,
+                tranche_id,
+                proposal_id: 1,
+                tribute_id,
+                amount: coin(amount, "uatom"),
+            })
+            .collect();
+        to_json_binary(&OutstandingTributeClaimsResponse { claims })
     }
 
     fn handle_specific_user_lockups(&self, address: &str, lock_ids: &[u64]) -> StdResult<Binary> {
@@ -387,6 +416,23 @@ pub fn mock_dependencies() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
     let hydro_addr = make_valid_addr("hydro").into_string();
     let hydro_tribute_addr = make_valid_addr("tribute").into_string();
     let wasm_querier = MockWasmQuerier::new(hydro_addr, hydro_tribute_addr, 1, None, false);
+    let querier = MockQuerier::new(wasm_querier);
+
+    OwnedDeps {
+        storage: MockStorage::default(),
+        api: MockApi::default(),
+        querier,
+        custom_query_type: std::marker::PhantomData,
+    }
+}
+
+pub fn mock_dependencies_with_outstanding_tributes(
+    outstanding_tribute_amounts: HashMap<u64, u128>,
+) -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
+    let hydro_addr = make_valid_addr("hydro").into_string();
+    let hydro_tribute_addr = make_valid_addr("tribute").into_string();
+    let wasm_querier = MockWasmQuerier::new(hydro_addr, hydro_tribute_addr, 1, None, false)
+        .with_outstanding_tribute_amounts(outstanding_tribute_amounts);
     let querier = MockQuerier::new(wasm_querier);
 
     OwnedDeps {

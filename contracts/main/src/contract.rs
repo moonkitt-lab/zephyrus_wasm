@@ -640,12 +640,29 @@ fn execute_receive_nft(
     let owner_id = state::get_user_id(deps.storage, &owner_addr)
         .or_else(|_| state::insert_new_user(deps.storage, owner_addr.clone()))?;
 
+    // 6.5. Check if the vessel is tied to a proposal in Hydro.
+    // If tied, silently fall back to user control (mirrors execute_change_hydromancer,
+    // but degrades gracefully instead of erroring).
+    let lockups_with_tranche_infos =
+        query_hydro_lockups_with_tranche_infos(&deps.as_ref(), &env, &constants, &[hydro_lock_id])?;
+    let is_tied_to_proposal = lockups_with_tranche_infos.iter().any(|lockup| {
+        lockup
+            .per_tranche_info
+            .iter()
+            .any(|t| t.tied_to_proposal.is_some())
+    });
+    let effective_hydromancer_id: Option<u64> = if is_tied_to_proposal {
+        None
+    } else {
+        Some(vessel_info.hydromancer_id)
+    };
+
     // 7. Store the vessel in state
     let vessel = Vessel {
         hydro_lock_id,
         class_period: vessel_info.class_period,
         tokenized_share_record_id: None,
-        hydromancer_id: Some(vessel_info.hydromancer_id),
+        hydromancer_id: effective_hydromancer_id,
         auto_maintenance: vessel_info.auto_maintenance,
         owner_id,
     };
@@ -667,18 +684,20 @@ fn execute_receive_nft(
         current_time_weighted_shares,
         token_group_id.clone(),
         locked_rounds,
-        Some(vessel_info.hydromancer_id),
+        effective_hydromancer_id,
     )?;
 
     if current_time_weighted_shares > 0 {
-        state::add_time_weighted_shares_to_hydromancer(
-            deps.storage,
-            vessel_info.hydromancer_id,
-            current_round,
-            token_group_id,
-            locked_rounds,
-            current_time_weighted_shares,
-        )?;
+        if let Some(hydromancer_id) = effective_hydromancer_id {
+            state::add_time_weighted_shares_to_hydromancer(
+                deps.storage,
+                hydromancer_id,
+                current_round,
+                token_group_id,
+                locked_rounds,
+                current_time_weighted_shares,
+            )?;
+        }
     }
     // Unvote for all tranches: votes must go through Zephyrus to be tracked for rewards
     let tranche_ids = query_hydro_tranches(&deps.as_ref(), &constants)?;
@@ -691,18 +710,29 @@ fn execute_receive_nft(
         )?)
     }
 
-    Ok(Response::default()
+    let mut response = Response::default()
         .add_messages(unvote_msgs)
         .add_attribute("action", "receive_nft")
         .add_attribute("hydro_lock_id", hydro_lock_id.to_string())
         .add_attribute("owner", owner_addr.to_string())
-        .add_attribute("hydromancer_id", vessel_info.hydromancer_id.to_string())
+        .add_attribute(
+            "hydromancer_id",
+            effective_hydromancer_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        )
         .add_attribute("class_period", vessel_info.class_period.to_string())
         .add_attribute("auto_maintenance", vessel_info.auto_maintenance.to_string())
         .add_attribute(
             "time_weighted_shares",
             current_time_weighted_shares.to_string(),
-        ))
+        );
+
+    if is_tied_to_proposal {
+        response = response.add_attribute("hydromancer_id_fallback", "vessel_tied_to_proposal");
+    }
+
+    Ok(response)
 }
 
 // This function loops through all the vessels, and filters those who have auto_maintenance true

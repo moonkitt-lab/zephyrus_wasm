@@ -4,6 +4,7 @@ use crate::helpers::hydro_queries::query_hydro_lockups_shares;
 use crate::reply::handle_refresh_time_weighted_shares_reply;
 use crate::testing_mocks::{
     mock_dependencies, mock_dependencies_with_outstanding_tributes, mock_hydro_contract,
+    mock_hydro_contract_with_tied_lockups,
 };
 use crate::{
     contract::{execute, instantiate},
@@ -359,6 +360,68 @@ fn test_cw721_receive_nft_succeed() {
 
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg);
     assert!(res.is_ok());
+}
+
+#[test]
+fn test_receive_nft_hydromancer_falls_back_to_user_when_vessel_tied_to_proposal() {
+    let (mut deps, env) = (mock_dependencies(), mock_env());
+    let admin_address = get_address_as_str(&deps.api, "addr0000");
+    let info = message_info(&Addr::unchecked("sender"), &[]);
+    let msg = get_default_instantiate_msg(&deps, admin_address.to_string());
+    let hydro_contract = deps.api.addr_make("hydro_addr");
+    let sender = deps.api.addr_make("sender");
+
+    let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg.clone());
+    assert!(res.is_ok());
+
+    // Replace querier: all lockups report tied_to_proposal = Some(1)
+    mock_hydro_contract_with_tied_lockups(&mut deps);
+
+    let info = MessageInfo {
+        sender: hydro_contract.clone(),
+        funds: vec![],
+    };
+    let vessel_info = VesselInfo {
+        owner: sender.to_string(),
+        auto_maintenance: true,
+        hydromancer_id: 0,       // valid hydromancer registered at instantiate
+        class_period: 3_000_000, // 3 × lock_epoch_length
+    };
+    let receive_msg = Cw721ReceiveMsg {
+        sender: sender.to_string(),
+        token_id: "1".to_string(),
+        msg: to_json_binary(&vessel_info).unwrap(),
+    };
+    let res = execute(
+        deps.as_mut(),
+        env.clone(),
+        info,
+        ExecuteMsg::ReceiveNft(receive_msg),
+    );
+
+    // Must succeed (no error)
+    assert!(res.is_ok(), "Expected Ok, got: {:?}", res);
+
+    let response = res.unwrap();
+
+    // Stored vessel must be user-controlled
+    let vessel = state::get_vessel(deps.as_ref().storage, 1).expect("vessel should exist");
+    assert_eq!(
+        vessel.hydromancer_id, None,
+        "Expected user-controlled vessel, got hydromancer_id: {:?}",
+        vessel.hydromancer_id
+    );
+
+    // Must emit the fallback attribute
+    let has_fallback = response
+        .attributes
+        .iter()
+        .any(|a| a.key == "hydromancer_id_fallback" && a.value == "vessel_tied_to_proposal");
+    assert!(
+        has_fallback,
+        "Expected hydromancer_id_fallback attribute, got: {:?}",
+        response.attributes
+    );
 }
 
 fn init_contract(deps: DepsMut) {

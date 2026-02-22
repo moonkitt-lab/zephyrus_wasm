@@ -42,6 +42,7 @@ pub struct MockWasmQuerier {
     /// Maps tribute_id → claimable amount (in uatom) returned by OutstandingTributeClaims.
     /// An empty map means all tributes are absent from outstanding claims.
     pub outstanding_tribute_amounts: HashMap<u64, u128>,
+    pub lockups_tied_to_proposal: bool,
 }
 
 impl MockWasmQuerier {
@@ -59,11 +60,17 @@ impl MockWasmQuerier {
             hydro_constants,
             error_specific_user_lockups,
             outstanding_tribute_amounts: HashMap::new(),
+            lockups_tied_to_proposal: false,
         }
     }
 
     pub fn with_outstanding_tribute_amounts(mut self, amounts: HashMap<u64, u128>) -> Self {
         self.outstanding_tribute_amounts = amounts;
+        self
+    }
+
+    pub fn with_lockups_tied_to_proposal(mut self) -> Self {
+        self.lockups_tied_to_proposal = true;
         self
     }
 
@@ -289,11 +296,16 @@ impl MockWasmQuerier {
     ) -> StdResult<Binary> {
         let mut lockup_tranche_infos: Vec<LockupWithPerTrancheInfo> = vec![];
         for lock_id in lock_ids {
+            let tied = if self.lockups_tied_to_proposal {
+                Some(1u64)
+            } else {
+                None
+            };
             let per_tranche_infos = vec![PerTrancheLockupInfo {
                 tranche_id: 1,
                 next_round_lockup_can_vote: 2,
-                current_voted_on_proposal: None,
-                tied_to_proposal: None,
+                current_voted_on_proposal: tied,
+                tied_to_proposal: tied,
                 historic_voted_on_proposals: vec![],
             }];
             lockup_tranche_infos.push(LockupWithPerTrancheInfo {
@@ -456,6 +468,16 @@ pub fn mock_hydro_contract(
         None,
         error_specific_user_lockups,
     );
+    deps.querier = MockQuerier::new(wasm_querier);
+}
+
+pub fn mock_hydro_contract_with_tied_lockups(
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
+) {
+    let hydro_addr = make_valid_addr("hydro_addr").into_string();
+    let hydro_tribute_addr = make_valid_addr("hydro_tribute").into_string();
+    let wasm_querier = MockWasmQuerier::new(hydro_addr, hydro_tribute_addr, 1, None, false)
+        .with_lockups_tied_to_proposal();
     deps.querier = MockQuerier::new(wasm_querier);
 }
 

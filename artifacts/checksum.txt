@@ -1,1 +1,1 @@
-a4d45936774efa0e2c00589e19e627efd9d4b6c02ad4fc9c86e72f14289bb094  zephyrus-main.wasm
+d2f1fa152656c769dc49a4552d273d76d9e4abc992a083a1437ead49c57dbd18  zephyrus-main.wasm
